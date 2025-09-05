@@ -11,9 +11,9 @@ Machine Configuration handles file updates, systemd unit management, and SSH pub
 
 Each MachineConfigPool governs a set of nodes and their associated MachineConfigs. Node roles determine MachineConfigPool membership—pools manage nodes based on their role labels.
 
-During cluster installation, the system automatically creates two MachineConfigPools (master and worker) along with two empty MachineConfigs (00-master and 00-worker). The master pool manages the 00-master configuration, while the worker pool manages the 00-worker configuration.
+During cluster installation, the system automatically creates two MachineConfigPools (control plane and worker) along with two empty MachineConfigs (00-master and 00-worker). The control plane pool manages the 00-master configuration, while the worker pool manages the 00-worker configuration.
 
-You can create custom MachineConfigPools for worker nodes that require specialized configurations. Master nodes cannot use custom pools.
+You can create custom MachineConfigPools for worker nodes that require specialized configurations. Control plane nodes cannot use custom pools.
 
 Custom MachineConfigPools inherit all configurations from the worker pool and add their own specific settings. Any changes to the worker pool automatically propagate to custom pools. Machine Configuration does not support custom pools that don't inherit from the worker pool.
 
@@ -97,7 +97,7 @@ worker   rendered-worker-f4b64     False    True      False     3             2 
 - **UPDATEDMACHINECOUNT**: Nodes that have applied the current config
 - **DEGRADEDMACHINECOUNT**: Nodes marked as degraded or unreconcilable
 
-In this example, all three master nodes are current, while the worker pool is updating—two nodes are complete and one is in progress.
+In this example, all three control plane nodes are current, while the worker pool is updating—two nodes are complete and one is in progress.
 
 Get detailed pool information:
 ```bash
