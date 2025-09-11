@@ -2,12 +2,50 @@
 weight: 30
 ---
 
-:::tip
-
-Use a "simple and actionable" example to help users quickly experience the key features.
-
-For reference, you can view a [Quick Start example](https://product-doc-guide.alauda.cn/template/quick_start/example.html).
-
-:::
-
 # Feature Overview
+
+The Immutable Infrastructure support provides comprehensive cluster and cloud infrastructure management capabilities designed for enterprise-grade Kubernetes deployments. This platform leverages advanced automation and infrastructure-as-code principles to deliver reliable, scalable, and maintainable infrastructure solutions.
+
+## Cluster Management
+
+Our platform offers end-to-end Kubernetes cluster lifecycle management with immutable OS principles, ensuring consistent and reproducible deployments across environments.
+
+### Cluster Creation
+- **Immutable OS Support**: Create clusters using immutable OS patterns for enhanced security and consistency
+- **Automated Compute Provisioning**: Automatic provisioning of compute instances with pre-configured specifications
+- **Bootstrap Automation**: Automated cluster bootstrapping with minimal manual intervention
+
+### Cluster Deletion
+- **Complete Resource Cleanup**: Comprehensive deletion process that removes all associated resources
+- **Provider Resource Release**: Proper deallocation of provider resources to prevent orphaned instances
+
+### Cluster Scaling
+- **Horizontal Scaling**: Add or remove worker nodes to meet workload demands
+- **Automated Compute Management**: Automatic creation and release of compute instances during scaling operations
+- **Zero-Downtime Scaling**: Scale operations without service interruption
+
+### Cluster Upgrades
+- **Kubernetes Version Management**: Seamless upgrades to newer Kubernetes versions
+
+## Supported Infrastructure Providers
+
+Our platform follows a pluggable provider model aligned with Cluster API infrastructure providers. It is designed for multiple infrastructure platforms. Today, the DCS infrastructure provider is supported, with additional providers in progress.
+
+- **Provider-Agnostic Design**: Core workflows are consistent across providers
+- **Current Support**: DCS infrastructure provider
+- **Roadmap**: Additional providers are being added
+
+## Compute Resource Management
+
+Advanced virtual machine lifecycle management with enterprise-grade features for optimal resource utilization and performance.
+
+### Compute Lifecycle Operations
+- **Create Compute Instances**: Provision instances with customizable specifications and configurations
+- **Delete Compute Instances**: Secure deletion with proper resource cleanup
+
+### Compute Configuration Options
+- **Instance/Flavor Selection**: Choose from predefined instance types or flavors optimized for different workloads
+- **Size Customization**: Flexible sizing options from small development instances to large production workloads
+- **Resource Allocation**: Precise control over CPU, memory, and storage allocation
+- **Network Configuration**: Advanced networking options including custom subnets and security groups
+- **Storage Options**: Multiple storage types and classes (for example: SSD, HDD, NVMe) for different performance requirements

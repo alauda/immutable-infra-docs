@@ -1,19 +1,648 @@
 ---
 weight: 40
 ---
-
-:::tip
-
-If the parent module requires a separate manual upgrade process, you should provide upgrade documentation. Otherwise, this section can be omitted.
-
-Upgrade documentation should include the upgrade process, configuration options, and rollback procedures.
-
-If there are significant differences in the upgrade process between versions, consider organizing the upgrade documentation into a directory with separate documents for each version (e.g., "Upgrade from 3.10", "Upgrade from 3.18").
-
-You can view an [Upgrade example](https://product-doc-guide.alauda.cn/template/upgrade/example.html) for reference.
-
-:::
-
 # Creating Clusters
 
-Introduce the upgrade process for the specific module.
+This document provides comprehensive instructions for creating Kubernetes clusters on the DCS platform using Cluster API. The process involves deploying and configuring multiple Kubernetes resources that work together to provision and manage cluster infrastructure.
+
+## Prerequisites
+
+Before creating clusters, ensure all of the following prerequisites are met:
+
+### 1. DCS Platform Installed and Operational
+The DCS platform must be fully installed and operational. Ensure you have:
+- The endpoint URL for accessing the DCS platform service
+- Valid authentication credentials (`authUser` and `authKey`)
+- Appropriate permissions to create and manage virtual machines
+
+### 2. Virtual Machine Template Preparation
+For Kubernetes installation, you must:
+- Upload the MicroOS image provided by **<Term name="company" textCase="capitalize" />** to the DCS platform
+- Create a virtual machine template based on this image
+- Ensure the template includes all necessary Kubernetes components
+
+### 3. Required Plugin Installation
+Install the following plugins on the <Term name="product" textCase="capitalize" />'s `global` cluster:
+- **Cluster API Provider Kubeadm** - Provides Kubernetes cluster bootstrapping capabilities
+- **Cluster API Provider DCS** - Enables DCS infrastructure integration and management
+
+For detailed installation instructions, refer to the [Installation Guide](./install.mdx).
+
+### 4. Public Registry Configuration
+Configure the public registry credentials on the <Term name="product" textCase="capitalize" />. This includes:
+- Registry repository address configuration
+- Proper authentication credentials setup
+
+For detailed configuration steps, refer to the **Alauda Container Platform** documentation: **Configure → Clusters → How to → Updating Public Registry Credentials**.
+
+## Cluster Creation Overview
+
+At a high level, you'll create the following Cluster API resources in the <Term name="product" textCase="capitalize" />'s `global` cluster to provision infrastructure and bootstrap a functional Kubernetes cluster.
+
+
+
+:::warning
+**Important Namespace Requirement**
+
+To ensure proper integration with the <Term name="product" textCase="capitalize" /> as business clusters, all resources must be deployed in the `cpaas-system` namespace. Deploying resources in other namespaces may result in integration issues.
+:::
+
+## Control Plane Configuration
+
+The control plane manages cluster state, scheduling, and the Kubernetes API. This section shows how to configure a highly available control plane.
+
+:::warning
+**Configuration Parameter Guidelines**
+
+When configuring resources, exercise caution with parameter modifications:
+- **Replace only values enclosed in `<>`** with your environment-specific values
+- **Preserve all other parameters** as they represent optimized or required configurations
+- Modifying non-placeholder parameters may result in cluster instability or integration issues
+:::
+
+### Configuration Workflow
+
+Follow these steps in order:
+
+1. Plan network and deploy the API load balancer
+2. Configure DCS credentials (Secret)
+3. Create IP and hostname pool
+4. Create the control plane `DCSMachineTemplate`
+5. Configure `KubeadmControlPlane`
+6. Configure `DCSCluster`
+7. Create the `Cluster`
+
+After applying the manifests, a DCS kubernetes control plane is created by <Term name="product" textCase="capitalize" />.
+
+### Network Planning and Load Balancer
+
+Before creating control plane resources, plan the network architecture and deploy a load balancer for high availability.
+
+#### Requirements
+
+- **Network segmentation**: Plan IP address ranges for control plane nodes
+- **Load balancer**: Deploy and configure access to the API server
+- **IP association**: Bind the load balancer to an IP from the control plane IP pool
+- **Connectivity**: Ensure network connectivity between all components
+
+The load balancer distributes API server traffic across control plane nodes to ensure availability and fault tolerance.
+
+### Configure DCS Authentication
+
+DCS authentication information is stored in a Secret resource.
+
+In the following example, `<auth-secret-name>` is the name of the saved Secret:
+
+```yaml
+apiVersion: v1
+data:
+  authUser: <base64-encoded-auth-user>
+  authKey: <base64-encoded-auth-key>
+  endpoint: <base64-encoded-endpoint>
+kind: Secret
+metadata:
+  name: <auth-secret-name>
+  namespace: cpaas-system
+type: Opaque
+```
+
+| Parameter | Description |
+| --- | --- |
+| .data.authUser | DCS platform API user login name (base64-encoded) |
+| .data.authKey | DCS platform API user login password (base64-encoded) |
+| .data.endpoint | DCS platform API address with http or https protocol (base64-encoded) |
+
+### Configure IP and Hostname Pool
+
+You need to plan the control plane virtual machines' IP addresses, hostnames, DNS servers, and other network information in advance.
+
+:::warning
+You must configure machine information for a number of machines greater than or equal to the number of control plane nodes.
+:::
+
+In the following example, `<control-plane-iphostname-pool-name>` is the resource name:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSIpHostnamePool
+metadata:
+  name: <control-plane-iphostname-pool-name>
+  namespace: cpaas-system
+spec:
+  pool:
+  - ip: "<control-plane-ip-1>"
+    mask: "<control-plane-mask>"
+    gateway: "<control-plane-gateway>"
+    dns: "<control-plane-dns>"
+    hostname: "<control-plane-hostname-1>"
+    machineName: "<control-plane-machine-name-1>"
+```
+
+| Parameter | Description | Required |
+| --- | --- | --- |
+| .spec.pool[].ip | IP address for the virtual machine to be created | Yes |
+| .spec.pool[].mask | Subnet mask | Yes |
+| .spec.pool[].gateway | Gateway IP address | Yes |
+| .spec.pool[].dns | DNS server IP (use ',' to separate multiple servers) | No |
+| .spec.pool[].machineName | Name of the virtual machine in the DCS platform | No |
+| .spec.pool[].hostname | Hostname of the virtual machine | No |
+
+### Configure Machine Template (Control Plane)
+
+The DCS machine template declares the configuration for DCS machines created by subsequent Cluster API components. The machine template specifies the virtual machine template, attached disks, CPU, memory, and other configuration information.
+
+:::warning
+You may add additional custom disks in the `dcsMachineDiskSpec` section, but you must retain all disk entries shown in the example below (including the systemVolume, /var/lib/kubelet, /var/lib/containerd, and /var/cpaas mount points). When adding disks, make sure not to omit these essential configurations.
+:::
+
+
+In the following example, `<cp-dcs-machine-template-name>` is the control plane machine template name:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSMachineTemplate
+metadata:
+  name: <cp-dcs-machine-template-name>
+  namespace: cpaas-system
+spec:
+  template:
+    spec:
+      vmTemplateName: <vm-template-name>
+      location:
+        type: folder
+        name: <folder-name>
+      resource: # Optional, if not specified, uses template defaults
+        type: cluster # cluster | host. Optional
+        name: <cluster-name> # Optional
+      vmConfig:
+        dvSwitchName: <dv-switch-name> # Optional
+        portGroupName: <port-group-name> # Optional
+        dcsMachineCpuSpec:
+          quantity: <control-plane-cpu>
+        dcsMachineMemorySpec: # MB
+          quantity: <control-plane-memory>
+        dcsMachineDiskSpec: # GB
+        - quantity: 0
+          datastoreClusterName: <datastore-cluster-name>
+          systemVolume: true
+        - quantity: 10
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/lib/etcd
+          format: xfs
+        - quantity: 100
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/lib/kubelet
+          format: xfs
+        - quantity: 100
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/lib/containerd
+          format: xfs
+        - quantity: 100
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/cpaas
+          format: xfs
+      ipHostPoolRef:
+        name: <control-plane-iphostname-pool-name>
+```
+
+#### Key Parameter Descriptions
+
+| Parameter | Type | Description | Required |
+| --- | --- | --- | --- |
+| .spec.template.spec.vmTemplateName | string | DCS virtual machine template name | Yes |
+| .spec.template.spec.location | object | Location where the VM will be created (auto-selected if not specified) | No |
+| .spec.template.spec.location.type | string | VM creation location type (currently only supports "folder") | Yes |
+| .spec.template.spec.location.name | string | VM creation folder name | Yes |
+| .spec.template.spec.resource | object | Compute resource selection for VM creation (auto-selected if not specified) | No |
+| .spec.template.spec.resource.type | string | Compute resource type: cluster or host | Yes |
+| .spec.template.spec.resource.name | string | Compute resource name | Yes |
+| .spec.template.spec.vmConfig | object | Virtual machine configuration | Yes |
+| .spec.template.spec.vmConfig.dvSwitchName | string | Virtual machine switch name (uses template default if not specified) | No |
+| .spec.template.spec.vmConfig.portGroupName | string | Port group name (must belong to the above switch, uses template default if not specified) | No |
+| .spec.template.spec.vmConfig.dcsMachineCpuSpec.quantity | int | VM CPU specification (cores) | Yes |
+| .spec.template.spec.vmConfig.dcsMachineMemorySpec.quantity | int | VM memory size (MB) | Yes |
+| .spec.template.spec.vmConfig.dcsMachineDiskSpec | []object | VM disk configuration | Yes |
+| .spec.template.spec.vmConfig.dcsMachineDiskSpec[].quantity | int | Disk size (GB). For system disk, 0 auto-sets to template system disk size | Yes |
+| .spec.template.spec.vmConfig.dcsMachineDiskSpec[].datastoreClusterName | string | Datastore cluster name for the disk | Yes |
+| .spec.template.spec.vmConfig.dcsMachineDiskSpec[].systemVolume | bool | Whether this is the system disk (only one disk can be true) | No |
+| .spec.template.spec.vmConfig.dcsMachineDiskSpec[].path | string | Disk mount directory (disk won't be mounted if not specified) | No |
+| .spec.template.spec.vmConfig.dcsMachineDiskSpec[].format | string | File system format | No |
+| .spec.template.spec.ipHostPoolRef.name | string | Referenced DCSIpHostnamePool name | Yes |
+
+### Configure KubeadmControlPlane
+
+The current DCS control plane implementation relies on the Cluster API control plane provider kubeadm and requires configuring the KubeadmControlPlane resource.
+
+Most parameters in the example are already optimized or required configurations, but some parameters may need customization based on your environment.
+
+In the following example, `<kcp-name>` is the resource name:
+
+
+```yaml
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: <kcp-name>
+  namespace: cpaas-system
+  annotations:
+    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
+spec:
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+  kubeadmConfigSpec:
+    users:
+    - name: boot
+      sshAuthorizedKeys:
+      - "<ssh-authorized-keys>"
+    format: ignition
+    files:
+    - path: /etc/kubernetes/admission/psa-config.yaml
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: AdmissionConfiguration
+        plugins:
+        - name: PodSecurity
+          configuration:
+            apiVersion: pod-security.admission.config.k8s.io/v1
+            kind: PodSecurityConfiguration
+            defaults:
+              enforce: "privileged"
+              enforce-version: "latest"
+              audit: "baseline"
+              audit-version: "latest"
+              warn: "baseline"
+              warn-version: "latest"
+            exemptions:
+              usernames: []
+              runtimeClasses: []
+              namespaces:
+              - kube-system
+              - cpaas-system
+    - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        {
+          "apiVersion": "kubelet.config.k8s.io/v1beta1",
+          "kind": "KubeletConfiguration",
+          "protectKernelDefaults": true,
+          "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+          "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key",
+          "streamingConnectionIdleTimeout": "5m",
+          "clientCAFile": "/etc/kubernetes/pki/ca.crt"
+        }
+    - path: /etc/kubernetes/encryption-provider.conf
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: EncryptionConfiguration
+        resources:
+        - resources:
+          - secrets
+          providers:
+          - aescbc:
+              keys:
+              - name: key1
+                secret: <base64-encoded-secret>
+    - path: /etc/kubernetes/audit/policy.yaml
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        apiVersion: audit.k8s.io/v1
+        kind: Policy
+        # Don't generate audit events for all requests in RequestReceived stage.
+        omitStages:
+        - "RequestReceived"
+        rules:
+        # The following requests were manually identified as high-volume and low-risk,
+        # so drop them.
+        - level: None
+          users:
+          - system:kube-controller-manager
+          - system:kube-scheduler
+          - system:serviceaccount:kube-system:endpoint-controller
+          verbs: ["get", "update"]
+          namespaces: ["kube-system"]
+          resources:
+          - group: "" # core
+            resources: ["endpoints"]
+        # Don't log these read-only URLs.
+        - level: None
+          nonResourceURLs:
+          - /healthz*
+          - /version
+          - /swagger*
+        # Don't log events requests.
+        - level: None
+          resources:
+          - group: "" # core
+            resources: ["events"]
+        # Don't log devops requests.
+        - level: None
+          resources:
+          - group: "devops.alauda.io"
+        # Don't log get list watch requests.
+        - level: None
+          verbs: ["get", "list", "watch"]
+        # Don't log lease operation
+        - level: None
+          resources:
+          - group: "coordination.k8s.io"
+            resources: ["leases"]
+        # Don't log access review and token review requests.
+        - level: None
+          resources:
+          - group: "authorization.k8s.io"
+            resources: ["subjectaccessreviews", "selfsubjectaccessreviews"]
+          - group: "authentication.k8s.io"
+            resources: ["tokenreviews"]
+        # Don't log imagewhitelists and namespaceoverviews operations
+        - level: None
+          resources:
+          - group: "app.alauda.io"
+            resources: ["imagewhitelists"]
+          - group: "k8s.io"
+            resources: ["namespaceoverviews"]
+        # Secrets, ConfigMaps can contain sensitive & binary data,
+        # so only log at the Metadata level.
+        - level: Metadata
+          resources:
+          - group: "" # core
+            resources: ["secrets", "configmaps"]
+        # devops installmanifests and katanomis can contains huge data and sensitive data, only log at the Metadata level.
+        - level: Metadata
+          resources:
+          - group: "operator.connectors.alauda.io"
+            resources: ["installmanifests"]
+          - group: "operators.katanomi.dev"
+            resources: ["katanomis"]
+        # Default level for known APIs
+        - level: RequestResponse
+          resources:
+          - group: "" # core
+          - group: "aiops.alauda.io"
+          - group: "apps"
+          - group: "app.k8s.io"
+          - group: "authentication.istio.io"
+          - group: "auth.alauda.io"
+          - group: "autoscaling"
+          - group: "asm.alauda.io"
+          - group: "clusterregistry.k8s.io"
+          - group: "crd.alauda.io"
+          - group: "infrastructure.alauda.io"
+          - group: "monitoring.coreos.com"
+          - group: "operators.coreos.com"
+          - group: "networking.istio.io"
+          - group: "extensions.istio.io"
+          - group: "install.istio.io"
+          - group: "security.istio.io"
+          - group: "telemetry.istio.io"
+          - group: "opentelemetry.io"
+          - group: "networking.k8s.io"
+          - group: "portal.alauda.io"
+          - group: "rbac.authorization.k8s.io"
+          - group: "storage.k8s.io"
+          - group: "tke.cloud.tencent.com"
+          - group: "devopsx.alauda.io"
+          - group: "core.katanomi.dev"
+          - group: "deliveries.katanomi.dev"
+          - group: "integrations.katanomi.dev"
+          - group: "artifacts.katanomi.dev"
+          - group: "builds.katanomi.dev"
+          - group: "versioning.katanomi.dev"
+          - group: "sources.katanomi.dev"
+          - group: "tekton.dev"
+          - group: "operator.tekton.dev"
+          - group: "eventing.knative.dev"
+          - group: "flows.knative.dev"
+          - group: "messaging.knative.dev"
+          - group: "operator.knative.dev"
+          - group: "sources.knative.dev"
+          - group: "operator.devops.alauda.io"
+          - group: "flagger.app"
+          - group: "jaegertracing.io"
+          - group: "velero.io"
+            resources: ["deletebackuprequests"]
+          - group: "connectors.alauda.io"
+          - group: "operator.connectors.alauda.io"
+            resources: ["connectorscores", "connectorsgits", "connectorsocis"]
+        # Default level for all other requests.
+        - level: Metadata
+    preKubeadmCommands:
+    - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
+    - mkdir -p /run/cluster-api && restorecon -Rv /run/cluster-api
+    postKubeadmCommands:
+    - chmod 600 /var/lib/kubelet/config.yaml
+    clusterConfiguration:
+      imageRepository: cloud.alauda.io/alauda
+      dns:
+        imageTag: <dns-image-tag>
+      etcd:
+        local:
+          imageTag: <etcd-image-tag>
+      apiServer:
+        extraArgs:
+          audit-log-format: json
+          audit-log-maxage: "30"
+          audit-log-maxbackup: "10"
+          audit-log-maxsize: "200"
+          profiling: "false"
+          audit-log-mode: batch
+          audit-log-path: /etc/kubernetes/audit/audit.log
+          audit-policy-file: /etc/kubernetes/audit/policy.yaml
+          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+          encryption-provider-config: /etc/kubernetes/encryption-provider.conf
+          admission-control-config-file: /etc/kubernetes/admission/psa-config.yaml
+          tls-min-version: VersionTLS12
+          kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
+        extraVolumes:
+        - name: vol-dir-0
+          hostPath: /etc/kubernetes
+          mountPath: /etc/kubernetes
+          pathType: Directory
+      controllerManager:
+        extraArgs:
+          bind-address: "::"
+          profiling: "false"
+          tls-min-version: VersionTLS12
+          flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+      scheduler:
+        extraArgs:
+          bind-address: "::"
+          tls-min-version: VersionTLS12
+          profiling: "false"
+    initConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+    joinConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: DCSMachineTemplate
+      name: <cp-dcs-machine-template-name>
+  replicas: 3
+  version: <control-plane-kubernetes-version>
+```
+
+#### Key Parameter Descriptions
+
+| Parameter | Type | Description | Required |
+| --- | --- | --- | --- |
+| .spec.kubeadmConfigSpec | object | kubeadm bootstrap provider startup parameters for customizing VM startup configuration (users, network, files, etc.) | Yes |
+| .spec.kubeadmConfigSpec.users | []object | User configuration | No |
+| .spec.machineTemplate.infrastructureRef | string | DCSMachineTemplate name for creating DCSMachine resources | Yes |
+| .spec.replicas | int | Control plane VM replica count (cannot exceed the configuration count in the referenced IpHostnamePool) | Yes |
+| .spec.version | string | Control plane Kubernetes version (must match VM template version) | Yes |
+
+### Configure DCSCluster
+
+DCSCluster is the infrastructure cluster declaration. Since the DCS platform currently doesn't provide a native load balancer, you need to manually configure the load balancer in advance and bind it to an IP address from the IP-hostname pool configured in the "Configure Virtual Machine IP and Hostname Pool" section.
+
+In the following example, `<dcs-cluster-name>` is the resource name:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSCluster
+metadata:
+  name: "<dcs-cluster-name>"
+  namespace: cpaas-system
+spec:
+  controlPlaneLoadBalancer: # Configure HA
+    host: <load-balancer-ip-or-domain-name>
+    port: 6443
+    type: external 
+  credentialSecretRef: # Reference authentication secret
+    name: <auth-secret-name>
+  controlPlaneEndpoint: # Cluster API specification, keep consistent with controlPlane
+    host: <load-balancer-ip-or-domain-name>
+    port: 6443
+  networkType: kube-ovn 
+  site: <site>  # DCS platform parameter, resource pool ID
+```
+
+#### Key Parameter Descriptions
+
+| Parameter | Type | Description | Required |
+| --- | --- | --- | --- |
+| .spec.controlPlaneLoadBalancer | object | Control plane API server exposure method | Yes |
+| .spec.controlPlaneLoadBalancer.type | string | Currently only supports "external" | Yes |
+| .spec.controlPlaneLoadBalancer.host | string | Load balancer IP or domain name | Yes |
+| .spec.controlPlaneLoadBalancer.port | int64 | Port number | Yes |
+| .spec.credentialSecretRef.name | string | DCS cluster authentication information (see "Configure DCS Authentication Information" section) | Yes |
+| .spec.controlPlaneEndpoint | object | API server exposure address (Cluster API specification) | No |
+| .spec.networkType | string | Currently only supports "kube-ovn" | Yes |
+| .spec.site | string | DCS platform site ID | Yes |
+
+### Configure Cluster
+
+The Cluster resource in Cluster API is used to declare a cluster and needs to reference the corresponding control plane resource and infrastructure cluster resource:
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  annotations:
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: DCSCluster
+    cpaas.io/kube-ovn-version: <kube-ovn-version>
+    cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>
+  labels:
+    cluster-type: DCS
+  name: <cluster-name>
+  namespace: cpaas-system
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+      - <pods-cidr>
+    services:
+      cidrBlocks:
+      - <services-cidr>
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: <kubeadm-control-plane-name>
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: DCSCluster
+    name: <dcs-cluster-name-for-nodes>
+```
+
+#### Key Parameter Descriptions
+
+| Parameter | Type | Description | Required |
+| --- | --- | --- | --- |
+| .spec.clusterNetwork.pods.cidrBlocks | []string | Pod CIDR | No |
+| .spec.clusterNetwork.services.cidrBlocks | []string | Service network CIDR | No |
+| .spec.controlPlaneRef | object | Control plane reference (see "Configure KubeadmControlPlane Resource" section) | Yes |
+| .spec.infrastructureRef | object | Infrastructure cluster reference (see "Configure DCSCluster Resource" section) | Yes |
+
+## Deploying Nodes
+
+Refer to the [Deploy Nodes](./node.mdx) page for instructions.
+
+## Cluster Verification
+
+After deploying all cluster resources, verify that the cluster has been created successfully and is operational.
+
+### Using the <Term name="productShort" textCase="upper" /> Console
+
+1. Navigate to the **Administrator** view in the <Term name="productShort" textCase="upper" /> console
+2. Go to **Clusters** → **Clusters**
+3. Locate your newly created cluster in the cluster list
+4. Verify that the cluster status shows as **Running**
+5. Check that all control plane and worker nodes are **Ready**
+
+### Using kubectl
+
+Alternatively, you can verify the cluster using kubectl commands:
+
+```bash
+# Check cluster status
+kubectl get cluster -n cpaas-system <cluster-name>
+
+# Verify control plane nodes
+kubectl get kubeadmcontrolplane -n cpaas-system <kcp-name>
+
+# Check machine status
+kubectl get machines -n cpaas-system
+
+# Verify cluster deployment status
+kubectl get clustermodule <cluster-name> -o jsonpath='{.status.base.deployStatus}'
+```
+
+### Expected Results
+
+A successfully created cluster should show:
+- Cluster status: **Running** or **Provisioned**
+- All control plane machines: **Running**
+- All worker nodes (if deployed): **Running**
+- Kubernetes nodes: **Ready**
+- Cluster Module Status: **Completed**
+
+
+
+

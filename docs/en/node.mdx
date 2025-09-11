@@ -2,18 +2,366 @@
 weight: 60
 ---
 
-:::tip
+# Node Management
 
-If the parent module requires a separate manual upgrade process, you should provide upgrade documentation. Otherwise, this section can be omitted.
+This document explains how to manage worker nodes using Cluster API `Machine` resources.
 
-Upgrade documentation should include the upgrade process, configuration options, and rollback procedures.
+## Prerequisites
 
-If there are significant differences in the upgrade process between versions, consider organizing the upgrade documentation into a directory with separate documents for each version (e.g., "Upgrade from 3.10", "Upgrade from 3.18").
-
-You can view an [Upgrade example](https://product-doc-guide.alauda.cn/template/upgrade/example.html) for reference.
-
+:::warning
+**Important Prerequisites**
+- The control plane must be deployed before performing node operations. See [Create Cluster](./create_cluster.mdx) for setup instructions.
+- Ensure you have proper access to the DCS platform and required permissions.
 :::
 
-# Node
+:::info
+**Configuration Guidelines**
+When working with the configurations in this document:
+- Only modify values enclosed in `<>` brackets
+- Replace placeholder values with your environment-specific settings
+- Preserve all other default configurations unless explicitly required
+:::
 
-Introduce the upgrade process for the specific module.
+## Overview
+
+Worker nodes are managed through Cluster API `Machine` resources, providing declarative and automated node lifecycle management. The deployment process involves:
+
+1. **IP-Hostname Pool Configuration** - Network settings for worker nodes
+2. **Machine Template Setup** - VM specifications
+3. **Bootstrap Configuration** - Node initialization and join settings
+4. **Machine Deployment** - Orchestration of node creation and management
+
+## Worker Node Deployment
+
+### Step 1: Configure IP-Hostname Pool
+
+The IP-Hostname Pool defines the network configuration for worker node virtual machines. You must plan and configure the IP addresses, hostnames, DNS servers, and other network parameters before deployment.
+
+:::warning
+**Pool Size Requirement**
+The pool must include at least as many entries as the number of worker nodes you plan to deploy. Insufficient entries will prevent node deployment.
+:::
+
+**Example:**
+
+Create a `DCSIpHostnamePool` named `<worker-iphostname-pool-name>`:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSIpHostnamePool
+metadata:
+  name: <worker-iphostname-pool-name>
+  namespace: cpaas-system
+spec:
+  pool:
+  - ip: "<worker-ip-1>"
+    mask: "<worker-mask>"
+    gateway: "<worker-gateway>"
+    dns: "<worker-dns>"
+    hostname: "<worker-hostname-1>"
+    machineName: "<worker-machine-name-1>"
+  - ip: "<worker-ip-2>"
+    mask: "<worker-mask>"
+    gateway: "<worker-gateway>"
+    dns: "<worker-dns>"
+    hostname: "<worker-hostname-2>"
+    machineName: "<worker-machine-name-2>"
+  - ip: "<worker-ip-3>"
+    mask: "<worker-mask>"
+    gateway: "<worker-gateway>"
+    dns: "<worker-dns>"
+    hostname: "<worker-hostname-3>"
+    machineName: "<worker-machine-name-3>"
+```
+
+**Key parameters:**
+
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----------|
+| `.spec.pool[].ip` | string | IP address for the worker virtual machine | Yes |
+| `.spec.pool[].mask` | string | Subnet mask for the network | Yes |
+| `.spec.pool[].gateway` | string | Gateway IP address | Yes |
+| `.spec.pool[].dns` | string | DNS server IP addresses (comma-separated for multiple) | No |
+| `.spec.pool[].machineName` | string | Virtual machine name in the DCS platform | No |
+| `.spec.pool[].hostname` | string | Hostname for the virtual machine | No |
+
+### Step 2: Configure Machine Template
+
+The DCSMachineTemplate defines the specifications for worker node virtual machines, including VM templates, compute resources, storage configuration, and network settings.
+
+:::warning
+**Required Disk Configurations**
+The following disk mount points are mandatory. Do not remove them:
+- System volume (`systemVolume: true`)
+- `/var/lib/kubelet` - Kubelet data directory
+- `/var/lib/containerd` - Container runtime data
+- `/var/cpaas` - Platform-specific data
+
+You may add additional disks, but these essential configurations must be preserved.
+:::
+
+**Example:**
+
+Create a `DCSMachineTemplate` named `<worker-dcs-machine-template-name>`:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSMachineTemplate
+metadata:
+  name: <worker-dcs-machine-template-name>
+  namespace: cpaas-system
+spec:
+  template:
+    spec:
+      vmTemplateName: <vm-template-name>
+      location:
+        type: folder
+        name: <folder-name>
+      resource: # Optional, if not specified, uses template defaults
+        type: cluster # cluster | host. Optional
+        name: <cluster-name> # Optional
+      vmConfig:
+        dvSwitchName: <dv-switch-name> # Optional
+        portGroupName: <port-group-name> # Optional
+        dcsMachineCpuSpec:
+          quantity: <worker-cpu>
+        dcsMachineMemorySpec: # MB
+          quantity: <worker-memory>
+        dcsMachineDiskSpec: # GB
+        - quantity: 0
+          datastoreClusterName: <datastore-cluster-name>
+          systemVolume: true
+        - quantity: 100
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/lib/kubelet
+          format: xfs
+        - quantity: 100
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/lib/containerd
+          format: xfs
+        - quantity: 100
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/cpaas
+          format: xfs
+      ipHostPoolRef:
+        name: <worker-iphostname-pool-name>
+```
+
+**Key parameters:**
+
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----------|
+| `.spec.template.spec.vmTemplateName` | string | DCS virtual machine template name | Yes |
+| `.spec.template.spec.location` | object | VM creation location (auto-selected if not specified) | No |
+| `.spec.template.spec.location.type` | string | Location type (currently supports "folder" only) | Yes* |
+| `.spec.template.spec.location.name` | string | Folder name for VM creation | Yes* |
+| `.spec.template.spec.resource` | object | Compute resource selection (auto-selected if not specified) | No |
+| `.spec.template.spec.resource.type` | string | Resource type: `cluster` or `host` | Yes* |
+| `.spec.template.spec.resource.name` | string | Compute resource name | Yes* |
+| `.spec.template.spec.vmConfig` | object | Virtual machine configuration | Yes |
+| `.spec.template.spec.vmConfig.dvSwitchName` | string | Virtual switch name (uses template default if not specified) | No |
+| `.spec.template.spec.vmConfig.portGroupName` | string | Port group name (must belong to the specified switch) | No |
+| `.spec.template.spec.vmConfig.dcsMachineCpuSpec.quantity` | int | CPU cores for worker VM | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineMemorySpec.quantity` | int | Memory size in MB | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec` | []object | Disk configuration array | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].quantity` | int | Disk size in GB (0 for system disk uses template size) | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].datastoreClusterName` | string | Datastore cluster name | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].systemVolume` | bool | System disk flag (only one disk can be true) | No |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].path` | string | Mount path (disk not mounted if omitted) | No |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].format` | string | Filesystem format (e.g., xfs, ext4) | No |
+| `.spec.template.spec.ipHostPoolRef.name` | string | Referenced DCSIpHostnamePool name | Yes |
+
+*Required when parent object is specified
+
+### Step 3: Configure Bootstrap Template
+
+The KubeadmConfigTemplate defines the bootstrap configuration for worker nodes, including user accounts, SSH keys, system files, and kubeadm join settings.
+
+:::info
+**Template Optimization**
+The template includes pre-optimized configurations for security and performance. Modify only the parameters that require customization for your environment.
+:::
+
+**Example:**
+
+```yaml
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+kind: KubeadmConfigTemplate
+metadata:
+  name: <worker-kubeadm-config-template>
+  namespace: cpaas-system
+spec:
+  template:
+    spec:
+      format: ignition
+      users:
+      - name: boot
+        sshAuthorizedKeys:
+        - "<ssh-authorized-keys>"
+      files:
+      - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+        owner: "root:root"
+        permissions: "0644"
+        content: |
+          {
+            "apiVersion": "kubelet.config.k8s.io/v1beta1",
+            "kind": "KubeletConfiguration",
+            "protectKernelDefaults": true,
+            "staticPodPath": null,
+            "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+            "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key",
+            "streamingConnectionIdleTimeout": "5m",
+            "clientCAFile": "/etc/kubernetes/pki/ca.crt"
+          }
+      preKubeadmCommands:
+      - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
+      - mkdir -p /run/cluster-api && restorecon -Rv /run/cluster-api
+      postKubeadmCommands:
+      - chmod 600 /var/lib/kubelet/config.yaml
+      joinConfiguration:
+        patches:
+          directory: /etc/kubernetes/patches
+        nodeRegistration:
+          kubeletExtraArgs:
+            provider-id: PROVIDER_ID
+            volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+```
+
+### Step 4: Configure Machine Deployment
+
+The MachineDeployment orchestrates the creation and management of worker nodes by referencing the previously configured DCSMachineTemplate and KubeadmConfigTemplate resources. It manages the desired number of nodes and handles rolling updates.
+
+**Example:**
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: <worker-machine-deployment-name>
+  namespace: cpaas-system
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  clusterName: <cluster-name>
+  replicas: 3
+  selector:
+    matchLabels: null
+  template:
+    spec:
+      nodeDrainTimeout: 1m
+      nodeDeletionTimeout: 5m
+      bootstrap:
+        configRef:
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          kind: KubeadmConfigTemplate
+          name: <worker-kubeadm-config-template-name>
+          namespace: cpaas-system
+      clusterName: <cluster-name>
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: DCSMachineTemplate
+        name: <worker-dcs-machine-template-name>
+        namespace: cpaas-system
+      version: <worker-kubernetes-version>
+```
+
+**Key parameters:**
+
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----------|
+| `.spec.clusterName` | string | Target cluster name for node deployment | Yes |
+| `.spec.replicas` | int | Number of worker nodes (must not exceed IP pool size) | Yes |
+| `.spec.template.spec.bootstrap.configRef` | object | Reference to KubeadmConfigTemplate | Yes |
+| `.spec.template.spec.infrastructureRef` | object | Reference to DCSMachineTemplate | Yes |
+| `.spec.template.spec.version` | string | Kubernetes version (must match VM template) | Yes |
+| `.spec.strategy.rollingUpdate.maxSurge` | int | Maximum nodes above desired during update | No |
+| `.spec.strategy.rollingUpdate.maxUnavailable` | int | Maximum unavailable nodes during update | No |
+
+## Node Management Operations
+
+This section covers common operational tasks for managing worker nodes, including updates, upgrades, and template modifications.
+
+:::info
+**Cluster API Framework**
+Node management operations are based on the Cluster API framework. For detailed information, refer to the [official Cluster API documentation](https://cluster-api.sigs.k8s.io/tasks/updating-machine-templates#updating-machine-infrastructure-and-bootstrap-templates).
+:::
+
+### Upgrading Machine Infrastructure
+
+To upgrade worker machine specifications (CPU, memory, disk, VM template), follow these steps:
+
+1. **Create New Machine Template**
+   - Copy the existing `DCSMachineTemplate` referenced by your `MachineDeployment`
+   - Modify the required values (CPU, memory, disk, VM template, etc.)
+   - Give the new template a unique name
+   - Apply the new `DCSMachineTemplate` to the cluster
+
+2. **Update Machine Deployment**
+   - Modify the `MachineDeployment` resource
+   - Update the `spec.template.spec.infrastructureRef.name` field to reference the new template
+   - Apply the changes
+
+3. **Rolling Update**
+   - The system will automatically trigger a rolling update
+   - Worker nodes will be replaced with the new specifications
+   - Monitor the update progress through the MachineDeployment status
+
+### Updating Bootstrap Templates
+
+Bootstrap templates (KubeadmConfigTemplate) are used by MachineDeployment and MachineSet resources. Changes to existing templates do not automatically trigger rollouts of existing machines; only new machines use the updated template.
+
+**Update Process:**
+
+1. **Export Existing Template**
+   ```bash
+   kubectl get KubeadmConfigTemplate <template-name> -o yaml > new-template.yaml
+   ```
+
+2. **Modify Configuration**
+   - Update the desired fields in the exported YAML
+   - Change the `metadata.name` to a new unique name
+   - Remove extraneous metadata fields (`resourceVersion`, `uid`, `creationTimestamp`, etc.)
+
+3. **Create New Template**
+   ```bash
+   kubectl apply -f new-template.yaml
+   ```
+
+4. **Update MachineDeployment**
+   - Modify the MachineDeployment resource
+   - Update `spec.template.spec.bootstrap.configRef.name` to reference the new template
+   - Apply the changes to trigger a rolling update
+
+:::warning
+**Template Rollout Behavior**
+Existing machines continue using the old bootstrap configuration. Only newly created machines (during scaling or rolling updates) will use the updated template.
+:::
+
+### Upgrading Kubernetes Version
+
+Kubernetes version upgrades require coordinated updates to both the MachineDeployment and the underlying VM template to ensure compatibility.
+
+**Upgrade Process:**
+
+1. **Update Machine Template**
+   - Create a new `DCSMachineTemplate` with an updated `vmTemplateName` that supports the target Kubernetes version
+   - Ensure the VM template includes the correct Kubernetes binaries and dependencies
+
+2. **Update MachineDeployment**
+   - Modify the `MachineDeployment` resource with the following changes:
+     - Update `spec.template.spec.version` to the target Kubernetes version
+     - Update `spec.template.spec.infrastructureRef.name` to reference the new machine template
+     - Optionally update `spec.template.spec.bootstrap.configRef.name` if bootstrap configuration changes are needed
+
+3. **Monitor Upgrade**
+   - The system will perform a rolling upgrade of worker nodes
+   - Verify that new nodes join the cluster with the correct Kubernetes version
+   - Monitor cluster health throughout the upgrade process
+
+:::warning
+**Version Compatibility**
+Ensure the VM template's Kubernetes version matches the version specified in the MachineDeployment. Mismatched versions will cause node join failures.
+:::

@@ -2,18 +2,132 @@
 weight: 50
 ---
 
-:::tip
+# Cluster Upgrades
 
-If the parent module requires a separate manual upgrade process, you should provide upgrade documentation. Otherwise, this section can be omitted.
+This guide explains how to upgrade Kubernetes clusters managed by Cluster API with minimal downtime, while preserving stability and data integrity.
 
-Upgrade documentation should include the upgrade process, configuration options, and rollback procedures.
+## Overview
 
-If there are significant differences in the upgrade process between versions, consider organizing the upgrade documentation into a directory with separate documents for each version (e.g., "Upgrade from 3.10", "Upgrade from 3.18").
+Cluster upgrades encompass multiple components and follow a structured approach to ensure system reliability:
 
-You can view an [Upgrade example](https://product-doc-guide.alauda.cn/template/upgrade/example.html) for reference.
+- **Control Plane Upgrades**: Update Kubernetes control plane components and underlying infrastructure
+- **Worker Node Upgrades**: Upgrade worker nodes with new machine images and Kubernetes versions
+- **Infrastructure Updates**: Modify virtual machine specifications, storage, and network configurations
 
+Cluster API orchestrates declarative rolling updates with built-in safety mechanisms.
+
+:::info
+**Prerequisites**
+
+Before you start, ensure:
+- The control plane is reachable
+- All nodes are healthy (Ready)
+
+For initial deployment, see the [Create Cluster](./create_cluster.mdx) guide.
 :::
 
-# Upgrading Clusters
 
-Introduce the upgrade process for the specific module.
+
+## Control Plane Upgrades
+
+Control plane upgrades update the Kubernetes API server, etcd, scheduler, and controller manager, along with the underlying VM infrastructure.
+
+### Infrastructure Image Updates
+
+Upgrading the underlying machine images for control plane nodes provides security patches, performance improvements, and updated system components.
+
+#### Procedure
+
+1. **Create Updated Machine Template**
+   
+   Copy the existing `DCSMachineTemplate` referenced by `KubeadmControlPlane` and modify the required specifications:
+
+   ```bash
+   kubectl get dcsmachinetemplate <current-template-name> -n cpaas-system -o yaml > new-cp-template.yaml
+   ```
+
+2. **Modify Template Specifications**
+
+   Modify the new template:
+   - Set `metadata.name` to `<new-template-name>`
+   - Update as needed:
+     - `spec.template.spec.vmTemplateName`
+     - `spec.template.spec.dcsMachineCpuSpec.quantity`
+     - `spec.template.spec.dcsMachineMemorySpec.quantity`
+     - `spec.template.spec.dcsMachineDiskSpec`
+     - etc
+
+3. **Deploy Updated Template**
+   
+   Apply the new machine template:
+
+   ```bash
+   kubectl apply -f new-cp-template.yaml -n cpaas-system
+   ```
+
+4. **Update Control Plane Reference**
+   
+   Modify the `KubeadmControlPlane` resource to reference the new template:
+
+   ```bash
+   kubectl patch kubeadmcontrolplane <kcp-name> -n cpaas-system --type='merge' -p='{"spec":{"machineTemplate":{"infrastructureRef":{"name":"<new-template-name>"}}}}'
+   ```
+
+5. **Monitor Rolling Update**
+   
+   The control plane will automatically perform a rolling update:
+
+   ```bash
+   kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system -w
+   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/control-plane
+   ```
+
+### Kubernetes Version Upgrades
+
+Upgrading the Kubernetes version involves updating both the control plane software and the supporting virtual machine images.
+
+#### Prerequisites
+
+- Verify compatibility between the target Kubernetes version and existing workloads
+- Ensure the VM template supports the target Kubernetes version
+- Review the Kubernetes upgrade path and version skew policy
+
+#### Procedure
+
+1. **Update VM Template Reference**
+   
+   Update `spec.template.spec.vmTemplateName` in the referenced `DCSMachineTemplate`. The new VM template must match the target Kubernetes version.
+
+2. **Update Control Plane Version**
+   
+   Modify the `spec.version` field in the `KubeadmControlPlane` resource (required). Optionally adjust related fields as needed (for example, rollout strategy, drain/deletion timeouts, or the referenced infrastructure template) to align with the new version and upgrade policy
+
+3. **Verify Upgrade Progress**
+   
+   Monitor the rolling upgrade process:
+
+   ```bash
+   # Check control plane status
+   kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system
+   
+   # Monitor individual machines
+   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/control-plane
+   
+   # Verify cluster health
+   kubectl get nodes
+   ```
+
+## Worker Node Upgrades
+
+Worker node upgrades are managed via `MachineDeployment` resources.
+
+:::info
+For detailed worker node procedures, see the [Upgrading Kubernetes Version](./node.mdx#upgrading-kubernetes-version) section.
+:::
+
+## Additional Resources
+
+- [Cluster API Upgrade Documentation](https://cluster-api.sigs.k8s.io/tasks/upgrading-clusters)
+- [Kubernetes Version Skew Policy](https://kubernetes.io/docs/setup/release/version-skew-policy/)
+
+
