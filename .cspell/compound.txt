@@ -1,0 +1,4 @@
+dcsclusters
+dcsiphostnamepools
+dcsmachines
+dcsmachinetemplates
