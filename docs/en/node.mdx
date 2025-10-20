@@ -216,6 +216,7 @@ spec:
       preKubeadmCommands:
       - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
       - mkdir -p /run/cluster-api && restorecon -Rv /run/cluster-api
+      - if [ -f /etc/disk-setup.sh ]; then bash /etc/disk-setup.sh; fi
       postKubeadmCommands:
       - chmod 600 /var/lib/kubelet/config.yaml
       joinConfiguration:
