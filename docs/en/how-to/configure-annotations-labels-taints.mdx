@@ -20,6 +20,7 @@ This guide shows how to configure each and how to verify they are applied on bot
 ## Prerequisites
 
 - Permissions to edit the `capi-controller-manager` deployment and cluster API resources
+- <Term name="product" textCase="capitalize" /> version 4.2.0 or later
 
 ---
 
@@ -50,43 +51,43 @@ Replace the comma-separated list with the labels you want to sync.
 - For workload nodes (`MachineDeployment`): set labels on `.spec.template.metadata.labels`.
 - For control plane nodes (`KubeadmControlPlane`): set labels on `.spec.machineTemplate.metadata.labels`.
 
-```yaml
----
-apiVersion: cluster.x-k8s.io/v1beta1
-kind: MachineDeployment
-metadata:
-  name: <md-name>
-  namespace: <namespace>
-spec:
-  clusterName: <cluster-name>
-  template:
-    metadata:
-      labels:
-        env: prod
-        role: app
-        topology.kubernetes.io/zone: az1
-    spec: {}
-```
+  ```yaml
+  ---
+  apiVersion: cluster.x-k8s.io/v1beta1
+  kind: MachineDeployment
+  metadata:
+    name: <md-name>
+    namespace: <namespace>
+  spec:
+    clusterName: <cluster-name>
+    template:
+      metadata:
+        labels:
+          env: prod
+          role: app
+          topology.kubernetes.io/zone: az1
+      spec: {}
+  ```
 
-```yaml
----
-apiVersion: controlplane.cluster.x-k8s.io/v1beta1
-kind: KubeadmControlPlane
-metadata:
-  name: <kcp-name>
-  namespace: <namespace>
-spec:
-  version: <k8s-version>
-  clusterName: <cluster-name>
-  machineTemplate:
-    metadata:
-      labels:
-        env: prod
-        role: control-plane
-        topology.kubernetes.io/zone: az1
-    spec: {}
-  kubeadmConfigSpec: {}
-```
+  ```yaml
+  ---
+  apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+  kind: KubeadmControlPlane
+  metadata:
+    name: <kcp-name>
+    namespace: <namespace>
+  spec:
+    version: <k8s-version>
+    clusterName: <cluster-name>
+    machineTemplate:
+      metadata:
+        labels:
+          env: prod
+          role: control-plane
+          topology.kubernetes.io/zone: az1
+      spec: {}
+    kubeadmConfigSpec: {}
+  ```
 
 ### Verify
 
@@ -128,41 +129,41 @@ Replace the comma-separated list with the annotations you want to sync.
 - For workload nodes (`MachineDeployment`): set annotations on `.spec.template.metadata.annotations`.
 - For control plane nodes (`KubeadmControlPlane`): set annotations on `.spec.machineTemplate.metadata.annotations`.
 
-```yaml
----
-apiVersion: cluster.x-k8s.io/v1beta1
-kind: MachineDeployment
-metadata:
-  name: <md-name>
-  namespace: <namespace>
-spec:
-  clusterName: <cluster-name>
-  template:
-    metadata:
-      annotations:
-        example.com/owner: team-a
-        example.com/runtime: containerd
-    spec: {}
-```
+  ```yaml
+  ---
+  apiVersion: cluster.x-k8s.io/v1beta1
+  kind: MachineDeployment
+  metadata:
+    name: <md-name>
+    namespace: <namespace>
+  spec:
+    clusterName: <cluster-name>
+    template:
+      metadata:
+        annotations:
+          example.com/owner: team-a
+          example.com/runtime: containerd
+      spec: {}
+  ```
 
-```yaml
----
-apiVersion: controlplane.cluster.x-k8s.io/v1beta1
-kind: KubeadmControlPlane
-metadata:
-  name: <kcp-name>
-  namespace: <namespace>
-spec:
-  version: <k8s-version>
-  clusterName: <cluster-name>
-  machineTemplate:
-    metadata:
-      annotations:
-        example.com/owner: platform
-        example.com/runtime: containerd
-    spec: {}
-  kubeadmConfigSpec: {}
-```
+  ```yaml
+  ---
+  apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+  kind: KubeadmControlPlane
+  metadata:
+    name: <kcp-name>
+    namespace: <namespace>
+  spec:
+    version: <k8s-version>
+    clusterName: <cluster-name>
+    machineTemplate:
+      metadata:
+        annotations:
+          example.com/owner: platform
+          example.com/runtime: containerd
+      spec: {}
+    kubeadmConfigSpec: {}
+  ```
 
 ### Verify
 
@@ -184,42 +185,42 @@ Taints are configured directly on Machine templates so they are applied to the N
 - For workload nodes (`MachineDeployment`): set taints on `.spec.template.taints`.
 - For control plane nodes (`KubeadmControlPlane`): set taints on `.spec.machineTemplate.taints`.
 
-```yaml
----
-apiVersion: cluster.x-k8s.io/v1beta1
-kind: MachineDeployment
-metadata:
-  name: <md-name>
-  namespace: <namespace>
-spec:
-  clusterName: <cluster-name>
-  template:
-    metadata: {}
-    taints:
-    - key: dedicated
-      value: db
-      effect: NoSchedule
-    spec: {}
-```
+  ```yaml
+  ---
+  apiVersion: cluster.x-k8s.io/v1beta1
+  kind: MachineDeployment
+  metadata:
+    name: <md-name>
+    namespace: <namespace>
+  spec:
+    clusterName: <cluster-name>
+    template:
+      metadata: {}
+      taints:
+      - key: dedicated
+        value: db
+        effect: NoSchedule
+      spec: {}
+  ```
 
-```yaml
----
-apiVersion: controlplane.cluster.x-k8s.io/v1beta1
-kind: KubeadmControlPlane
-metadata:
-  name: <kcp-name>
-  namespace: <namespace>
-spec:
-  version: <k8s-version>
-  clusterName: <cluster-name>
-  machineTemplate:
-    metadata: {}
-    taints:
-    - key: custom-taint-key
-      effect: NoSchedule
-    spec: {}
-  kubeadmConfigSpec: {}
-```
+  ```yaml
+  ---
+  apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+  kind: KubeadmControlPlane
+  metadata:
+    name: <kcp-name>
+    namespace: <namespace>
+  spec:
+    version: <k8s-version>
+    clusterName: <cluster-name>
+    machineTemplate:
+      metadata: {}
+      taints:
+      - key: custom-taint-key
+        effect: NoSchedule
+      spec: {}
+    kubeadmConfigSpec: {}
+  ```
 
 ### Verify
 
