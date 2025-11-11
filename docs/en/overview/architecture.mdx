@@ -74,3 +74,8 @@ The chosen **Infrastructure Provider** (our custom provider such as DCS) manages
 
 - **Native Resource Management**: Direct integration with the provider's APIs
 - **Resource Optimization**: Efficient resource allocation and placement per provider capabilities
+
+
+:::warning
+Upgrades rely on Cluster API's rolling update mechanism. During a rolling update, any previously attached disks are removed and replaced with new disks on newly created machines. Ensure that no cluster functionality or workloads depend on data stored on the original disks.
+:::
