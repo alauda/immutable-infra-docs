@@ -182,7 +182,7 @@ kubectl get node -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.
 
 Taints are configured directly on Machine templates so they are applied to the Node during registration.
 
-- For workload nodes (`MachineDeployment`): set taints on `.spec.template.taints`.
+- For workload nodes (`MachineDeployment`): set taints on `.spec.template.spec.taints`.
 - For control plane nodes (`KubeadmControlPlane`): set taints on `.spec.machineTemplate.taints`.
 
   ```yaml
@@ -196,11 +196,11 @@ Taints are configured directly on Machine templates so they are applied to the N
     clusterName: <cluster-name>
     template:
       metadata: {}
-      taints:
-      - key: dedicated
-        value: db
-        effect: NoSchedule
-      spec: {}
+      spec:
+        taints:
+        - key: dedicated
+          value: db
+          effect: NoSchedule
   ```
 
   ```yaml
