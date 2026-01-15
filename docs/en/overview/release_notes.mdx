@@ -4,6 +4,18 @@ weight: 50
 
 # Release Notes
 
+## 2026-01-15
+
+### Component Version
+- Alauda Container Platform DCS Infrastructure Provider: v1.0.8
+- Alauda Container Platform Kubeadm Provider: v1.0.6
+
+### Changes
+- The system now automatically generates encryption configurations for clusters. After etcd key rotation, no manual intervention is required during control plane upgrades.
+- Added support for configuring multiple network interface cards (NICs) on virtual machines.
+- Supports configuring node labels, annotations, and taints through the MachineDeployment and KubeadmControlPlane resources (available in <Term name="product" textCase="capitalize" /> 4.2.0 and above).
+- Resolved various security issues.
+
 ## Initial Release
 
 ### Features and Enhancements
