@@ -384,59 +384,138 @@ When scaling up, new nodes are created immediately without affecting existing no
 
 #### Removing Worker Nodes
 
-Decrease the number of worker nodes to reduce cluster capacity or remove underutilized resources.
+Decrease the number of worker nodes to reduce cluster capacity or remove underutilized resources. The Cluster API supports two removal strategies:
 
-**Use Case**: Scale down cluster to reduce costs or adjust to reduced workload
+1. **Random removal**: Reduce replicas, the platform randomly selects and deletes machines
+2. **Targeted removal**: Mark specific machines for deletion, then reduce replicas (recommended for IP recovery)
+
+:::info
+**IP Recovery Scenario**
+When you need to recycle specific machine IPs (e.g., for reassignment or IP pool management), use the targeted removal method. The deletion annotation ensures the platform deletes the marked machines, not random ones.
+:::
+
+##### Random Removal
+
+**Use Case**: Scale down cluster where any node can be removed (no specific IP requirements)
 
 **Procedure**:
 
-1. **Identify Nodes to Remove**
+1. **Identify Current Machine Status**
 
-   View the current machines in the MachineDeployment:
+    View the current machines in the MachineDeployment:
 
-   ```bash
-   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment-name>
-   ```
+    ```bash
+    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment-name>
+    ```
 
 2. **Scale Down the MachineDeployment**
 
-   Update the `replicas` field to reduce the node count:
+    Update the `replicas` field to reduce the node count:
 
-   ```bash
-   kubectl patch machinedeployment <worker-machine-deployment-name> -n cpaas-system \
-     --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
-   ```
+    ```bash
+    kubectl patch machinedeployment <worker-machine-deployment-name> -n cpaas-system \
+      --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
+    ```
 
-   **Example**: Scale from 5 to 3 nodes
+    **Example**: Scale from 5 to 3 nodes
 
-   ```bash
-   kubectl patch machinedeployment worker-pool-1 -n cpaas-system \
-     --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": 3}]'
-   ```
+    ```bash
+    kubectl patch machinedeployment worker-pool-1 -n cpaas-system \
+      --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": 3}]'
+    ```
+
+    The Cluster API controller will randomly select and delete machines to match the desired replica count.
 
 3. **Monitor the Removal Progress**
 
-   Watch the machine deletion process:
+    Watch the machine deletion process:
 
-   ```bash
-   kubectl get machines -n cpaas-system -w
-   ```
+    ```bash
+    kubectl get machines -n cpaas-system -w
+    ```
 
-   The Cluster API controller will:
-   - Drain the selected nodes (evict pods if possible)
-   - Delete the underlying VMs from the DCS platform
-   - Remove the machine resources
+    The Cluster API controller will:
+    - Drain the selected nodes (evict pods if possible)
+    - Delete the underlying VMs from the DCS platform
+    - Remove the machine resources
 
 4. **Verify Nodes Removed**
 
-   Switch to the target cluster context:
+    Switch to the target cluster context:
 
-   ```bash
-   kubectl config use-context <target-cluster-context>
-   kubectl get nodes
-   ```
+    ```bash
+    kubectl config use-context <target-cluster-context>
+    kubectl get nodes
+    ```
 
-   The removed nodes should no longer appear in the list.
+    The removed nodes should no longer appear in the list.
+
+##### Targeted Removal
+
+**Use Case**: Remove specific machines (e.g., for IP recovery, replace unhealthy nodes)
+
+**Procedure**:
+
+1. **Identify Machines to Remove**
+
+    View the current machines:
+
+    ```bash
+    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment-name>
+    ```
+
+    Note the `<machine-name>` of the machines you want to remove.
+
+2. **Annotate Machines for Deletion**
+
+    Mark the specific machines for deletion:
+
+    ```bash
+    kubectl patch machine <machine-name> -n cpaas-system \
+      --type='merge' -p='{"metadata": {"annotations": {"cluster.x-k8s.io/delete-machine": "true"}}}'
+    ```
+
+    Repeat for each machine you want to remove.
+
+    **Example**: Remove two specific machines
+
+    ```bash
+    kubectl patch machine worker-pool-1-abc123 -n cpaas-system \
+      --type='merge' -p='{"metadata": {"annotations": {"cluster.x-k8s.io/delete-machine": "true"}}}'
+
+    kubectl patch machine worker-pool-1-def456 -n cpaas-system \
+      --type='merge' -p='{"metadata": {"annotations": {"cluster.x-k8s.io/delete-machine": "true"}}}'
+    ```
+
+3. **Scale Down the MachineDeployment**
+
+    After annotating the machines, reduce the replica count:
+
+    ```bash
+    kubectl patch machinedeployment <worker-machine-deployment-name> -n cpaas-system \
+      --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
+    ```
+
+    The platform will delete the **annotated** machines, not randomly selected ones.
+
+4. **Monitor the Removal Progress**
+
+    Watch the machine deletion process:
+
+    ```bash
+    kubectl get machines -n cpaas-system -w
+    ```
+
+5. **Verify Nodes Removed**
+
+    Switch to the target cluster context:
+
+    ```bash
+    kubectl config use-context <target-cluster-context>
+    kubectl get nodes
+    ```
+
+    The removed nodes should no longer appear in the list.
 
 :::warning
 **Data Loss Warning**
@@ -444,63 +523,6 @@ Scaling down removes nodes and their associated disks. Ensure:
 - Workloads can tolerate node loss through proper replication
 - No critical data is stored only on the nodes being removed
 - Applications are designed for horizontal scaling
-:::
-
-#### Deleting Specific Nodes
-
-Remove a specific unhealthy or problematic node while maintaining the replica count.
-
-**Use Case**: Replace a single unhealthy node without scaling the entire deployment
-
-**Procedure**:
-
-1. **Identify the Unhealthy Machine**
-
-   Find the machine corresponding to the unhealthy node:
-
-   ```bash
-   # List all machines
-   kubectl get machines -n cpaas-system
-
-   # Check machine status
-   kubectl get machine <machine-name> -n cpaas-system -o yaml
-   ```
-
-2. **Annotate the Machine for Deletion**
-
-   Mark the machine for deletion:
-
-   ```bash
-   kubectl patch machine <machine-name> -n cpaas-system \
-     --type='merge' -p='{"metadata": {"annotations": {"cluster.x-k8s.io/delete-machine": "true"}}}'
-   ```
-
-3. **Wait for Machine Replacement**
-
-   The Cluster API controller will:
-   - Delete the annotated machine
-   - Create a new machine to maintain the desired replica count
-   - The new machine will automatically join the cluster
-
-4. **Monitor the Replacement**
-
-   ```bash
-   # Watch machine status
-   kubectl get machines -n cpaas-system -w
-   ```
-
-5. **Verify Node Replacement**
-
-   ```bash
-   kubectl config use-context <target-cluster-context>
-   kubectl get nodes
-   ```
-
-   The new node should appear and transition to `Ready` status.
-
-:::info
-**Automatic Replacement**
-If you only annotate a machine for deletion without changing the replica count, the MachineDeployment automatically creates a replacement machine to maintain the desired state.
 :::
 
 ### Upgrading Machine Infrastructure
