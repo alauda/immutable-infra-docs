@@ -283,12 +283,374 @@ spec:
 
 ## Node Management Operations
 
-This section covers common operational tasks for managing worker nodes, including updates, upgrades, and template modifications.
+This section covers common operational tasks for managing worker nodes, including scaling, updates, upgrades, and template modifications.
 
 :::info
 **Cluster API Framework**
 Node management operations are based on the Cluster API framework. For detailed information, refer to the [official Cluster API documentation](https://cluster-api.sigs.k8s.io/tasks/updating-machine-templates#updating-machine-infrastructure-and-bootstrap-templates).
 :::
+
+### Scaling Worker Nodes
+
+Worker node scaling allows you to adjust cluster capacity based on workload demands. The Cluster API manages the node lifecycle automatically through the MachineDeployment resource.
+
+#### Adding Worker Nodes
+
+Increase the number of worker nodes to handle increased workload or add new capacity.
+
+**Use Case**: Scale up cluster to add more compute resources
+
+**Prerequisites**:
+- Verify the IP pool has sufficient available IP addresses for new nodes
+- Ensure the DCS platform has adequate resources to provision new VMs
+
+**Procedure**:
+
+1. **Check Current Node Status**
+
+   View the current machines in the cluster:
+
+   ```bash
+   # List all machines in the cluster
+   kubectl get machines -n cpaas-system
+
+   # List machines for a specific MachineDeployment
+   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment-name>
+   ```
+
+2. **Extend IP Pool**
+
+   Before scaling up, add new IP configurations to the pool for the additional nodes.
+
+   :::info
+   **IP Pool Expansion**
+   The IP pool must contain at least as many entries as the desired replica count. Add new IP entries for each additional worker node you plan to deploy.
+   :::
+
+   **Add IP entries to the pool:**
+
+   First, export the current pool configuration to preserve existing entries:
+
+   ```bash
+   kubectl get dcsiphostnamepool <worker-iphostname-pool-name> -n cpaas-system -o yaml
+   ```
+
+   Then use the following command to add new IP configurations. The `pool` array must include **all existing entries** plus the new entries:
+
+   ```bash
+   kubectl patch dcsiphostnamepool <worker-iphostname-pool-name> -n cpaas-system \
+     --type='merge' -p='
+   {
+     "spec": {
+       "pool": [
+         {
+           "ip": "<existing-ip-1>",
+           "mask": "<worker-mask>",
+           "gateway": "<worker-gateway>",
+           "dns": "<worker-dns>",
+           "hostname": "<existing-hostname-1>",
+           "machineName": "<existing-machine-name-1>"
+         },
+         {
+           "ip": "<existing-ip-2>",
+           "mask": "<worker-mask>",
+           "gateway": "<worker-gateway>",
+           "dns": "<worker-dns>",
+           "hostname": "<existing-hostname-2>",
+           "machineName": "<existing-machine-name-2>"
+         },
+         {
+           "ip": "<new-worker-ip-1>",
+           "mask": "<worker-mask>",
+           "gateway": "<worker-gateway>",
+           "dns": "<worker-dns>",
+           "hostname": "<new-worker-hostname-1>",
+           "machineName": "<new-worker-machine-name-1>"
+         },
+         {
+           "ip": "<new-worker-ip-2>",
+           "mask": "<worker-mask>",
+           "gateway": "<worker-gateway>",
+           "dns": "<worker-dns>",
+           "hostname": "<new-worker-hostname-2>",
+           "machineName": "<new-worker-machine-name-2>"
+         }
+       ]
+     }'
+   ```
+
+   :::warning
+   **Important Notes**
+   - The `pool` array must include **all existing entries** plus the new entries you want to add
+   - Copy the existing entries from the exported YAML to avoid data loss
+   - Ensure each new entry has unique `ip`, `hostname`, and `machineName` values
+   - Network parameters (`mask`, `gateway`, `dns`) typically match existing entries
+   :::
+
+   **Example**: Adding 2 new nodes to an existing pool of 3 nodes
+
+   ```bash
+   # Current pool has 3 entries (10.0.1.11, 10.0.1.12, 10.0.1.13)
+   # Adding 2 more entries for nodes 4 and 5
+   kubectl patch dcsiphostnamepool worker-pool-1-ippool -n cpaas-system \
+     --type='merge' -p='
+   {
+     "spec": {
+       "pool": [
+         {
+           "ip": "10.0.1.11",
+           "mask": "255.255.255.0",
+           "gateway": "10.0.1.1",
+           "dns": "10.0.0.2",
+           "hostname": "worker-node-1",
+           "machineName": "worker-vm-1"
+         },
+         {
+           "ip": "10.0.1.12",
+           "mask": "255.255.255.0",
+           "gateway": "10.0.1.1",
+           "dns": "10.0.0.2",
+           "hostname": "worker-node-2",
+           "machineName": "worker-vm-2"
+         },
+         {
+           "ip": "10.0.1.13",
+           "mask": "255.255.255.0",
+           "gateway": "10.0.1.1",
+           "dns": "10.0.0.2",
+           "hostname": "worker-node-3",
+           "machineName": "worker-vm-3"
+         },
+         {
+           "ip": "10.0.1.14",
+           "mask": "255.255.255.0",
+           "gateway": "10.0.1.1",
+           "dns": "10.0.0.2",
+           "hostname": "worker-node-4",
+           "machineName": "worker-vm-4"
+         },
+         {
+           "ip": "10.0.1.15",
+           "mask": "255.255.255.0",
+           "gateway": "10.0.1.1",
+           "dns": "10.0.0.2",
+           "hostname": "worker-node-5",
+           "machineName": "worker-vm-5"
+         }
+       ]
+     }'
+   ```
+
+3. **Verify IP Pool Capacity**
+
+   After extending the IP pool, verify it has sufficient entries for the desired replica count:
+
+   ```bash
+   kubectl get dcsiphostnamepool -n cpaas-system <worker-iphostname-pool-name> -o yaml
+   ```
+
+   Check that the pool contains at least as many entries as the desired replica count.
+
+4. **Scale Up the MachineDeployment**
+
+   Update the `replicas` field to the desired number of nodes:
+
+   ```bash
+   kubectl patch machinedeployment <worker-machine-deployment-name> -n cpaas-system \
+     --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
+   ```
+
+   **Example**: Scale from 3 to 5 nodes
+
+   ```bash
+   kubectl patch machinedeployment worker-pool-1 -n cpaas-system \
+     --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": 5}]'
+   ```
+
+5. **Monitor the Scaling Progress**
+
+   Watch the machine creation process:
+
+   ```bash
+   # Watch machines being created
+   kubectl get machines -n cpaas-system -w
+
+   # Check MachineDeployment status
+   kubectl get machinedeployment <worker-machine-deployment-name> -n cpaas-system
+   ```
+
+   The Cluster API controller will automatically create new machines based on the MachineDeployment template.
+
+6. **Verify Nodes Joined the Cluster**
+
+   Switch to the target cluster context and verify the new nodes:
+
+   ```bash
+   # Switch to target cluster context
+   kubectl config use-context <target-cluster-context>
+
+   # Check all nodes are Ready
+   kubectl get nodes
+   ```
+
+   The new nodes should appear in the list and transition to `Ready` status.
+
+:::info
+**Rolling Update Behavior**
+When scaling up, new nodes are created immediately without affecting existing nodes. This ensures zero-downtime scaling.
+:::
+
+#### Removing Worker Nodes
+
+Decrease the number of worker nodes to reduce cluster capacity or remove underutilized resources. The Cluster API supports two removal strategies:
+
+1. **Random removal**: Reduce replicas, the platform randomly selects and deletes machines
+2. **Targeted removal**: Mark specific machines for deletion, then reduce replicas (recommended for IP recovery)
+
+:::info
+**IP Recovery Scenario**
+When you need to recycle specific machine IPs (e.g., for reassignment or IP pool management), use the targeted removal method. The deletion annotation ensures the platform deletes the marked machines, not random ones.
+:::
+
+:::warning
+**Data Loss Warning**
+Scaling down removes nodes and their associated disks. Ensure:
+- Workloads can tolerate node loss through proper replication
+- No critical data is stored only on the nodes being removed
+- Applications are designed for horizontal scaling
+:::
+
+##### Random Removal
+
+**Use Case**: Scale down cluster where any node can be removed (no specific IP requirements)
+
+**Procedure**:
+
+1. **Identify Current Machine Status**
+
+    View the current machines in the MachineDeployment:
+
+    ```bash
+    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment-name>
+    ```
+
+2. **Scale Down the MachineDeployment**
+
+    Update the `replicas` field to reduce the node count:
+
+    ```bash
+    kubectl patch machinedeployment <worker-machine-deployment-name> -n cpaas-system \
+      --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
+    ```
+
+    **Example**: Scale from 5 to 3 nodes
+
+    ```bash
+    kubectl patch machinedeployment worker-pool-1 -n cpaas-system \
+      --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": 3}]'
+    ```
+
+    The Cluster API controller will randomly select and delete machines to match the desired replica count.
+
+3. **Monitor the Removal Progress**
+
+    Watch the machine deletion process:
+
+    ```bash
+    kubectl get machines -n cpaas-system -w
+    ```
+
+    The Cluster API controller will:
+    - Drain the selected nodes (evict pods if possible)
+    - Delete the underlying VMs from the DCS platform
+    - Remove the machine resources
+
+4. **Verify Nodes Removed**
+
+    Switch to the target cluster context:
+
+    ```bash
+    kubectl config use-context <target-cluster-context>
+    kubectl get nodes
+    ```
+
+    The removed nodes should no longer appear in the list.
+
+##### Targeted Removal
+
+**Use Case**: Remove specific machines (e.g., for IP recovery, replace unhealthy nodes)
+
+**Procedure**:
+
+1. **Identify Machines to Remove**
+
+    View the current machines:
+
+    ```bash
+    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment-name>
+    ```
+
+    Note the `<machine-name>` of the machines you want to remove.
+
+2. **Annotate Machines for Deletion**
+
+    Mark the specific machines for deletion:
+
+    ```bash
+    kubectl patch machine <machine-name> -n cpaas-system \
+      --type='merge' -p='{"metadata": {"annotations": {"cluster.x-k8s.io/delete-machine": "true"}}}'
+    ```
+
+    Repeat for each machine you want to remove.
+
+    **Example**: Remove two specific machines
+
+    ```bash
+    kubectl patch machine worker-pool-1-abc123 -n cpaas-system \
+      --type='merge' -p='{"metadata": {"annotations": {"cluster.x-k8s.io/delete-machine": "true"}}}'
+
+    kubectl patch machine worker-pool-1-def456 -n cpaas-system \
+      --type='merge' -p='{"metadata": {"annotations": {"cluster.x-k8s.io/delete-machine": "true"}}}'
+    ```
+
+3. **Scale Down the MachineDeployment**
+
+    After annotating the machines, reduce the replica count:
+
+    :::info
+    **Replica Count Must Match Annotated Machines**
+    Reduce replicas by exactly the number of annotated machines.
+    - If you reduce by fewer, not all annotated machines will be removed
+    - If you reduce by more, additional machines will be randomly selected for deletion
+    :::
+
+    ```bash
+    kubectl patch machinedeployment <worker-machine-deployment-name> -n cpaas-system \
+      --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
+    ```
+
+    **Example**: If you annotated 2 machines, reduce replicas by exactly 2 (e.g., from 5 to 3)
+
+    The platform will delete the **annotated** machines, not randomly selected ones.
+
+4. **Monitor the Removal Progress**
+
+    Watch the machine deletion process:
+
+    ```bash
+    kubectl get machines -n cpaas-system -w
+    ```
+
+5. **Verify Nodes Removed**
+
+    Switch to the target cluster context:
+
+    ```bash
+    kubectl config use-context <target-cluster-context>
+    kubectl get nodes
+    ```
+
+    The removed nodes should no longer appear in the list.
 
 ### Upgrading Machine Infrastructure
 
@@ -336,7 +698,7 @@ Bootstrap templates (KubeadmConfigTemplate) are used by MachineDeployment and Ma
    - Update `spec.template.spec.bootstrap.configRef.name` to reference the new template
    - Apply the changes to trigger a rolling update
 
-:::warning
+:::info
 **Template Rollout Behavior**
 Existing machines continue using the old bootstrap configuration. Only newly created machines (during scaling or rolling updates) will use the updated template.
 :::
@@ -344,6 +706,11 @@ Existing machines continue using the old bootstrap configuration. Only newly cre
 ### Upgrading Kubernetes Version
 
 Kubernetes version upgrades require coordinated updates to both the MachineDeployment and the underlying VM template to ensure compatibility.
+
+:::warning
+**Version Compatibility**
+Ensure the VM template's Kubernetes version matches the version specified in the MachineDeployment. Mismatched versions will cause node join failures.
+:::
 
 **Upgrade Process:**
 
@@ -361,8 +728,3 @@ Kubernetes version upgrades require coordinated updates to both the MachineDeplo
    - The system will perform a rolling upgrade of worker nodes
    - Verify that new nodes join the cluster with the correct Kubernetes version
    - Monitor cluster health throughout the upgrade process
-
-:::warning
-**Version Compatibility**
-Ensure the VM template's Kubernetes version matches the version specified in the MachineDeployment. Mismatched versions will cause node join failures.
-:::

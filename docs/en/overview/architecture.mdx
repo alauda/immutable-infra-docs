@@ -53,29 +53,3 @@ The chosen **Infrastructure Provider** (our custom provider such as DCS) manages
 ## Cluster API Architecture
 
 ![Cluster API Architecture](../images/architecture.jpeg)
-
-## Key Features
-
-### Immutable Infrastructure Principles
-
-- **Declarative Configuration**: All infrastructure is defined as code
-- **Version Control**: Infrastructure changes are tracked and versioned
-- **Reproducible Deployments**: Consistent environments across different deployments
-- **Rollback Capability**: Easy rollback to previous infrastructure states
-
-### Cluster API Benefits
-
-- **Standardized Interface**: Consistent API across different infrastructure providers
-- **Multi-Cloud Support**: Ability to deploy clusters across different cloud platforms
-- **Extensible Architecture**: Easy to add new providers and capabilities
-- **Kubernetes Native**: Leverages Kubernetes patterns and tooling
-
-### Infrastructure Provider Integration
-
-- **Native Resource Management**: Direct integration with the provider's APIs
-- **Resource Optimization**: Efficient resource allocation and placement per provider capabilities
-
-
-:::warning
-Upgrades rely on Cluster API's rolling update mechanism. During a rolling update, any previously attached disks are removed and replaced with new disks on newly created machines. Ensure that no cluster functionality or workloads depend on data stored on the original disks.
-:::
