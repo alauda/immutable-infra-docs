@@ -70,6 +70,14 @@ spec:
       timeout: 600s
 ```
 
+:::warning
+**Limitations and Risks for Control Plane Nodes**
+
+*   **Etcd Leader Failure with Kubelet Downtime:** Automatic remediation may fail if the unhealthy node is the current etcd leader and its `kubelet` service is down. Cluster API attempts to migrate the etcd leadership before deleting the node but relies on the `kubelet` to proxy requests to the local etcd instance. If the `kubelet` is unresponsive, the leadership transfer cannot proceed, blocking the rotation.
+*   **Risk of Quorum Loss:** Exercise caution when configuring `MachineHealthCheck` for control plane nodes. Aggressive timeouts or misconfiguration can lead to the removal of multiple control plane nodes, potentially breaking the etcd quorum and rendering the cluster's control plane unusable.
+:::
+
+
 ## Reference
 
 [Configure a MachineHealthCheck](https://cluster-api.sigs.k8s.io/tasks/automated-machine-management/healthchecking)
