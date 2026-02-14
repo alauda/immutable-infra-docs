@@ -263,6 +263,11 @@ The current DCS control plane implementation relies on the Cluster API control p
 
 Most parameters in the example are already optimized or required configurations, but some parameters may need customization based on your environment.
 
+:::tip
+**Full Configuration Reference**
+The example below truncates long configuration files for readability. For the **complete configuration** (including default audit policies, admission controls, and file contents), please refer to the [Complete KubeadmControlPlane Configuration](#complete-kubeadmcontrolplane-configuration) in the Appendix.
+:::
+
 In the following example, `<kcp-name>` is the resource name:
 
 
@@ -315,19 +320,10 @@ spec:
               keys:
               - name: key1
                 secret: <base64-encoded-secret>
-    - path: /etc/kubernetes/audit/policy.yaml
-      owner: "root:root"
-      append: false
-      permissions: "0644"
-      content: |
-        # ... (Audit Policy Content) ...
+    # ... (Other files including admission config, audit policy, kubelet config) ...
 
-    preKubeadmCommands:
-    - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
-    - mkdir -p /run/cluster-api && restorecon -Rv /run/cluster-api
-    - if [ -f /etc/disk-setup.sh ]; then bash /etc/disk-setup.sh; fi
-    postKubeadmCommands:
-    - chmod 600 /var/lib/kubelet/config.yaml
+    # ... (preKubeadmCommands & postKubeadmCommands) ...
+
     clusterConfiguration:
       imageRepository: cloud.alauda.io/alauda
       dns:
@@ -335,55 +331,10 @@ spec:
       etcd:
         local:
           imageTag: <etcd-image-tag>
-      apiServer:
-        extraArgs:
-          audit-log-format: json
-          audit-log-maxage: "30"
-          audit-log-maxbackup: "10"
-          audit-log-maxsize: "200"
-          profiling: "false"
-          audit-log-mode: batch
-          audit-log-path: /etc/kubernetes/audit/audit.log
-          audit-policy-file: /etc/kubernetes/audit/policy.yaml
-          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
-          encryption-provider-config: /etc/kubernetes/encryption-provider.conf
-          admission-control-config-file: /etc/kubernetes/admission/psa-config.yaml
-          tls-min-version: VersionTLS12
-          kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
-        extraVolumes:
-        - name: vol-dir-0
-          hostPath: /etc/kubernetes
-          mountPath: /etc/kubernetes
-          pathType: Directory
-      controllerManager:
-        extraArgs:
-          bind-address: "::"
-          profiling: "false"
-          tls-min-version: VersionTLS12
-          flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
-      scheduler:
-        extraArgs:
-          bind-address: "::"
-          tls-min-version: VersionTLS12
-          profiling: "false"
-    initConfiguration:
-      patches:
-        directory: /etc/kubernetes/patches
-      nodeRegistration:
-        kubeletExtraArgs:
-          node-labels: "kube-ovn/role=master"
-          provider-id: PROVIDER_ID
-          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
-          protect-kernel-defaults: "true"
-    joinConfiguration:
-      patches:
-        directory: /etc/kubernetes/patches
-      nodeRegistration:
-        kubeletExtraArgs:
-          node-labels: "kube-ovn/role=master"
-          provider-id: PROVIDER_ID
-          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
-          protect-kernel-defaults: "true"
+      # ... (apiServer, controllerManager, scheduler configurations) ...
+
+    # ... (initConfiguration & joinConfiguration) ...
+
   machineTemplate:
     nodeDrainTimeout: 1m
     nodeDeletionTimeout: 5m
@@ -530,6 +481,282 @@ A successfully created cluster should show:
 - All worker nodes (if deployed): **Running**
 - Kubernetes nodes: **Ready**
 - Cluster Module Status: **Completed**
+
+## Appendix
+
+### Complete KubeadmControlPlane Configuration
+
+Below is the complete `KubeadmControlPlane` configuration, including all default audit policies, admission controls, and file contents. You can copy this entire block and modify the `<placeholders>` as needed.
+
+```yaml
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: <kcp-name>
+  namespace: cpaas-system
+  annotations:
+    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
+spec:
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+  kubeadmConfigSpec:
+    users:
+    - name: boot
+      sshAuthorizedKeys:
+      - "<ssh-authorized-keys>"
+    format: ignition
+    files:
+    - path: /etc/kubernetes/admission/psa-config.yaml
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: AdmissionConfiguration
+        plugins:
+        - name: PodSecurity
+          configuration:
+            apiVersion: pod-security.admission.config.k8s.io/v1
+            kind: PodSecurityConfiguration
+            defaults:
+              enforce: "privileged"
+              enforce-version: "latest"
+              audit: "baseline"
+              audit-version: "latest"
+              warn: "baseline"
+              warn-version: "latest"
+            exemptions:
+              usernames: []
+              runtimeClasses: []
+              namespaces:
+              - kube-system
+              - cpaas-system
+    - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        {
+          "apiVersion": "kubelet.config.k8s.io/v1beta1",
+          "kind": "KubeletConfiguration",
+          "protectKernelDefaults": true,
+          "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+          "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key",
+          "streamingConnectionIdleTimeout": "5m",
+          "clientCAFile": "/etc/kubernetes/pki/ca.crt"
+        }
+    - path: /etc/kubernetes/encryption-provider.conf
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: EncryptionConfiguration
+        resources:
+        - resources:
+          - secrets
+          providers:
+          - aescbc:
+              keys:
+              - name: key1
+                secret: <base64-encoded-secret>
+    - path: /etc/kubernetes/audit/policy.yaml
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        apiVersion: audit.k8s.io/v1
+        kind: Policy
+        # Don't generate audit events for all requests in RequestReceived stage.
+        omitStages:
+        - "RequestReceived"
+        rules:
+        # The following requests were manually identified as high-volume and low-risk,
+        # so drop them.
+        - level: None
+          users:
+          - system:kube-controller-manager
+          - system:kube-scheduler
+          - system:serviceaccount:kube-system:endpoint-controller
+          verbs: ["get", "update"]
+          namespaces: ["kube-system"]
+          resources:
+          - group: "" # core
+            resources: ["endpoints"]
+        # Don't log these read-only URLs.
+        - level: None
+          nonResourceURLs:
+          - /healthz*
+          - /version
+          - /swagger*
+        # Don't log events requests.
+        - level: None
+          resources:
+          - group: "" # core
+            resources: ["events"]
+        # Don't log devops requests.
+        - level: None
+          resources:
+          - group: "devops.alauda.io"
+        # Don't log get list watch requests.
+        - level: None
+          verbs: ["get", "list", "watch"]
+        # Don't log lease operation
+        - level: None
+          resources:
+          - group: "coordination.k8s.io"
+            resources: ["leases"]
+        # Don't log access review and token review requests.
+        - level: None
+          resources:
+          - group: "authorization.k8s.io"
+            resources: ["subjectaccessreviews", "selfsubjectaccessreviews"]
+          - group: "authentication.k8s.io"
+            resources: ["tokenreviews"]
+        # Don't log imagewhitelists and namespaceoverviews operations
+        - level: None
+          resources:
+          - group: "app.alauda.io"
+            resources: ["imagewhitelists"]
+          - group: "k8s.io"
+            resources: ["namespaceoverviews"]
+        # Secrets, ConfigMaps can contain sensitive & binary data,
+        # so only log at the Metadata level.
+        - level: Metadata
+          resources:
+          - group: "" # core
+            resources: ["secrets", "configmaps"]
+        # devops installmanifests and katanomis can contains huge data and sensitive data, only log at the Metadata level.
+        - level: Metadata
+          resources:
+          - group: "operator.connectors.alauda.io"
+            resources: ["installmanifests"]
+          - group: "operators.katanomi.dev"
+            resources: ["katanomis"]
+        # Default level for known APIs
+        - level: RequestResponse
+          resources:
+          - group: "" # core
+          - group: "aiops.alauda.io"
+          - group: "apps"
+          - group: "app.k8s.io"
+          - group: "authentication.istio.io"
+          - group: "auth.alauda.io"
+          - group: "autoscaling"
+          - group: "asm.alauda.io"
+          - group: "clusterregistry.k8s.io"
+          - group: "crd.alauda.io"
+          - group: "infrastructure.alauda.io"
+          - group: "monitoring.coreos.com"
+          - group: "operators.coreos.com"
+          - group: "networking.istio.io"
+          - group: "extensions.istio.io"
+          - group: "install.istio.io"
+          - group: "security.istio.io"
+          - group: "telemetry.istio.io"
+          - group: "opentelemetry.io"
+          - group: "networking.k8s.io"
+          - group: "portal.alauda.io"
+          - group: "rbac.authorization.k8s.io"
+          - group: "storage.k8s.io"
+          - group: "tke.cloud.tencent.com"
+          - group: "devopsx.alauda.io"
+          - group: "core.katanomi.dev"
+          - group: "deliveries.katanomi.dev"
+          - group: "integrations.katanomi.dev"
+          - group: "artifacts.katanomi.dev"
+          - group: "builds.katanomi.dev"
+          - group: "versioning.katanomi.dev"
+          - group: "sources.katanomi.dev"
+          - group: "tekton.dev"
+          - group: "operator.tekton.dev"
+          - group: "eventing.knative.dev"
+          - group: "flows.knative.dev"
+          - group: "messaging.knative.dev"
+          - group: "operator.knative.dev"
+          - group: "sources.knative.dev"
+          - group: "operator.devops.alauda.io"
+          - group: "flagger.app"
+          - group: "jaegertracing.io"
+          - group: "velero.io"
+            resources: ["deletebackuprequests"]
+          - group: "connectors.alauda.io"
+          - group: "operator.connectors.alauda.io"
+            resources: ["connectorscores", "connectorsgits", "connectorsocis"]
+        # Default level for all other requests.
+        - level: Metadata
+    preKubeadmCommands:
+    - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
+    - mkdir -p /run/cluster-api && restorecon -Rv /run/cluster-api
+    - if [ -f /etc/disk-setup.sh ]; then bash /etc/disk-setup.sh; fi
+    postKubeadmCommands:
+    - chmod 600 /var/lib/kubelet/config.yaml
+    clusterConfiguration:
+      imageRepository: cloud.alauda.io/alauda
+      dns:
+        imageTag: <dns-image-tag>
+      etcd:
+        local:
+          imageTag: <etcd-image-tag>
+      apiServer:
+        extraArgs:
+          audit-log-format: json
+          audit-log-maxage: "30"
+          audit-log-maxbackup: "10"
+          audit-log-maxsize: "200"
+          profiling: "false"
+          audit-log-mode: batch
+          audit-log-path: /etc/kubernetes/audit/audit.log
+          audit-policy-file: /etc/kubernetes/audit/policy.yaml
+          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+          encryption-provider-config: /etc/kubernetes/encryption-provider.conf
+          admission-control-config-file: /etc/kubernetes/admission/psa-config.yaml
+          tls-min-version: VersionTLS12
+          kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
+        extraVolumes:
+        - name: vol-dir-0
+          hostPath: /etc/kubernetes
+          mountPath: /etc/kubernetes
+          pathType: Directory
+      controllerManager:
+        extraArgs:
+          bind-address: "::"
+          profiling: "false"
+          tls-min-version: VersionTLS12
+          flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+      scheduler:
+        extraArgs:
+          bind-address: "::"
+          tls-min-version: VersionTLS12
+          profiling: "false"
+    initConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+    joinConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: DCSMachineTemplate
+      name: <cp-dcs-machine-template-name>
+  replicas: 3
+  version: <control-plane-kubernetes-version>
+```
 
 
 
