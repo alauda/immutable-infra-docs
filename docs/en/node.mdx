@@ -100,6 +100,23 @@ The following disk mount points are mandatory. Do not remove them:
 You may add additional disks, but these essential configurations must be preserved.
 :::
 
+:::warning
+**Datastore Cross-Host Access Requirement**
+
+The datastore clusters configured in `datastoreClusterName` must support cross-host access across all physical machines in the DCS platform. This ensures that VMs can be created successfully regardless of which physical machine is selected by the DCS platform.
+
+If the datastore does not support cross-host access:
+- VMs may be created successfully on one physical machine (e.g., Machine A)
+- VM creation may fail when the DCS platform selects a different physical machine (e.g., Machine B)
+- This can lead to unpredictable failures during worker node provisioning or scaling
+:::
+
+:::info
+**Shared Storage for Ignition**
+
+If the datastore used for system volume and ignition does not support file upload operations, you must provide a shared storage solution that supports multi-host mounting (e.g., NFS). This ensures that ignition configuration files can be accessed by worker node VMs regardless of which physical machine they are created on.
+:::
+
 **Example:**
 
 Create a `DCSMachineTemplate` named `<worker-dcs-machine-template-name>`:
