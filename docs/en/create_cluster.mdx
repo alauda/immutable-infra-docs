@@ -22,44 +22,26 @@ For Kubernetes installation, you must:
 - Create a virtual machine template based on this image
 - Ensure the template includes all necessary Kubernetes components
 
-### 3. Network Connectivity Requirements
-Ensure that all nodes in the <Term name="product" textCase="capitalize" />'s `global` cluster can access the DCS platform:
-- **Port 7443**: Required for DCS platform API access
-- **Port 8443**: Required for DCS platform web console access
+### 3. Network Connectivity
+Ensure that all nodes in the <Term name="product" textCase="capitalize" />'s `global` cluster can access the DCS platform on:
+- **Port 7443** (DCS API)
+- **Port 8443** (DCS Web Console)
 
-:::warning
-**Important Connectivity Requirement**
-All nodes in the ACP global cluster must have network connectivity to both ports (7443 and 8443) on the DCS platform. Failure to ensure connectivity will prevent cluster creation and management operations.
-:::
+> **Requirement:** Connectivity to **both ports** is mandatory for cluster creation and management.
 
-### 4. DCS Platform Credential Requirements
-
-The DCS platform credentials used for cluster creation must meet the following requirements:
+### 4. DCS Platform Credentials
+The DCS platform credentials used for cluster creation must meet specific requirements.
 
 **Required User Configuration**
+- **User Type**: Must be `Interface interconnection user` (接口互联用户)
+- **Role**: Must be `administrator`
 
-The user must be configured in the DCS platform with:
+**Required Password Policy**
+Verify the following setting in **System Management** → **Rights Management** → **Rights Management Policy**:
+- **Policy**: `Whether to modify the password of an interface interconnection user upon password resetting and first login`
+- **Value**: Must be set to **`No`**
 
-- **User Type**: `Interface interconnection user` (接口互联用户)
-- **Role**: `administrator`
-
-**Password Policy Requirement**
-
-In the DCS platform, navigate to **System Management** → **Rights Management** → **Rights Management Policy** and verify the following setting:
-
-- **Policy Name**: `Whether to modify the password of an interface interconnection user upon password resetting and first login` (接口互联用户在重置密码和首次登录时是否修改密码)
-- **Value**: Must be set to `No`
-
-:::warning
-**Configuration Impact**
-
-If the password policy is set to `Yes`:
-- The interface interconnection user's password will be forced to change upon first login or password reset
-- This will break the authentication between the Cluster API provider and the DCS platform
-- Cluster creation and management operations will fail
-
-Ensure the policy is set to `No` before configuring the authentication Secret in the "Configure DCS Authentication" section.
-:::
+> **Impact:** If set to `Yes`, the user's password will be forced to change upon first login, breaking the authentication and causing cluster creation failures.
 
 ### 5. Public Registry Configuration
 Configure the public registry credentials on the <Term name="product" textCase="capitalize" />. This includes:
@@ -188,23 +170,18 @@ spec:
 
 The DCS machine template declares the configuration for DCS machines created by subsequent Cluster API components. The machine template specifies the virtual machine template, attached disks, CPU, memory, and other configuration information.
 
-:::info
-You may add additional custom disks in the `dcsMachineDiskSpec` section, but you must retain all disk entries shown in the example below (including the systemVolume, /var/lib/kubelet, /var/lib/containerd, and /var/cpaas mount points). When adding disks, make sure not to omit these essential configurations.
-:::
-
-**Datastore Cross-Host Access Requirement**
-
-The datastore clusters configured in `datastoreClusterName` must support cross-host access across all physical machines in the DCS platform. This ensures that VMs can be created successfully regardless of which physical machine is selected by the DCS platform.
-
-If the datastore does not support cross-host access:
-- VMs may be created successfully on one physical machine (e.g., Machine A)
-- VM creation may fail when the DCS platform selects a different physical machine (e.g., Machine B)
-- This can lead to unpredictable failures during cluster provisioning or scaling
-
 :::warning
-**Shared Storage for Ignition**
+**Storage Requirements**
 
-If the datastore used for system volume and ignition does not support file upload operations, you must provide a shared storage solution that supports multi-host mounting (e.g., NFS). This ensures that ignition configuration files can be accessed by VMs regardless of which physical machine they are created on.
+**Datastore Cross-Host Access**
+The datastore clusters (`datastoreClusterName`) must support cross-host access across *all* physical machines in the DCS platform.
+*   *Why*: If a datastore is only available on specific hosts, VM creation will fail when the DCS platform attempts to schedule the VM on a different host.
+
+**Shared Storage for Ignition**
+If your datastore does not support direct file uploads (required for Ignition configs), you **must** provide a shared storage solution (e.g., NFS) that supports multi-host mounting.
+
+**Disk Configuration Rules**
+You may add custom disks, but **must retain** the mandatory system and data disks shown in the example below (`systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`, `/var/cpaas`).
 :::
 
 In the following example, `<cp-dcs-machine-template-name>` is the control plane machine template name:
@@ -313,26 +290,7 @@ spec:
       owner: "root:root"
       permissions: "0644"
       content: |
-        apiVersion: apiserver.config.k8s.io/v1
-        kind: AdmissionConfiguration
-        plugins:
-        - name: PodSecurity
-          configuration:
-            apiVersion: pod-security.admission.config.k8s.io/v1
-            kind: PodSecurityConfiguration
-            defaults:
-              enforce: "privileged"
-              enforce-version: "latest"
-              audit: "baseline"
-              audit-version: "latest"
-              warn: "baseline"
-              warn-version: "latest"
-            exemptions:
-              usernames: []
-              runtimeClasses: []
-              namespaces:
-              - kube-system
-              - cpaas-system
+        # ... (Admission Configuration Content) ...
     - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
       owner: "root:root"
       permissions: "0644"
@@ -340,11 +298,7 @@ spec:
         {
           "apiVersion": "kubelet.config.k8s.io/v1beta1",
           "kind": "KubeletConfiguration",
-          "protectKernelDefaults": true,
-          "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
-          "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key",
-          "streamingConnectionIdleTimeout": "5m",
-          "clientCAFile": "/etc/kubernetes/pki/ca.crt"
+          # ... (Kubelet Configuration Content) ...
         }
     - path: /etc/kubernetes/encryption-provider.conf
       owner: "root:root"
@@ -366,126 +320,8 @@ spec:
       append: false
       permissions: "0644"
       content: |
-        apiVersion: audit.k8s.io/v1
-        kind: Policy
-        # Don't generate audit events for all requests in RequestReceived stage.
-        omitStages:
-        - "RequestReceived"
-        rules:
-        # The following requests were manually identified as high-volume and low-risk,
-        # so drop them.
-        - level: None
-          users:
-          - system:kube-controller-manager
-          - system:kube-scheduler
-          - system:serviceaccount:kube-system:endpoint-controller
-          verbs: ["get", "update"]
-          namespaces: ["kube-system"]
-          resources:
-          - group: "" # core
-            resources: ["endpoints"]
-        # Don't log these read-only URLs.
-        - level: None
-          nonResourceURLs:
-          - /healthz*
-          - /version
-          - /swagger*
-        # Don't log events requests.
-        - level: None
-          resources:
-          - group: "" # core
-            resources: ["events"]
-        # Don't log devops requests.
-        - level: None
-          resources:
-          - group: "devops.alauda.io"
-        # Don't log get list watch requests.
-        - level: None
-          verbs: ["get", "list", "watch"]
-        # Don't log lease operation
-        - level: None
-          resources:
-          - group: "coordination.k8s.io"
-            resources: ["leases"]
-        # Don't log access review and token review requests.
-        - level: None
-          resources:
-          - group: "authorization.k8s.io"
-            resources: ["subjectaccessreviews", "selfsubjectaccessreviews"]
-          - group: "authentication.k8s.io"
-            resources: ["tokenreviews"]
-        # Don't log imagewhitelists and namespaceoverviews operations
-        - level: None
-          resources:
-          - group: "app.alauda.io"
-            resources: ["imagewhitelists"]
-          - group: "k8s.io"
-            resources: ["namespaceoverviews"]
-        # Secrets, ConfigMaps can contain sensitive & binary data,
-        # so only log at the Metadata level.
-        - level: Metadata
-          resources:
-          - group: "" # core
-            resources: ["secrets", "configmaps"]
-        # devops installmanifests and katanomis can contains huge data and sensitive data, only log at the Metadata level.
-        - level: Metadata
-          resources:
-          - group: "operator.connectors.alauda.io"
-            resources: ["installmanifests"]
-          - group: "operators.katanomi.dev"
-            resources: ["katanomis"]
-        # Default level for known APIs
-        - level: RequestResponse
-          resources:
-          - group: "" # core
-          - group: "aiops.alauda.io"
-          - group: "apps"
-          - group: "app.k8s.io"
-          - group: "authentication.istio.io"
-          - group: "auth.alauda.io"
-          - group: "autoscaling"
-          - group: "asm.alauda.io"
-          - group: "clusterregistry.k8s.io"
-          - group: "crd.alauda.io"
-          - group: "infrastructure.alauda.io"
-          - group: "monitoring.coreos.com"
-          - group: "operators.coreos.com"
-          - group: "networking.istio.io"
-          - group: "extensions.istio.io"
-          - group: "install.istio.io"
-          - group: "security.istio.io"
-          - group: "telemetry.istio.io"
-          - group: "opentelemetry.io"
-          - group: "networking.k8s.io"
-          - group: "portal.alauda.io"
-          - group: "rbac.authorization.k8s.io"
-          - group: "storage.k8s.io"
-          - group: "tke.cloud.tencent.com"
-          - group: "devopsx.alauda.io"
-          - group: "core.katanomi.dev"
-          - group: "deliveries.katanomi.dev"
-          - group: "integrations.katanomi.dev"
-          - group: "artifacts.katanomi.dev"
-          - group: "builds.katanomi.dev"
-          - group: "versioning.katanomi.dev"
-          - group: "sources.katanomi.dev"
-          - group: "tekton.dev"
-          - group: "operator.tekton.dev"
-          - group: "eventing.knative.dev"
-          - group: "flows.knative.dev"
-          - group: "messaging.knative.dev"
-          - group: "operator.knative.dev"
-          - group: "sources.knative.dev"
-          - group: "operator.devops.alauda.io"
-          - group: "flagger.app"
-          - group: "jaegertracing.io"
-          - group: "velero.io"
-            resources: ["deletebackuprequests"]
-          - group: "connectors.alauda.io"
-          - group: "operator.connectors.alauda.io"
-            resources: ["connectorscores", "connectorsgits", "connectorsocis"]
-        # Default level for all other requests.
-        - level: Metadata
+        # ... (Audit Policy Content) ...
+
     preKubeadmCommands:
     - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
     - mkdir -p /run/cluster-api && restorecon -Rv /run/cluster-api

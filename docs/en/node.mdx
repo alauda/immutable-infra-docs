@@ -90,31 +90,17 @@ spec:
 The DCSMachineTemplate defines the specifications for worker node virtual machines, including VM templates, compute resources, storage configuration, and network settings.
 
 :::warning
-**Required Disk Configurations**
-The following disk mount points are mandatory. Do not remove them:
-- System volume (`systemVolume: true`)
-- `/var/lib/kubelet` - Kubelet data directory
-- `/var/lib/containerd` - Container runtime data
-- `/var/cpaas` - Platform-specific data
+**Storage Requirements**
 
-You may add additional disks, but these essential configurations must be preserved.
-:::
+**Datastore Cross-Host Access**
+The datastore clusters (`datastoreClusterName`) must support cross-host access across *all* physical machines in the DCS platform.
+*   *Why*: If a datastore is only available on specific hosts, VM creation will fail when the DCS platform attempts to schedule the VM on a different host.
 
-:::warning
-**Datastore Cross-Host Access Requirement**
-
-The datastore clusters configured in `datastoreClusterName` must support cross-host access across all physical machines in the DCS platform. This ensures that VMs can be created successfully regardless of which physical machine is selected by the DCS platform.
-
-If the datastore does not support cross-host access:
-- VMs may be created successfully on one physical machine (e.g., Machine A)
-- VM creation may fail when the DCS platform selects a different physical machine (e.g., Machine B)
-- This can lead to unpredictable failures during worker node provisioning or scaling
-:::
-
-:::info
 **Shared Storage for Ignition**
+If your datastore does not support direct file uploads (required for Ignition configs), you **must** provide a shared storage solution (e.g., NFS) that supports multi-host mounting.
 
-If the datastore used for system volume and ignition does not support file upload operations, you must provide a shared storage solution that supports multi-host mounting (e.g., NFS). This ensures that ignition configuration files can be accessed by worker node VMs regardless of which physical machine they are created on.
+**Disk Configuration Rules**
+You may add custom disks, but **must retain** the mandatory system and data disks shown in the example below (`systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`, `/var/cpaas`).
 :::
 
 **Example:**
