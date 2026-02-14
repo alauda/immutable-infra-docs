@@ -9,11 +9,12 @@ This document provides comprehensive instructions for creating Kubernetes cluste
 
 Before creating clusters, ensure all of the following prerequisites are met:
 
-### 1. DCS Platform Installed and Operational
-The DCS platform must be fully installed and operational. Ensure you have:
-- The endpoint URL for accessing the DCS platform service
-- Valid authentication credentials (`authUser` and `authKey`)
-- Appropriate permissions to create and manage virtual machines
+### 1. Required Plugin Installation
+Install the following plugins on the <Term name="product" textCase="capitalize" />'s `global` cluster:
+- **Cluster API Provider Kubeadm** - Provides Kubernetes cluster bootstrapping capabilities
+- **Cluster API Provider DCS** - Enables DCS infrastructure integration and management
+
+For detailed installation instructions, refer to the [Installation Guide](./install.mdx).
 
 ### 2. Virtual Machine Template Preparation
 For Kubernetes installation, you must:
@@ -21,14 +22,28 @@ For Kubernetes installation, you must:
 - Create a virtual machine template based on this image
 - Ensure the template includes all necessary Kubernetes components
 
-### 3. Required Plugin Installation
-Install the following plugins on the <Term name="product" textCase="capitalize" />'s `global` cluster:
-- **Cluster API Provider Kubeadm** - Provides Kubernetes cluster bootstrapping capabilities
-- **Cluster API Provider DCS** - Enables DCS infrastructure integration and management
+### 3. Network Connectivity
+Ensure that all nodes in the <Term name="product" textCase="capitalize" />'s `global` cluster can access the DCS platform on:
+- **Port 7443** (DCS API)
+- **Port 8443** (DCS Web Console)
 
-For detailed installation instructions, refer to the [Installation Guide](./install.mdx).
+> **Requirement:** Connectivity to **both ports** is mandatory for cluster creation and management.
 
-### 4. Public Registry Configuration
+### 4. DCS Platform Credentials
+The DCS platform credentials used for cluster creation must meet specific requirements.
+
+**Required User Configuration**
+- **User Type**: Must be `Interface interconnection user` (接口互联用户)
+- **Role**: Must be `administrator`
+
+**Required Password Policy**
+Verify the following setting in **System Management** → **Rights Management** → **Rights Management Policy**:
+- **Policy**: `Whether to modify the password of an interface interconnection user upon password resetting and first login`
+- **Value**: Must be set to **`No`**
+
+> **Impact:** If set to `Yes`, the user's password will be forced to change upon first login, breaking the authentication and causing cluster creation failures.
+
+### 5. Public Registry Configuration
 Configure the public registry credentials on the <Term name="product" textCase="capitalize" />. This includes:
 - Registry repository address configuration
 - Proper authentication credentials setup
@@ -110,7 +125,11 @@ type: Opaque
 | --- | --- |
 | .data.authUser | DCS platform API user login name (base64-encoded) |
 | .data.authKey | DCS platform API user login password (base64-encoded) |
-| .data.endpoint | DCS platform API address with http or https protocol (base64-encoded) |
+| .data.endpoint | DCS platform API address with http or https protocol (base64-encoded). **Note**: The default API port for DCS platform is 7443 (not the common 8443). If your environment uses a custom port, confirm with your administrator. |
+
+:::info
+Before configuring this Secret, ensure that your DCS platform credentials meet the requirements specified in [Prerequisites → DCS Platform Credential Requirements](#4-dcs-platform-credentials).
+:::
 
 ### Configure IP and Hostname Pool
 
@@ -152,9 +171,18 @@ spec:
 The DCS machine template declares the configuration for DCS machines created by subsequent Cluster API components. The machine template specifies the virtual machine template, attached disks, CPU, memory, and other configuration information.
 
 :::warning
-You may add additional custom disks in the `dcsMachineDiskSpec` section, but you must retain all disk entries shown in the example below (including the systemVolume, /var/lib/kubelet, /var/lib/containerd, and /var/cpaas mount points). When adding disks, make sure not to omit these essential configurations.
-:::
+**Storage Requirements**
 
+**Datastore Cross-Host Access**
+The datastore clusters (`datastoreClusterName`) must support cross-host access across *all* physical machines in the DCS platform.
+*   *Why*: If a datastore is only available on specific hosts, VM creation will fail when the DCS platform attempts to schedule the VM on a different host.
+
+**Shared Storage for Ignition**
+If your datastore does not support direct file uploads (required for Ignition configs), you **must** provide a shared storage solution (e.g., NFS) that supports multi-host mounting.
+
+**Disk Configuration Rules**
+You may add custom disks, but **must retain** the mandatory system and data disks shown in the example below (`systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`, `/var/cpaas`).
+:::
 
 In the following example, `<cp-dcs-machine-template-name>` is the control plane machine template name:
 
@@ -235,14 +263,236 @@ The current DCS control plane implementation relies on the Cluster API control p
 
 Most parameters in the example are already optimized or required configurations, but some parameters may need customization based on your environment.
 
-In the following example, `<kcp-name>` is the resource name:
+:::tip
+**Full Configuration Reference**
+The example below truncates long configuration files for readability. For the **complete configuration** (including default audit policies, admission controls, and file contents), please refer to the [Complete KubeadmControlPlane Configuration](#complete-kubeadmcontrolplane-configuration) in the Appendix.
+:::
+
+In the following example, `<cluster-name>` is the resource name:
 
 
 ```yaml
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <kcp-name>
+  name: <cluster-name>
+  namespace: cpaas-system
+  annotations:
+    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
+spec:
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+  kubeadmConfigSpec:
+    users:
+    - name: boot
+      sshAuthorizedKeys:
+      - "<ssh-authorized-keys>"
+    format: ignition
+    files:
+    - path: /etc/kubernetes/admission/psa-config.yaml
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        # ... (Admission Configuration Content) ...
+    - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        {
+          "apiVersion": "kubelet.config.k8s.io/v1beta1",
+          "kind": "KubeletConfiguration",
+          "_comment": "... (Kubelet Configuration Content) ..."
+        }
+    - path: /etc/kubernetes/encryption-provider.conf
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: EncryptionConfiguration
+        resources:
+        - resources:
+          - secrets
+          providers:
+          - aescbc:
+              keys:
+              - name: key1
+                secret: <base64-encoded-secret>
+    # ... (Other files including admission config, audit policy, kubelet config) ...
+
+    # ... (preKubeadmCommands & postKubeadmCommands) ...
+
+    clusterConfiguration:
+      imageRepository: cloud.alauda.io/alauda
+      dns:
+        imageTag: <dns-image-tag>
+      etcd:
+        local:
+          imageTag: <etcd-image-tag>
+      # ... (apiServer, controllerManager, scheduler configurations) ...
+
+    # ... (initConfiguration & joinConfiguration) ...
+
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: DCSMachineTemplate
+      name: <cp-dcs-machine-template-name>
+  replicas: 3
+  version: <control-plane-kubernetes-version>
+```
+
+#### Key Parameter Descriptions
+
+| Parameter | Type | Description | Required |
+| --- | --- | --- | --- |
+| .spec.kubeadmConfigSpec | object | kubeadm bootstrap provider startup parameters for customizing VM startup configuration (users, network, files, etc.) | Yes |
+| .spec.kubeadmConfigSpec.users | []object | User configuration | No |
+| .spec.machineTemplate.infrastructureRef | object | DCSMachineTemplate name for creating DCSMachine resources | Yes |
+| .spec.replicas | int | Control plane VM replica count (cannot exceed the configuration count in the referenced IpHostnamePool) | Yes |
+| .spec.version | string | Control plane Kubernetes version (must match VM template version) | Yes |
+
+### Configure DCSCluster
+
+DCSCluster is the infrastructure cluster declaration. Since the DCS platform currently doesn't provide a native load balancer, you need to manually configure the load balancer in advance and bind it to an IP address from the IP-hostname pool configured in the "Configure Virtual Machine IP and Hostname Pool" section.
+
+In the following example, `<cluster-name>` is the resource name:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSCluster
+metadata:
+  name: "<cluster-name>"
+  namespace: cpaas-system
+spec:
+  controlPlaneLoadBalancer: # Configure HA
+    host: <load-balancer-ip-or-domain-name>
+    port: 6443
+    type: external 
+  credentialSecretRef: # Reference authentication secret
+    name: <auth-secret-name>
+  controlPlaneEndpoint: # Cluster API specification, keep consistent with controlPlane
+    host: <load-balancer-ip-or-domain-name>
+    port: 6443
+  networkType: kube-ovn 
+  site: <site>  # DCS platform parameter, resource pool ID
+```
+
+#### Key Parameter Descriptions
+
+| Parameter | Type | Description | Required |
+| --- | --- | --- | --- |
+| .spec.controlPlaneLoadBalancer | object | Control plane API server exposure method | Yes |
+| .spec.controlPlaneLoadBalancer.type | string | Currently only supports "external" | Yes |
+| .spec.controlPlaneLoadBalancer.host | string | Load balancer IP or domain name | Yes |
+| .spec.controlPlaneLoadBalancer.port | int64 | Port number | Yes |
+| .spec.credentialSecretRef.name | string | DCS cluster authentication information (see "Configure DCS Authentication Information" section) | Yes |
+| .spec.controlPlaneEndpoint | object | API server exposure address (Cluster API specification) | No |
+| .spec.networkType | string | Currently only supports "kube-ovn" | Yes |
+| .spec.site | string | DCS platform site ID | Yes |
+
+### Configure Cluster
+
+The Cluster resource in Cluster API is used to declare a cluster and needs to reference the corresponding control plane resource and infrastructure cluster resource:
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  annotations:
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: DCSCluster
+    cpaas.io/kube-ovn-version: <kube-ovn-version>
+    cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>
+  labels:
+    cluster-type: DCS
+  name: <cluster-name>
+  namespace: cpaas-system
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+      - <pods-cidr>
+    services:
+      cidrBlocks:
+      - <services-cidr>
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: <cluster-name>
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: DCSCluster
+    name: <cluster-name>
+```
+
+#### Key Parameter Descriptions
+
+| Parameter | Type | Description | Required |
+| --- | --- | --- | --- |
+| .spec.clusterNetwork.pods.cidrBlocks | []string | Pod CIDR | No |
+| .spec.clusterNetwork.services.cidrBlocks | []string | Service network CIDR | No |
+| .spec.controlPlaneRef | object | Control plane reference (see "Configure KubeadmControlPlane Resource" section) | Yes |
+| .spec.infrastructureRef | object | Infrastructure cluster reference (see "Configure DCSCluster Resource" section) | Yes |
+
+## Deploying Nodes
+
+Refer to the [Deploy Nodes](./node.mdx) page for instructions.
+
+## Cluster Verification
+
+After deploying all cluster resources, verify that the cluster has been created successfully and is operational.
+
+### Using the <Term name="productShort" textCase="upper" /> Console
+
+1. Navigate to the **Administrator** view in the <Term name="productShort" textCase="upper" /> console
+2. Go to **Clusters** → **Clusters**
+3. Locate your newly created cluster in the cluster list
+4. Verify that the cluster status shows as **Running**
+5. Check that all control plane and worker nodes are **Ready**
+
+### Using kubectl
+
+Alternatively, you can verify the cluster using kubectl commands:
+
+```bash
+# Check cluster status
+kubectl get cluster -n cpaas-system <cluster-name>
+
+# Verify control plane nodes
+kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>
+
+# Check machine status
+kubectl get machines -n cpaas-system
+
+# Verify cluster deployment status
+kubectl get clustermodule <cluster-name> -o jsonpath='{.status.base.deployStatus}'
+```
+
+### Expected Results
+
+A successfully created cluster should show:
+- Cluster status: **Running** or **Provisioned**
+- All control plane machines: **Running**
+- All worker nodes (if deployed): **Running**
+- Kubernetes nodes: **Ready**
+- Cluster Module Status: **Completed**
+
+## Appendix
+
+### Complete KubeadmControlPlane Configuration
+
+Below is the complete `KubeadmControlPlane` configuration, including all default audit policies, admission controls, and file contents. You can copy this entire block and modify the `<placeholders>` as needed.
+
+```yaml
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: <cluster-name>
   namespace: cpaas-system
   annotations:
     controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
@@ -507,142 +757,6 @@ spec:
   replicas: 3
   version: <control-plane-kubernetes-version>
 ```
-
-#### Key Parameter Descriptions
-
-| Parameter | Type | Description | Required |
-| --- | --- | --- | --- |
-| .spec.kubeadmConfigSpec | object | kubeadm bootstrap provider startup parameters for customizing VM startup configuration (users, network, files, etc.) | Yes |
-| .spec.kubeadmConfigSpec.users | []object | User configuration | No |
-| .spec.machineTemplate.infrastructureRef | string | DCSMachineTemplate name for creating DCSMachine resources | Yes |
-| .spec.replicas | int | Control plane VM replica count (cannot exceed the configuration count in the referenced IpHostnamePool) | Yes |
-| .spec.version | string | Control plane Kubernetes version (must match VM template version) | Yes |
-
-### Configure DCSCluster
-
-DCSCluster is the infrastructure cluster declaration. Since the DCS platform currently doesn't provide a native load balancer, you need to manually configure the load balancer in advance and bind it to an IP address from the IP-hostname pool configured in the "Configure Virtual Machine IP and Hostname Pool" section.
-
-In the following example, `<dcs-cluster-name>` is the resource name:
-
-```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-kind: DCSCluster
-metadata:
-  name: "<dcs-cluster-name>"
-  namespace: cpaas-system
-spec:
-  controlPlaneLoadBalancer: # Configure HA
-    host: <load-balancer-ip-or-domain-name>
-    port: 6443
-    type: external 
-  credentialSecretRef: # Reference authentication secret
-    name: <auth-secret-name>
-  controlPlaneEndpoint: # Cluster API specification, keep consistent with controlPlane
-    host: <load-balancer-ip-or-domain-name>
-    port: 6443
-  networkType: kube-ovn 
-  site: <site>  # DCS platform parameter, resource pool ID
-```
-
-#### Key Parameter Descriptions
-
-| Parameter | Type | Description | Required |
-| --- | --- | --- | --- |
-| .spec.controlPlaneLoadBalancer | object | Control plane API server exposure method | Yes |
-| .spec.controlPlaneLoadBalancer.type | string | Currently only supports "external" | Yes |
-| .spec.controlPlaneLoadBalancer.host | string | Load balancer IP or domain name | Yes |
-| .spec.controlPlaneLoadBalancer.port | int64 | Port number | Yes |
-| .spec.credentialSecretRef.name | string | DCS cluster authentication information (see "Configure DCS Authentication Information" section) | Yes |
-| .spec.controlPlaneEndpoint | object | API server exposure address (Cluster API specification) | No |
-| .spec.networkType | string | Currently only supports "kube-ovn" | Yes |
-| .spec.site | string | DCS platform site ID | Yes |
-
-### Configure Cluster
-
-The Cluster resource in Cluster API is used to declare a cluster and needs to reference the corresponding control plane resource and infrastructure cluster resource:
-
-```yaml
-apiVersion: cluster.x-k8s.io/v1beta1
-kind: Cluster
-metadata:
-  annotations:
-    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
-    capi.cpaas.io/resource-kind: DCSCluster
-    cpaas.io/kube-ovn-version: <kube-ovn-version>
-    cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>
-  labels:
-    cluster-type: DCS
-  name: <cluster-name>
-  namespace: cpaas-system
-spec:
-  clusterNetwork:
-    pods:
-      cidrBlocks:
-      - <pods-cidr>
-    services:
-      cidrBlocks:
-      - <services-cidr>
-  controlPlaneRef:
-    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
-    kind: KubeadmControlPlane
-    name: <kubeadm-control-plane-name>
-  infrastructureRef:
-    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-    kind: DCSCluster
-    name: <dcs-cluster-name-for-nodes>
-```
-
-#### Key Parameter Descriptions
-
-| Parameter | Type | Description | Required |
-| --- | --- | --- | --- |
-| .spec.clusterNetwork.pods.cidrBlocks | []string | Pod CIDR | No |
-| .spec.clusterNetwork.services.cidrBlocks | []string | Service network CIDR | No |
-| .spec.controlPlaneRef | object | Control plane reference (see "Configure KubeadmControlPlane Resource" section) | Yes |
-| .spec.infrastructureRef | object | Infrastructure cluster reference (see "Configure DCSCluster Resource" section) | Yes |
-
-## Deploying Nodes
-
-Refer to the [Deploy Nodes](./node.mdx) page for instructions.
-
-## Cluster Verification
-
-After deploying all cluster resources, verify that the cluster has been created successfully and is operational.
-
-### Using the <Term name="productShort" textCase="upper" /> Console
-
-1. Navigate to the **Administrator** view in the <Term name="productShort" textCase="upper" /> console
-2. Go to **Clusters** → **Clusters**
-3. Locate your newly created cluster in the cluster list
-4. Verify that the cluster status shows as **Running**
-5. Check that all control plane and worker nodes are **Ready**
-
-### Using kubectl
-
-Alternatively, you can verify the cluster using kubectl commands:
-
-```bash
-# Check cluster status
-kubectl get cluster -n cpaas-system <cluster-name>
-
-# Verify control plane nodes
-kubectl get kubeadmcontrolplane -n cpaas-system <kcp-name>
-
-# Check machine status
-kubectl get machines -n cpaas-system
-
-# Verify cluster deployment status
-kubectl get clustermodule <cluster-name> -o jsonpath='{.status.base.deployStatus}'
-```
-
-### Expected Results
-
-A successfully created cluster should show:
-- Cluster status: **Running** or **Provisioned**
-- All control plane machines: **Running**
-- All worker nodes (if deployed): **Running**
-- Kubernetes nodes: **Ready**
-- Cluster Module Status: **Completed**
 
 
 
