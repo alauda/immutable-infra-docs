@@ -90,17 +90,14 @@ spec:
 The DCSMachineTemplate defines the specifications for worker node virtual machines, including VM templates, compute resources, storage configuration, and network settings.
 
 :::warning
-**Storage Requirements**
+**Required Disk Configurations**
+The following disk mount points are mandatory. Do not remove them:
+- System volume (`systemVolume: true`)
+- `/var/lib/kubelet` - Kubelet data directory
+- `/var/lib/containerd` - Container runtime data
+- `/var/cpaas` - Platform-specific data
 
-**Datastore Cross-Host Access**
-The datastore clusters (`datastoreClusterName`) must support cross-host access across *all* physical machines in the DCS platform.
-*   *Why*: If a datastore is only available on specific hosts, VM creation will fail when the DCS platform attempts to schedule the VM on a different host.
-
-**Shared Storage for Ignition**
-If your datastore does not support direct file uploads (required for Ignition configs), you **must** provide a shared storage solution (e.g., NFS) that supports multi-host mounting.
-
-**Disk Configuration Rules**
-You may add custom disks, but **must retain** the mandatory system and data disks shown in the example below (`systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`, `/var/cpaas`).
+You may add additional disks, but these essential configurations must be preserved.
 :::
 
 **Example:**
