@@ -128,7 +128,7 @@ type: Opaque
 | .data.endpoint | DCS platform API address with http or https protocol (base64-encoded). **Note**: The default API port for DCS platform is 7443 (not the common 8443). If your environment uses a custom port, confirm with your administrator. |
 
 :::info
-Before configuring this Secret, ensure that your DCS platform credentials meet the requirements specified in [Prerequisites → DCS Platform Credential Requirements](#5-dcs-platform-credential-requirements).
+Before configuring this Secret, ensure that your DCS platform credentials meet the requirements specified in [Prerequisites → DCS Platform Credential Requirements](#4-dcs-platform-credentials).
 :::
 
 ### Configure IP and Hostname Pool
@@ -268,14 +268,14 @@ Most parameters in the example are already optimized or required configurations,
 The example below truncates long configuration files for readability. For the **complete configuration** (including default audit policies, admission controls, and file contents), please refer to the [Complete KubeadmControlPlane Configuration](#complete-kubeadmcontrolplane-configuration) in the Appendix.
 :::
 
-In the following example, `<kcp-name>` is the resource name:
+In the following example, `<cluster-name>` is the resource name:
 
 
 ```yaml
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <kcp-name>
+  name: <cluster-name>
   namespace: cpaas-system
   annotations:
     controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
@@ -303,7 +303,7 @@ spec:
         {
           "apiVersion": "kubelet.config.k8s.io/v1beta1",
           "kind": "KubeletConfiguration",
-          # ... (Kubelet Configuration Content) ...
+          "_comment": "... (Kubelet Configuration Content) ..."
         }
     - path: /etc/kubernetes/encryption-provider.conf
       owner: "root:root"
@@ -352,7 +352,7 @@ spec:
 | --- | --- | --- | --- |
 | .spec.kubeadmConfigSpec | object | kubeadm bootstrap provider startup parameters for customizing VM startup configuration (users, network, files, etc.) | Yes |
 | .spec.kubeadmConfigSpec.users | []object | User configuration | No |
-| .spec.machineTemplate.infrastructureRef | string | DCSMachineTemplate name for creating DCSMachine resources | Yes |
+| .spec.machineTemplate.infrastructureRef | object | DCSMachineTemplate name for creating DCSMachine resources | Yes |
 | .spec.replicas | int | Control plane VM replica count (cannot exceed the configuration count in the referenced IpHostnamePool) | Yes |
 | .spec.version | string | Control plane Kubernetes version (must match VM template version) | Yes |
 
@@ -360,13 +360,13 @@ spec:
 
 DCSCluster is the infrastructure cluster declaration. Since the DCS platform currently doesn't provide a native load balancer, you need to manually configure the load balancer in advance and bind it to an IP address from the IP-hostname pool configured in the "Configure Virtual Machine IP and Hostname Pool" section.
 
-In the following example, `<dcs-cluster-name>` is the resource name:
+In the following example, `<cluster-name>` is the resource name:
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: DCSCluster
 metadata:
-  name: "<dcs-cluster-name>"
+  name: "<cluster-name>"
   namespace: cpaas-system
 spec:
   controlPlaneLoadBalancer: # Configure HA
@@ -423,11 +423,11 @@ spec:
   controlPlaneRef:
     apiVersion: controlplane.cluster.x-k8s.io/v1beta1
     kind: KubeadmControlPlane
-    name: <kubeadm-control-plane-name>
+    name: <cluster-name>
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
     kind: DCSCluster
-    name: <dcs-cluster-name-for-nodes>
+    name: <cluster-name>
 ```
 
 #### Key Parameter Descriptions
@@ -464,7 +464,7 @@ Alternatively, you can verify the cluster using kubectl commands:
 kubectl get cluster -n cpaas-system <cluster-name>
 
 # Verify control plane nodes
-kubectl get kubeadmcontrolplane -n cpaas-system <kcp-name>
+kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>
 
 # Check machine status
 kubectl get machines -n cpaas-system
@@ -492,7 +492,7 @@ Below is the complete `KubeadmControlPlane` configuration, including all default
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <kcp-name>
+  name: <cluster-name>
   namespace: cpaas-system
   annotations:
     controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
