@@ -22,6 +22,8 @@ For Kubernetes installation, you must:
 - Create a virtual machine template based on this image
 - Ensure the template includes all necessary Kubernetes components
 
+For details on the Kubernetes components included in each VM image, see [OS Support Matrix](./overview/os-support-matrix.mdx).
+
 ### 3. Network Connectivity
 Ensure that all nodes in the <Term name="product" textCase="capitalize" />'s `global` cluster can access the DCS platform on:
 - **Port 7443** (DCS API)
@@ -270,6 +272,7 @@ The example below truncates long configuration files for readability. For the **
 
 In the following example, `<cluster-name>` is the resource name:
 
+For component versions (e.g., `<dns-image-tag>`, `<etcd-image-tag>`), please refer to [OS Support Matrix](./overview/os-support-matrix.mdx).
 
 ```yaml
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
