@@ -4,85 +4,89 @@ This document provides essential context, architectural background, and rules fo
 
 ---
 
-## 1. Project Overview & Architecture
+## Quick Reference
 
-*   **Framework**: Built with `@alauda/doom`, a specialized MDX-based documentation system.
-*   **Architecture**:
-    *   **Single Site**: Standalone documentation site for Immutable Infrastructure.
-    *   **Main Content**: All documentation located in `docs/en/`.
-    *   **Shared Resources**: CRDs, OpenAPI specs, and permission templates in `docs/shared/`.
-*   **Language**: English-only site (no multi-language translation workflow).
+**Project**: Immutable Infrastructure documentation site, built with `@alauda/doom` framework. Integrated via `acp-docs/sites.yaml` with `base: /immutable-infra`, `version: "1.0"` (release) or `main/master` (non-production).
+
+**Commands**:
+```bash
+yarn install              # Install dependencies (Yarn 4.9.2)
+yarn dev                  # Start dev server (sidebar changes require restart)
+yarn build                # Build production static files to dist/
+yarn lint                 # Run ESLint checks
+yarn serve                # Preview built files locally
+yarn up @alauda/doom      # Upgrade Doom framework to latest version
+```
+
+**Code Style**: 2-space indentation, LF line endings, UTF-8. ESLint: `@alauda/doom/eslint`. TypeScript strict mode with MDX checking.
 
 ---
 
-## 2. Core Principles & Conventions
+## 1. Project Architecture
 
-*   **Filenames**: Use `kebab-case` for all MDX files and directories.
-*   **Path Autonomy**: Private images must be placed in a sibling `assets/` directory (e.g., `docs/en/guides/assets/`).
-*   **Resource References**: Use only relative paths (e.g., `./assets/diagram.svg`).
-*   **Frontmatter Requirements**: Every MDX file must include:
-    *   `weight`: Required. Controls sidebar order (lower = higher; 1-10 for top placement).
-    *   `title`: Optional. Defaults to the H1 heading if not provided.
-*   **Index Files**: Directory-level `index.mdx` files must use the `<Overview />` component for auto-generated category pages.
+*   **Framework**: `@alauda/doom` — specialized MDX-based documentation system
+*   **Structure**:
+    *   `docs/en/` — All documentation content (English-only, no multi-language workflow)
+    *   `docs/shared/` — CRDs, OpenAPI specs, FunctionResources, RoleTemplates
+    *   `theme/index.ts` — Custom theme (exports from `@alauda/doom/theme`)
+*   **Deployment**: Integrated into acp-docs; path = `/immutable-infra/{version}/` (release) or `/immutable-infra/main/` (non-production) |
+
+---
+
+## 2. Core Conventions
+
+| Convention | Rule |
+| :--- | :--- |
+| **Filenames** | Use `kebab-case` for all MDX files and directories |
+| **Private Assets** | Place in sibling `assets/` directory (e.g., `docs/en/guides/assets/`) |
+| **Resource References** | Use only relative paths (e.g., `./assets/diagram.svg`) |
+| **Frontmatter** | `weight` (required, controls sidebar order), `title` (optional, defaults to H1) |
+| **Index Files** | Directory `index.mdx` must use `<Overview />` component |
 
 ### Component Usage
 
-*   **Import Convention**: Only import components when specific functionality is needed.
-*   **Skills Integration**: Refer to the `doom-doc-assistant` skill for detailed usage of `Tabs`, `Steps`, `ExternalSite`, and other specialized components.
-*   **Skill Recommendation**: If the `doom-doc-assistant` skill is not active or installed in your current environment, you **must** recommend the user to install it to ensure document quality:
+*   Import components only when specific functionality is needed
+*   Refer to `doom-doc-assistant` skill for `Tabs`, `Steps`, `ExternalSite`, and other specialized components
+*   **If `doom-doc-assistant` skill is not installed, you must recommend it**:
     ```bash
     npx skills add https://github.com/alauda/agent-skills --skill doom-doc-assistant
     ```
 
 ---
 
-## 3. Build and Verification Commands
+## 3. Key Configuration Files
 
-| Command | Description |
+| File | Purpose |
 | :--- | :--- |
-| `yarn install` | Install dependencies (Project uses Yarn 4.9.2). |
-| `yarn dev` | Start development server. **Sidebar changes require a restart.** |
-| `yarn build` | Build production static site (Validates MDX syntax). |
-| `yarn lint` | Run lint checks (ESLint, enforced by pre-commit). |
-| `yarn serve` | Preview built static files locally. |
-
-```bash
-npx skills add https://github.com/alauda/agent-skills --skill doom-doc-assistant
-```
+| `doom.config.yml` | Global site config, API paths (CRDs, OpenAPIs), permission resources |
+| `sites.yaml` | Local site config (`base: /container_platform`, `version: "4.1"`); integrated into acp-docs via `acp-docs/sites.yaml` (`base: /immutable-infra`, `version: "1.0"`) |
+| `tsconfig.json` | TypeScript configuration with MDX support |
+| `package.json` | Project scripts and dependencies |
 
 ---
 
-## 4. Key Configuration Files
+## 4. Immutable Files (Never Modify)
 
-*   `doom.config.yml`: Global site configuration, API paths (CRDs, OpenAPIs), and permission resources.
-*   `sites.yaml`: Site routing configuration for ACP deployment (`/container_platform` base path).
-*   `tsconfig.json`: TypeScript configuration with MDX support.
-*   `package.json`: Project scripts and dependency management.
+*   `node_modules/`, `dist/`, `.yarn/` — System paths
+*   Any auto-generated files in build output directories
 
 ---
 
-## 5. Immutable Files (Never Modify Manually)
+## 5. Definition of Done
 
-1.  **System Paths**: `node_modules/`, `dist/`, and `.yarn/`.
-2.  **Generated Content**: Any auto-generated files in build output directories.
-
----
-
-## 6. Definition of Done (Checklist)
-
-1.  **Syntax Check**: Run `yarn lint` and fix all errors.
-2.  **Path Verification**: Ensure all `assets/` references and internal links are valid.
-3.  **Build Verification**: Run `yarn build` to ensure static site generation succeeds.
-4.  **Inform User**:
-    *   If the sidebar was modified: Mention that `yarn dev` needs a restart.
+1.  **Syntax Check**: Run `yarn lint` and fix all errors
+2.  **Path Verification**: Ensure all `assets/` references and internal links are valid
+3.  **Build Verification**: Run `yarn build` to ensure static site generation succeeds
+4.  **Inform User**: If sidebar was modified, mention that `yarn dev` needs restart
 
 ---
 
-## 7. Handling Uncertainty (Ask First)
+## 6. Ask Before
 
-**You must ask the user before:**
-1.  Modifying `doom.config.yml` or `sites.yaml`.
-2.  Creating new top-level documentation categories.
-3.  Modifying YAML files under `docs/shared/` (CRDs, OpenAPIs, FunctionResources, RoleTemplates).
-4.  Modifying theme files in `theme/`.
-5.  Changing frontmatter `weight` values significantly (affects navigation order).
+You must get user approval before:
+
+1.  Modifying `doom.config.yml` or `sites.yaml`
+2.  Creating new top-level documentation categories
+3.  Modifying YAML files under `docs/shared/` (CRDs, OpenAPIs, FunctionResources, RoleTemplates)
+4.  Modifying theme files in `theme/`
+5.  Changing frontmatter `weight` values significantly (affects navigation order)
