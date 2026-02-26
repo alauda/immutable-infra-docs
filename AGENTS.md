@@ -6,7 +6,7 @@ This document provides essential context, architectural background, and rules fo
 
 ## Quick Reference
 
-**Project**: Immutable Infrastructure documentation site, built with `@alauda/doom` framework. Integrated via `acp-docs/sites.yaml` with `base: /immutable-infra`, `version: "1.0"` (release) or `main/master` (non-production).
+**Project**: Immutable Infrastructure documentation site, built with `@alauda/doom` framework. Integrated into acp-docs; release branches use `/immutable-infra/{version}/` (version maps to branch name), non-production uses `/immutable-infra/main/`.
 
 **Commands**:
 ```bash
@@ -29,7 +29,7 @@ yarn up @alauda/doom      # Upgrade Doom framework to latest version
     *   `docs/en/` — All documentation content (English-only, no multi-language workflow)
     *   `docs/shared/` — CRDs, OpenAPI specs, FunctionResources, RoleTemplates
     *   `theme/index.ts` — Custom theme (exports from `@alauda/doom/theme`)
-*   **Deployment**: Integrated into acp-docs; path = `/immutable-infra/{version}/` (release) or `/immutable-infra/main/` (non-production) |
+*   **Deployment**: Integrated into acp-docs via `acp-docs/sites.yaml` registration
 
 ---
 
@@ -59,7 +59,7 @@ yarn up @alauda/doom      # Upgrade Doom framework to latest version
 | File | Purpose |
 | :--- | :--- |
 | `doom.config.yml` | Global site config, API paths (CRDs, OpenAPIs), permission resources |
-| `sites.yaml` | Local site config (`base: /container_platform`, `version: "4.1"`); integrated into acp-docs via `acp-docs/sites.yaml` (`base: /immutable-infra`, `version: "1.0"`) |
+| `sites.yaml` | Doom template file; enables `<AcpApisOverview />` component to link to ACP APIs Guide |
 | `tsconfig.json` | TypeScript configuration with MDX support |
 | `package.json` | Project scripts and dependencies |
 
