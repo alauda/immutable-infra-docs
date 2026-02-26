@@ -10,7 +10,7 @@ This document provides essential context, architectural background, and rules fo
 
 **Commands**:
 ```bash
-yarn install              # Install dependencies (Yarn 4.9.2)
+yarn install              # Install dependencies
 yarn dev                  # Start dev server (sidebar changes require restart)
 yarn build                # Build production static files to dist/
 yarn lint                 # Run ESLint checks

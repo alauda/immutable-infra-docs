@@ -5,7 +5,7 @@ Documentation site for Immutable Infrastructure, built with the [Doom](https://g
 ## Requirements
 
 - Node.js
-- Yarn 4.9.2
+- Yarn
 
 ## Quick Start
 
