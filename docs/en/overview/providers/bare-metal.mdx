@@ -1,0 +1,36 @@
+---
+weight: 40
+---
+
+# Bare Metal Provider
+
+The Bare Metal Infrastructure Provider enables Immutable Infrastructure on bare metal servers without virtualization.
+
+## Overview
+
+The Bare Metal Provider manages physical servers directly, without any virtualization layer. This is ideal for scenarios requiring maximum performance or when virtualization infrastructure is not available.
+
+## Status
+
+📋 **Planned**
+
+This provider is in the planning phase.
+
+## Key Considerations
+
+- **In-place Upgrade**: Essential for small-scale environments (3-5 machines) where rolling upgrade is not feasible
+- **Data Persistence**: Critical for bare metal scenarios since data disks cannot be detached
+- **BMC Integration**: Leverage Baseboard Management Controller for remote management and self-healing
+
+## Differences from VM-based Providers
+
+| Feature | VM Providers (DCS, vSphere) | Bare Metal Provider |
+|---------|----------------------------|---------------------|
+| Upgrade Method | Rolling Replace (create new, delete old) | In-place Upgrade |
+| Data Persistence | Disk detach/attach | Must persist in-place |
+| Self-Healing | Delete and recreate VM | Reboot or Reprovision |
+| Recovery Time | Minutes | Depends on physical provisioning |
+
+## Documentation
+
+Documentation will be available when the provider is released.

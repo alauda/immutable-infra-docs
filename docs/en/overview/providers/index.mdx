@@ -1,0 +1,33 @@
+---
+weight: 35
+title: Providers
+---
+
+# Infrastructure Providers
+
+<Overview />
+
+Immutable Infrastructure supports multiple infrastructure platforms through pluggable providers. Each provider integrates with a specific IaaS platform to deliver cluster lifecycle management capabilities.
+
+## Supported Providers
+
+| Provider | Description | Status |
+|----------|-------------|--------|
+| [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
+| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | 🚧 Coming Soon |
+| [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | 🚧 In Development |
+| [Bare Metal](./bare-metal.mdx) | Bare metal servers without virtualization | 📋 Planned |
+
+## Provider Architecture
+
+Each Infrastructure Provider is an independent plugin that integrates with the Cluster API framework to manage infrastructure resources on the target platform.
+
+### Components
+
+- **Infrastructure Provider**: Manages IaaS-specific resources (VMs, networks, storage)
+- **Bootstrap Provider (Kubeadm)**: Handles Kubernetes node initialization and configuration
+- **Control Plane Provider (Kubeadm)**: Manages Kubernetes control plane components
+
+### Provider Independence
+
+Infrastructure Providers are versioned independently from ACP. A single provider version can be compatible with multiple ACP versions, providing flexibility in deployment and upgrade scenarios.

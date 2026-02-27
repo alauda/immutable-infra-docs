@@ -1,14 +1,14 @@
 ---
-weight: 50
+weight: 10
 ---
 
-# Cluster Upgrades
+# Upgrading Clusters on Huawei DCS
 
-This guide explains how to upgrade Kubernetes clusters managed by Cluster API with minimal downtime, while preserving stability and data integrity.
+This guide explains how to upgrade Kubernetes clusters on Huawei DCS with minimal downtime, while preserving stability and data integrity.
 
 ## Overview
 
-Cluster upgrades encompass multiple components and follow a structured approach to ensure system reliability:
+Cluster upgrades on DCS encompass multiple components and follow a structured approach to ensure system reliability:
 
 - **Control Plane Upgrades**: Update Kubernetes control plane components and underlying infrastructure
 - **Worker Node Upgrades**: Upgrade worker nodes with new machine images and Kubernetes versions
@@ -23,13 +23,13 @@ Before you start, ensure:
 - The control plane is reachable
 - All nodes are healthy (Ready)
 
-For initial deployment, see the [Create Cluster](./create_cluster.mdx) guide.
+For initial deployment, see the [Create Cluster](../create-cluster/huawei-dcs.mdx) guide.
 :::
 
 :::warning
 **Data Loss During Upgrades**
 
-Upgrades rely on Cluster API's rolling update mechanism. During a rolling update, any previously attached disks are removed and replaced with new disks on newly created machines. Ensure that no cluster functionality or workloads depend on data stored on the original disks.
+Upgrades rely on Cluster API's rolling update mechanism. During a rolling update on DCS, data disks are detached from old VMs and reattached to new VMs. Ensure that no cluster functionality or workloads depend on data stored on the system disk.
 :::
 
 ## Control Plane Upgrades
@@ -43,7 +43,7 @@ Upgrading the underlying machine images for control plane nodes provides securit
 #### Procedure
 
 1. **Create Updated Machine Template**
-   
+
    Copy the existing `DCSMachineTemplate` referenced by `KubeadmControlPlane` and modify the required specifications:
 
    ```bash
@@ -62,7 +62,7 @@ Upgrading the underlying machine images for control plane nodes provides securit
      - etc
 
 3. **Deploy Updated Template**
-   
+
    Apply the new machine template:
 
    ```bash
@@ -70,7 +70,7 @@ Upgrading the underlying machine images for control plane nodes provides securit
    ```
 
 4. **Update Control Plane Reference**
-   
+
    Modify the `KubeadmControlPlane` resource to reference the new template:
 
    ```bash
@@ -78,7 +78,7 @@ Upgrading the underlying machine images for control plane nodes provides securit
    ```
 
 5. **Monitor Rolling Update**
-   
+
    The control plane will automatically perform a rolling update:
 
    ```bash
@@ -93,30 +93,30 @@ Upgrading the Kubernetes version involves updating both the control plane softwa
 #### Prerequisites
 
 - Verify compatibility between the target Kubernetes version and existing workloads
-- Ensure the VM template supports the target Kubernetes version. See [OS Support Matrix](./overview/os-support-matrix.mdx) for version mapping.
+- Ensure the VM template supports the target Kubernetes version. See [OS Support Matrix](../overview/os-support-matrix.mdx) for version mapping.
 - Review the Kubernetes upgrade path and version skew policy
 
 #### Procedure
 
 1. **Update VM Template Reference**
-   
+
    Update `spec.template.spec.vmTemplateName` in the referenced `DCSMachineTemplate`. The new VM template must match the target Kubernetes version.
 
 2. **Update Control Plane Version**
-   
+
    Modify the `spec.version` field in the `KubeadmControlPlane` resource (required). Optionally adjust related fields as needed (for example, rollout strategy, drain/deletion timeouts, or the referenced infrastructure template) to align with the new version and upgrade policy
 
 3. **Verify Upgrade Progress**
-   
+
    Monitor the rolling upgrade process:
 
    ```bash
    # Check control plane status
    kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system
-   
+
    # Monitor individual machines
    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/control-plane
-   
+
    # Verify cluster health
    kubectl get nodes
    ```
@@ -126,12 +126,10 @@ Upgrading the Kubernetes version involves updating both the control plane softwa
 Worker node upgrades are managed via `MachineDeployment` resources.
 
 :::info
-For detailed worker node procedures, see the [Upgrading Kubernetes Version](./node.mdx#upgrading-kubernetes-version) section.
+For detailed worker node procedures, see the [Managing Nodes](../manage-nodes/huawei-dcs.mdx#upgrading-kubernetes-version) section.
 :::
 
 ## Additional Resources
 
 - [Cluster API Upgrade Documentation](https://cluster-api.sigs.k8s.io/tasks/upgrading-clusters)
 - [Kubernetes Version Skew Policy](https://kubernetes.io/docs/setup/release/version-skew-policy/)
-
-

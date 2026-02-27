@@ -1,0 +1,22 @@
+---
+weight: 10
+---
+
+# Provider APIs
+
+<Overview />
+
+Infrastructure Providers define custom resources for managing different IaaS platforms. Each provider implements the Cluster API infrastructure provider interface.
+
+## Supported Providers
+
+| Provider | Description | Documentation |
+|----------|-------------|---------------|
+| [Huawei DCS](./huawei-dcs/) | Huawei Datacenter Virtualization Solution | DCS Provider APIs |
+| [Huawei Cloud Stack](./huawei-cloud-stack/) | Huawei Cloud Stack | HCS Provider APIs |
+| [VMware vSphere](./vmware-vsphere/) | VMware vSphere virtualization platform | vSphere Provider APIs |
+| [Bare Metal](./bare-metal/) | Bare metal servers | Bare Metal Provider APIs |
+
+## API Group
+
+All provider resources belong to the API group `infrastructure.cluster.x-k8s.io/v1beta1`.
