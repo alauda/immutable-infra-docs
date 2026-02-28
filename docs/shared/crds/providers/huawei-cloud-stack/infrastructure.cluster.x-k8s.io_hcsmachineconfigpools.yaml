@@ -1,0 +1,132 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: hcsmachineconfigpools.infrastructure.cluster.x-k8s.io
+  labels:
+    cluster.x-k8s.io/v1beta1: v1beta1
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    kind: HCSMachineConfigPool
+    listKind: HCSMachineConfigPoolList
+    plural: hcsmachineconfigpools
+    shortNames:
+    - hcsmcp
+    singular: hcsmachineconfigpool
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Total configurations in the pool
+      jsonPath: .status.totalCount
+      name: Total
+      type: integer
+    - description: Available configurations
+      jsonPath: .status.availableCount
+      name: Available
+      type: integer
+    - description: Time duration since creation
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          HCSMachineConfigPool is the Schema for the hcsmachineconfigpools API.
+          It provides a pool of pre-defined machine configurations (hostname, network settings)
+          that can be claimed by HCSMachine resources.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of HCSMachineConfigPool
+            properties:
+              configs:
+                description: |-
+                  Configs is the list of machine configurations available in this pool.
+                  Each config can be claimed by a HCSMachine.
+                items:
+                  description: MachineConfig defines the configuration for a single
+                    machine in the pool.
+                  properties:
+                    hostname:
+                      description: Hostname is the hostname to assign to the machine.
+                      type: string
+                    networks:
+                      description: Networks is the list of network configurations
+                        for the machine.
+                      items:
+                        description: MachineConfigNetworkConfig defines the network
+                          configuration for a machine.
+                        properties:
+                          ipAddress:
+                            description: IpAddress is the static IP address to assign
+                              to the machine.
+                            type: string
+                          subnetName:
+                            description: SubnetName is the name of the subnet to use.
+                            type: string
+                          subnetId:
+                            description: SubnetId is the ID of the subnet to use.
+                            type: string
+                        type: object
+                      type: array
+                  type: object
+                type: array
+            type: object
+          status:
+            description: status defines the observed state of HCSMachineConfigPool
+            properties:
+              availableCount:
+                description: AvailableCount is the number of available configurations
+                  in the pool.
+                type: integer
+              totalCount:
+                description: TotalCount is the total number of configurations in the
+                  pool.
+                type: integer
+              usedConfigs:
+                description: UsedConfigs is the list of configurations that have been
+                  claimed by HCSMachines.
+                items:
+                  description: UsedConfig represents a machine configuration that
+                    has been claimed by a HCSMachine.
+                  properties:
+                    hostname:
+                      description: HostName is the hostname of the claimed configuration.
+                      type: string
+                    machineRef:
+                      description: MachineRef is the name of the HCSMachine that claimed
+                        this configuration.
+                      type: string
+                  required:
+                  - hostname
+                  - machineRef
+                  type: object
+                type: array
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
