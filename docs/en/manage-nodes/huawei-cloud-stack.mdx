@@ -310,9 +310,9 @@ To upgrade worker machine specifications (CPU, memory, disk, VM image), follow t
    - `rootVolume.size` - System disk size
    - `dataVolumes` - Data disk configurations
 
-   ```bash
-   kubectl get hcsmachinetemplate <current-template> -n cpaas-system -o yaml > new-template.yaml
-   ```
+     ```bash
+     kubectl get hcsmachinetemplate <current-template> -n cpaas-system -o yaml > new-template.yaml
+     ```
 
 2. **Deploy New Template**
 
@@ -357,10 +357,10 @@ Ensure the VM template's Kubernetes version matches the version specified in the
    - `spec.template.spec.version` - Target Kubernetes version
    - `spec.template.spec.infrastructureRef.name` - New machine template name
 
-   ```bash
-   kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
-     --type='merge' -p='{"spec":{"template":{"spec":{"version":"<kubernetes-version>","infrastructureRef":{"name":"<new-template>"}}}}}'
-   ```
+     ```bash
+     kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
+       --type='merge' -p='{"spec":{"template":{"spec":{"version":"<kubernetes-version>","infrastructureRef":{"name":"<new-template>"}}}}}'
+     ```
 
 3. **Monitor Upgrade**
 
