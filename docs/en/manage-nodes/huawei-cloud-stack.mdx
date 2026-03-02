@@ -58,18 +58,18 @@ metadata:
   namespace: cpaas-system
 spec:
   configs:
-    - hostname: worker-1
+    - hostname: <worker-1-hostname>
       networks:
         - subnetName: <subnet-name>
-          ipAddress: 192.168.1.21
-    - hostname: worker-2
+          ipAddress: <worker-1-ip>
+    - hostname: <worker-2-hostname>
       networks:
         - subnetName: <subnet-name>
-          ipAddress: 192.168.1.22
-    - hostname: worker-3
+          ipAddress: <worker-2-ip>
+    - hostname: <worker-3-hostname>
       networks:
         - subnetName: <subnet-name>
-          ipAddress: 192.168.1.23
+          ipAddress: <worker-3-ip>
 ```
 
 | Parameter | Type | Required | Description |
@@ -179,8 +179,6 @@ spec:
     rollingUpdate:
       maxSurge: 0
       maxUnavailable: 1
-  selector:
-    matchLabels: null
   template:
     spec:
       clusterName: <cluster-name>
@@ -313,6 +311,15 @@ To upgrade worker machine specifications (CPU, memory, disk, VM image), follow t
      ```bash
      kubectl get hcsmachinetemplate <current-template> -n cpaas-system -o yaml > new-template.yaml
      ```
+
+   Then edit `new-template.yaml` before applying:
+   - Change `metadata.name` to `<new-template>`
+   - Remove server-generated fields such as:
+     - `metadata.resourceVersion`
+     - `metadata.uid`
+     - `metadata.creationTimestamp`
+     - `metadata.managedFields`
+     - `status`
 
 2. **Deploy New Template**
 
