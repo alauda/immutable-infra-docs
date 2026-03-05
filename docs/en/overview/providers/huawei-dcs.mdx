@@ -1,0 +1,44 @@
+---
+weight: 10
+---
+
+# Huawei DCS Provider
+
+The Huawei DCS Infrastructure Provider enables Immutable Infrastructure on Huawei Datacenter Virtualization Solution (DCS) platform.
+
+## Overview
+
+DCS (Datacenter Virtualization Solution) is Huawei's virtualization platform that provides enterprise-grade virtualization capabilities. The DCS Provider integrates with DCS to manage virtual machines, networks, and storage resources for Kubernetes clusters.
+
+## Key Features
+
+- **Virtual Machine Management**: Provision and manage VMs on DCS platform
+- **Network Integration**: Support for DCS virtual switches and port groups
+- **Storage Management**: Integration with DCS datastore clusters
+- **IP Management**: Static IP allocation through `DCSIpHostnamePool` resources
+
+## Architecture
+
+The DCS Provider implements the following custom resources:
+
+- `DCSCluster`: Represents the DCS infrastructure for a Kubernetes cluster
+- `DCSMachine`: Represents a virtual machine in DCS
+- `DCSMachineTemplate`: Template for creating DCS machines
+- `DCSIpHostnamePool`: Pool of IP addresses and hostnames for VMs
+
+## Requirements
+
+- DCS platform with API access
+- Interface interconnection user with administrator role
+- Virtual machine templates with MicroOS images
+- Shared storage with cross-host access capability
+
+## Documentation
+
+For detailed instructions on using the DCS Provider, see:
+
+- [Installation](../../install/huawei-dcs.mdx)
+- [Creating Clusters](../../create-cluster/huawei-dcs.mdx)
+- [Managing Nodes](../../manage-nodes/huawei-dcs.mdx)
+- [Upgrading Clusters](../../upgrade-cluster/huawei-dcs.mdx)
+- [API Reference](../../apis/providers/huawei-dcs/)

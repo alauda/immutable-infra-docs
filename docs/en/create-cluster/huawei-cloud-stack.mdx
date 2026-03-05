@@ -1,0 +1,381 @@
+---
+weight: 20
+title: Creating Clusters on Huawei Cloud Stack
+author: chaozhou@alauda.io
+category: howto
+queries:
+  - create hcs cluster
+  - huawei cloud stack kubernetes
+  - hcs cluster creation
+---
+
+# Creating Clusters on Huawei Cloud Stack
+
+This document provides comprehensive instructions for creating Kubernetes clusters on the Huawei Cloud Stack platform using Cluster API.
+
+## Prerequisites
+
+Before creating clusters, ensure all of the following prerequisites are met:
+
+### 1. Required Plugin Installation
+
+Install the following plugins on the <Term name="product" textCase="capitalize" />'s `global` cluster:
+- **Alauda Container Platform Kubeadm Provider**
+- **Alauda Container Platform HCS Infrastructure Provider**
+
+For detailed installation instructions, refer to the [Installation Guide](../install/huawei-cloud-stack.mdx).
+
+### 2. HCS Platform Preparation
+
+Ensure the following HCS resources are configured:
+- **VPC**: Virtual Private Cloud for network isolation
+- **Subnet**: At least one subnet for VM deployment
+- **Security Group**: Proper security group rules for cluster communication
+
+### 3. HCS Credentials
+
+Prepare HCS access credentials with the following information:
+- **AccessKey**: HCS access key ID
+- **SecretKey**: HCS access key
+- **ProjectID**: HCS project ID
+- **Region**: HCS region (e.g., `cn-global-1`)
+- **ExternalGlobalDomain**: HCS domain name
+
+## Cluster Creation Overview
+
+At a high level, you'll create the following Cluster API resources in the <Term name="product" textCase="capitalize" />'s `global` cluster to provision infrastructure and bootstrap a functional Kubernetes cluster.
+
+:::warning
+**Important Namespace Requirement**
+
+To ensure proper integration with the <Term name="product" textCase="capitalize" /> as business clusters, all resources must be deployed in the `cpaas-system` namespace. Deploying resources in other namespaces may result in integration issues.
+:::
+
+The cluster creation process follows this order:
+
+1. Configure HCS authentication (Secret)
+2. Create machine configuration pool (HCSMachineConfigPool)
+3. Configure machine template (HCSMachineTemplate)
+4. Configure KubeadmControlPlane
+5. Configure HCSCluster
+6. Create the Cluster
+
+## Control Plane Configuration
+
+The control plane manages cluster state, scheduling, and the Kubernetes API. This section shows how to configure a highly available control plane.
+
+:::warning
+**Configuration Parameter Guidelines**
+
+When configuring resources, exercise caution with parameter modifications:
+- **Replace only values enclosed in `<>`** with your environment-specific values
+- **Preserve all other parameters** as they represent optimized or required configurations
+- Modifying non-placeholder parameters may result in cluster instability or integration issues
+:::
+
+### Configure HCS Authentication
+
+HCS authentication information is stored in a Secret resource.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: <cluster-name>
+  namespace: cpaas-system
+type: Opaque
+data:
+  accessKey: <base64-encoded-access-key>
+  secretKey: <base64-encoded-secret-key>
+  projectID: <base64-encoded-project-id>
+  region: <base64-encoded-region>
+  externalGlobalDomain: <base64-encoded-domain>
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `.data.accessKey` | HCS access key ID (base64-encoded) |
+| `.data.secretKey` | HCS access key (base64-encoded) |
+| `.data.projectID` | HCS project ID (base64-encoded) |
+| `.data.region` | HCS region such as `cn-global-1` (base64-encoded) |
+| `.data.externalGlobalDomain` | HCS domain name (base64-encoded) |
+
+### Configure Machine Configuration Pool
+
+The `HCSMachineConfigPool` defines pre-configured hostnames and static IP addresses for VMs.
+
+:::warning
+**Pool Size Requirement**
+
+The configuration pool must include at least as many entries as the number of control plane nodes you plan to deploy.
+:::
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: HCSMachineConfigPool
+metadata:
+  name: <cluster-name>
+  namespace: cpaas-system
+spec:
+  configs:
+    - hostname: master-1
+      networks:
+        - subnetName: <subnet-name>
+          ipAddress: 192.168.1.11
+    - hostname: master-2
+      networks:
+        - subnetName: <subnet-name>
+          ipAddress: 192.168.1.12
+    - hostname: master-3
+      networks:
+        - subnetName: <subnet-name>
+          ipAddress: 192.168.1.13
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `.spec.configs[].hostname` | string | Yes | VM hostname |
+| `.spec.configs[].networks[].subnetName` | string | Yes | Subnet name in HCS |
+| `.spec.configs[].networks[].ipAddress` | string | Yes | Static IP address |
+
+### Configure Machine Template
+
+The `HCSMachineTemplate` defines the VM specifications for control plane nodes.
+
+:::warning
+**Storage Requirements**
+
+The following data disk mount points are recommended for control plane nodes:
+- `/var/lib/etcd` - etcd data (10GB+)
+- `/var/lib/kubelet` - kubelet data (100GB+)
+- `/var/lib/containerd` - container runtime data (100GB+)
+:::
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: HCSMachineTemplate
+metadata:
+  name: <cluster-name>-control-plane
+  namespace: cpaas-system
+spec:
+  template:
+    spec:
+      imageName: <vm-image-name>
+      flavorName: <instance-flavor>
+      availabilityZone: <availability-zone>
+      rootVolume:
+        type: SSD
+        size: 100
+      configPoolRef:
+        name: <cluster-name>
+      dataVolumes:
+        - size: 10
+          type: SSD
+          mountPath: /var/lib/etcd
+          format: xfs
+        - size: 100
+          type: SSD
+          mountPath: /var/lib/kubelet
+          format: xfs
+        - size: 100
+          type: SSD
+          mountPath: /var/lib/containerd
+          format: xfs
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `.spec.template.spec.imageName` | string | Yes | VM image name such as `microos-4.2.1-new` |
+| `.spec.template.spec.flavorName` | string | Yes | Instance flavor such as `c3.xlarge.2` |
+| `.spec.template.spec.availabilityZone` | string | No | Availability zone such as `az1`, `az2` |
+| `.spec.template.spec.rootVolume.type` | string | Yes | Volume type (`SSD` or `SATA`) |
+| `.spec.template.spec.rootVolume.size` | int | Yes | System disk size in GB |
+| `.spec.template.spec.configPoolRef.name` | string | Yes | Referenced HCSMachineConfigPool name |
+| `.spec.template.spec.dataVolumes[]` | array | No | Data volume configurations |
+| `.spec.template.spec.dataVolumes[].size` | int | Yes* | Data disk size in GB |
+| `.spec.template.spec.dataVolumes[].type` | string | Yes* | Volume type |
+| `.spec.template.spec.dataVolumes[].mountPath` | string | Yes* | Mount path |
+| `.spec.template.spec.dataVolumes[].format` | string | Yes* | File system format (`xfs` or `ext4`) |
+
+*Required when dataVolumes is specified.
+
+### Configure KubeadmControlPlane
+
+The `KubeadmControlPlane` defines the Kubernetes control plane configuration.
+
+```yaml
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: <cluster-name>
+  namespace: cpaas-system
+spec:
+  replicas: 3
+  version: <kubernetes-version>
+  kubeadmConfigSpec:
+    clusterConfiguration:
+      imageRepository: <image-repository>
+      dns:
+        imageTag: <dns-image-tag>
+      etcd:
+        local:
+          imageTag: <etcd-image-tag>
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: HCSMachineTemplate
+      name: <cluster-name>-control-plane
+```
+
+For component versions (DNS image tag, etcd image tag), refer to the [OS Support Matrix](../overview/os-support-matrix.mdx).
+
+### Configure HCSCluster
+
+The `HCSCluster` resource defines the HCS infrastructure configuration.
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: HCSCluster
+metadata:
+  name: <cluster-name>
+  namespace: cpaas-system
+spec:
+  controlPlaneLoadBalancer:
+    vipAddress: <vip-address>
+    vipSubnetName: <elb-subnet-name>
+    vipDomainName: <vip-domain-name>
+    elbVirsubnetL4Ips:
+      - subnetName: <subnet-name>
+        ips:
+          - 192.168.15.101
+          - 192.168.15.102
+    elbVirsubnetL7Ips:
+      - subnetName: <subnet-name>
+        ips:
+          - 192.168.15.103
+          - 192.168.15.104
+  networkType: kube-ovn
+  network:
+    vpc:
+      name: <vpc-name>
+    subnets:
+      - name: <subnet-name>
+    securityGroup:
+      name: <security-group-name>
+  identityRef:
+    name: <cluster-name>
+  controlPlaneEndpoint:
+    host: <vip-address>
+    port: 6443
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `.spec.networkType` | string | Yes | Network type, currently supports `kube-ovn` |
+| `.spec.network.vpc.name` | string | Yes | VPC name |
+| `.spec.network.subnets[].name` | string | Yes | Subnet name list |
+| `.spec.network.securityGroup.name` | string | Yes | Security group name |
+| `.spec.identityRef.name` | string | Yes | Reference to credential Secret name |
+| `.spec.controlPlaneEndpoint.host` | string | No | API server host (VIP address or domain name) |
+| `.spec.controlPlaneEndpoint.port` | int | No | API server port (default: 6443) |
+| `.spec.controlPlaneLoadBalancer.vipAddress` | string | No* | Control plane VIP address |
+| `.spec.controlPlaneLoadBalancer.vipSubnetName` | string | No* | ELB subnet name |
+| `.spec.controlPlaneLoadBalancer.vipDomainName` | string | No | VIP domain name with DNS configured |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips` | array | No | L4 load balancer IP configuration |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips` | array | No | L7 load balancer IP configuration |
+
+*Required when configuring VIP address.
+
+### Configure Cluster
+
+The `Cluster` resource in Cluster API declares the cluster and references the control plane and infrastructure resources.
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: <cluster-name>
+  namespace: cpaas-system
+  annotations:
+    cpaas.io/sentry-deploy-type: Baremetal
+    cpaas.io/alb-address-type: ClusterAddress
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: HCSCluster
+    cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>
+    cpaas.io/kube-ovn-version: <kube-ovn-version>
+  labels:
+    cluster-type: HCS
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - <pods-cidr>
+    services:
+      cidrBlocks:
+        - <services-cidr>
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: <cluster-name>
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: HCSCluster
+    name: <cluster-name>
+```
+
+| Annotation | Description |
+|-----------|-------------|
+| `cpaas.io/sentry-deploy-type` | Deployment type, set to `Baremetal` |
+| `cpaas.io/alb-address-type` | ALB address type, set to `ClusterAddress` |
+| `capi.cpaas.io/resource-group-version` | Resource group version |
+| `capi.cpaas.io/resource-kind` | Resource type, set to `HCSCluster` |
+| `cpaas.io/kube-ovn-join-cidr` | Kube-OVN join subnet CIDR |
+| `cpaas.io/kube-ovn-version` | Kube-OVN version |
+
+## Cluster Verification
+
+After deploying all cluster resources, verify that the cluster has been created successfully.
+
+### Using kubectl
+
+```bash
+# Check cluster status
+kubectl get cluster -n cpaas-system <cluster-name>
+
+# Verify control plane nodes
+kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>
+
+# Check machine status
+kubectl get machines -n cpaas-system
+
+# Verify cluster deployment status
+kubectl get clustermodule <cluster-name> -o jsonpath='{.status.base.deployStatus}'
+```
+
+### Expected Results
+
+A successfully created cluster should show:
+- Cluster status: **Running** or **Provisioned**
+- All control plane machines: **Running**
+- Kubernetes nodes: **Ready**
+- Cluster Module Status: **Completed**
+
+## Adding Worker Nodes
+
+For instructions on adding worker nodes to the cluster, refer to [Managing Nodes](../manage-nodes/huawei-cloud-stack.mdx).
+
+## Upgrading Clusters
+
+For instructions on upgrading cluster components, refer to [Upgrading Clusters](../upgrade-cluster/huawei-cloud-stack.mdx).

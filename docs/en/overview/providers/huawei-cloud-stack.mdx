@@ -1,0 +1,45 @@
+---
+weight: 20
+title: Huawei Cloud Stack Provider
+author: chaozhou@alauda.io
+category: introduction
+queries:
+  - huawei cloud stack provider
+  - hcs cluster api
+  - hcs infrastructure provider
+---
+
+# Huawei Cloud Stack Provider
+
+<Overview />
+
+The Huawei Cloud Stack Infrastructure Provider enables Immutable Infrastructure on the Huawei Cloud Stack (HCS) platform. This provider integrates with HCS to provision and manage cloud resources for Kubernetes clusters using Cluster API.
+
+## Overview
+
+Huawei Cloud Stack is a hybrid cloud solution that extends public cloud capabilities to private data centers. The HCS Provider leverages HCS APIs to manage infrastructure resources including virtual machines, networks, storage, and load balancers.
+
+## Key Features
+
+- **Kube-OVN Integration**: Native support for Kube-OVN container network interface
+- **ELB Load Balancer**: Built-in elastic load balancer support for control plane high availability
+- **Static IP Configuration**: Static IP address allocation for enterprise network environments
+- **Machine Configuration Pools**: Pre-defined hostnames and IP address pools for predictable VM provisioning
+- **Multi-AZ Support**: Deployment across multiple availability zones for high availability
+
+## Supported Resources
+
+| Resource | Description |
+|----------|-------------|
+| `HCSCluster` | Represents HCS infrastructure including VPC, subnets, and load balancer configuration |
+| `HCSMachine` | Represents a virtual machine instance in HCS |
+| `HCSMachineTemplate` | Template for creating HCS machines with instance specifications |
+| `HCSMachineConfigPool` | Pool of pre-defined hostnames and static IP addresses |
+
+## Documentation
+
+- [Installation Guide](../../install/huawei-cloud-stack.mdx)
+- [Creating Clusters](../../create-cluster/huawei-cloud-stack.mdx)
+- [Managing Nodes](../../manage-nodes/huawei-cloud-stack.mdx)
+- [Upgrading Clusters](../../upgrade-cluster/huawei-cloud-stack.mdx)
+- [Provider APIs](../../apis/providers/huawei-cloud-stack/)

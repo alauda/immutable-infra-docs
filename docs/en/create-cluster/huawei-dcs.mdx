@@ -1,30 +1,34 @@
 ---
-weight: 40
+weight: 10
 ---
-# Creating Clusters
 
-This document provides comprehensive instructions for creating Kubernetes clusters on the DCS platform using Cluster API. The process involves deploying and configuring multiple Kubernetes resources that work together to provision and manage cluster infrastructure.
+# Creating Clusters on Huawei DCS
+
+This document provides comprehensive instructions for creating Kubernetes clusters on the Huawei DCS platform using Cluster API. The process involves deploying and configuring multiple Kubernetes resources that work together to provision and manage cluster infrastructure.
 
 ## Prerequisites
 
 Before creating clusters, ensure all of the following prerequisites are met:
 
 ### 1. Required Plugin Installation
-Install the following plugins on the <Term name="product" textCase="capitalize" />'s `global` cluster:
-- **Cluster API Provider Kubeadm** - Provides Kubernetes cluster bootstrapping capabilities
-- **Cluster API Provider DCS** - Enables DCS infrastructure integration and management
 
-For detailed installation instructions, refer to the [Installation Guide](./install.mdx).
+Install the following plugins on the <Term name="product" textCase="capitalize" />'s `global` cluster:
+- **Alauda Container Platform Kubeadm Provider**
+- **Alauda Container Platform DCS Infrastructure Provider**
+
+For detailed installation instructions, refer to the [Installation Guide](../install/huawei-dcs.mdx).
 
 ### 2. Virtual Machine Template Preparation
+
 For Kubernetes installation, you must:
 - Upload the MicroOS image provided by **<Term name="company" textCase="capitalize" />** to the DCS platform
 - Create a virtual machine template based on this image
 - Ensure the template includes all necessary Kubernetes components
 
-For details on the Kubernetes components included in each VM image, see [OS Support Matrix](./overview/os-support-matrix.mdx).
+For details on the Kubernetes components included in each VM image, see [OS Support Matrix](../overview/os-support-matrix.mdx).
 
 ### 3. Network Connectivity
+
 Ensure that all nodes in the <Term name="product" textCase="capitalize" />'s `global` cluster can access the DCS platform on:
 - **Port 7443** (DCS API)
 - **Port 8443** (DCS Web Console)
@@ -32,10 +36,11 @@ Ensure that all nodes in the <Term name="product" textCase="capitalize" />'s `gl
 > **Requirement:** Connectivity to **both ports** is mandatory for cluster creation and management.
 
 ### 4. DCS Platform Credentials
+
 The DCS platform credentials used for cluster creation must meet specific requirements.
 
 **Required User Configuration**
-- **User Type**: Must be `Interface interconnection user` (接口互联用户)
+- **User Type**: Must be `Interface interconnection user`
 - **Role**: Must be `administrator`
 
 **Required Password Policy**
@@ -46,6 +51,7 @@ Verify the following setting in **System Management** → **Rights Management** 
 > **Impact:** If set to `Yes`, the user's password will be forced to change upon first login, breaking the authentication and causing cluster creation failures.
 
 ### 5. Public Registry Configuration
+
 Configure the public registry credentials on the <Term name="product" textCase="capitalize" />. This includes:
 - Registry repository address configuration
 - Proper authentication credentials setup
@@ -55,8 +61,6 @@ For detailed configuration steps, refer to the **Alauda Container Platform** doc
 ## Cluster Creation Overview
 
 At a high level, you'll create the following Cluster API resources in the <Term name="product" textCase="capitalize" />'s `global` cluster to provision infrastructure and bootstrap a functional Kubernetes cluster.
-
-
 
 :::warning
 **Important Namespace Requirement**
@@ -272,7 +276,7 @@ The example below truncates long configuration files for readability. For the **
 
 In the following example, `<cluster-name>` is the resource name:
 
-For component versions (e.g., `<dns-image-tag>`, `<etcd-image-tag>`), please refer to [OS Support Matrix](./overview/os-support-matrix.mdx).
+For component versions (e.g., `<dns-image-tag>`, `<etcd-image-tag>`), please refer to [OS Support Matrix](../overview/os-support-matrix.mdx).
 
 ```yaml
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
@@ -375,13 +379,13 @@ spec:
   controlPlaneLoadBalancer: # Configure HA
     host: <load-balancer-ip-or-domain-name>
     port: 6443
-    type: external 
+    type: external
   credentialSecretRef: # Reference authentication secret
     name: <auth-secret-name>
   controlPlaneEndpoint: # Cluster API specification, keep consistent with controlPlane
     host: <load-balancer-ip-or-domain-name>
     port: 6443
-  networkType: kube-ovn 
+  networkType: kube-ovn
   site: <site>  # DCS platform parameter, resource pool ID
 ```
 
@@ -444,7 +448,7 @@ spec:
 
 ## Deploying Nodes
 
-Refer to the [Deploy Nodes](./node.mdx) page for instructions.
+Refer to the [Deploy Nodes](../manage-nodes/huawei-dcs.mdx) page for instructions.
 
 ## Cluster Verification
 
@@ -570,12 +574,9 @@ spec:
       content: |
         apiVersion: audit.k8s.io/v1
         kind: Policy
-        # Don't generate audit events for all requests in RequestReceived stage.
         omitStages:
         - "RequestReceived"
         rules:
-        # The following requests were manually identified as high-volume and low-risk,
-        # so drop them.
         - level: None
           users:
           - system:kube-controller-manager
@@ -584,62 +585,51 @@ spec:
           verbs: ["get", "update"]
           namespaces: ["kube-system"]
           resources:
-          - group: "" # core
+          - group: ""
             resources: ["endpoints"]
-        # Don't log these read-only URLs.
         - level: None
           nonResourceURLs:
           - /healthz*
           - /version
           - /swagger*
-        # Don't log events requests.
         - level: None
           resources:
-          - group: "" # core
+          - group: ""
             resources: ["events"]
-        # Don't log devops requests.
         - level: None
           resources:
           - group: "devops.alauda.io"
-        # Don't log get list watch requests.
         - level: None
           verbs: ["get", "list", "watch"]
-        # Don't log lease operation
         - level: None
           resources:
           - group: "coordination.k8s.io"
             resources: ["leases"]
-        # Don't log access review and token review requests.
         - level: None
           resources:
           - group: "authorization.k8s.io"
             resources: ["subjectaccessreviews", "selfsubjectaccessreviews"]
           - group: "authentication.k8s.io"
             resources: ["tokenreviews"]
-        # Don't log imagewhitelists and namespaceoverviews operations
         - level: None
           resources:
           - group: "app.alauda.io"
             resources: ["imagewhitelists"]
           - group: "k8s.io"
             resources: ["namespaceoverviews"]
-        # Secrets, ConfigMaps can contain sensitive & binary data,
-        # so only log at the Metadata level.
         - level: Metadata
           resources:
-          - group: "" # core
+          - group: ""
             resources: ["secrets", "configmaps"]
-        # devops installmanifests and katanomis can contains huge data and sensitive data, only log at the Metadata level.
         - level: Metadata
           resources:
           - group: "operator.connectors.alauda.io"
             resources: ["installmanifests"]
           - group: "operators.katanomi.dev"
             resources: ["katanomis"]
-        # Default level for known APIs
         - level: RequestResponse
           resources:
-          - group: "" # core
+          - group: ""
           - group: "aiops.alauda.io"
           - group: "apps"
           - group: "app.k8s.io"
@@ -685,8 +675,7 @@ spec:
             resources: ["deletebackuprequests"]
           - group: "connectors.alauda.io"
           - group: "operator.connectors.alauda.io"
-            resources: ["connectorscores", "connectorsgits", "connectorsocis"]
-        # Default level for all other requests.
+            resources: ["connectcores", "connectgits", "connectocis"]
         - level: Metadata
     preKubeadmCommands:
     - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
@@ -760,7 +749,3 @@ spec:
   replicas: 3
   version: <control-plane-kubernetes-version>
 ```
-
-
-
-
