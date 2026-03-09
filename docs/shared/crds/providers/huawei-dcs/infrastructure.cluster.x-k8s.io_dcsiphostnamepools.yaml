@@ -44,7 +44,33 @@ spec:
               pool:
                 items:
                   properties:
+                    additionNic:
+                      items:
+                        properties:
+                          dns:
+                            type: string
+                          dvSwitchName:
+                            type: string
+                          gateway:
+                            type: string
+                          ip:
+                            type: string
+                          ipv6:
+                            type: string
+                          mask:
+                            type: string
+                          portGroupName:
+                            type: string
+                          portGroupUrn:
+                            type: string
+                        type: object
+                      type: array
                     dns:
+                      type: string
+                    dvSwitchName:
+                      description: |-
+                        DVSwitch name for multi-NIC support.
+                        If NIC's DVSwitchName or PortGroupName is nil, the VM template's DVSwitchName and PortGroupName will be used as fallback.
                       type: string
                     gateway:
                       type: string
@@ -57,6 +83,10 @@ spec:
                     machineName:
                       type: string
                     mask:
+                      type: string
+                    portGroupName:
+                      type: string
+                    portGroupUrn:
                       type: string
                   type: object
                 type: array

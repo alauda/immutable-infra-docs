@@ -83,6 +83,10 @@ spec:
                 type: object
               vmConfig:
                 properties:
+                  cdRomDatastoreClusterName:
+                    type: string
+                  cdRomDatastoreName:
+                    type: string
                   dcsMachineCpuSpec:
                     properties:
                       quantity:
@@ -149,6 +153,27 @@ spec:
           status:
             description: DCSMachineStatus defines the observed state of DCSMachine.
             properties:
+              additionalNic:
+                items:
+                  properties:
+                    dns:
+                      type: string
+                    dvSwitchName:
+                      type: string
+                    gateway:
+                      type: string
+                    ip:
+                      type: string
+                    ipv6:
+                      type: string
+                    mask:
+                      type: string
+                    portGroupName:
+                      type: string
+                    portGroupUrn:
+                      type: string
+                  type: object
+                type: array
               addresses:
                 description: MachineAddresses is a slice of MachineAddress items to
                   be used by infrastructure providers.
@@ -176,6 +201,8 @@ spec:
                   - type
                   type: object
                 type: array
+              cdRomDatastoreUrn:
+                type: string
               cdRomFile:
                 type: string
               conditions:
@@ -252,7 +279,33 @@ spec:
                 type: object
               networkConfig:
                 properties:
+                  additionNic:
+                    items:
+                      properties:
+                        dns:
+                          type: string
+                        dvSwitchName:
+                          type: string
+                        gateway:
+                          type: string
+                        ip:
+                          type: string
+                        ipv6:
+                          type: string
+                        mask:
+                          type: string
+                        portGroupName:
+                          type: string
+                        portGroupUrn:
+                          type: string
+                      type: object
+                    type: array
                   dns:
+                    type: string
+                  dvSwitchName:
+                    description: |-
+                      DVSwitch name for multi-NIC support.
+                      If NIC's DVSwitchName or PortGroupName is nil, the VM template's DVSwitchName and PortGroupName will be used as fallback.
                     type: string
                   gateway:
                     type: string
@@ -265,6 +318,10 @@ spec:
                   machineName:
                     type: string
                   mask:
+                    type: string
+                  portGroupName:
+                    type: string
+                  portGroupUrn:
                     type: string
                 type: object
               ready:
