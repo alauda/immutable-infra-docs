@@ -132,6 +132,10 @@ spec:
                         type: object
                       vmConfig:
                         properties:
+                          cdRomDatastoreClusterName:
+                            type: string
+                          cdRomDatastoreName:
+                            type: string
                           dcsMachineCpuSpec:
                             properties:
                               quantity:
