@@ -44,7 +44,7 @@ spec:
               pool:
                 items:
                   properties:
-                    additionNic:
+                    additionalNic:
                       items:
                         properties:
                           dns:
@@ -69,8 +69,8 @@ spec:
                       type: string
                     dvSwitchName:
                       description: |-
-                        add for multi nic support
-                        if nic DVSwitchName or PortGroupName is nil, we will use vmtemplate DVSwitchName and PortGroupName
+                        DVSwitch name for multi-NIC support.
+                        If NIC's DVSwitchName or PortGroupName is nil, the VM template's DVSwitchName and PortGroupName will be used as fallback.
                       type: string
                     gateway:
                       type: string
