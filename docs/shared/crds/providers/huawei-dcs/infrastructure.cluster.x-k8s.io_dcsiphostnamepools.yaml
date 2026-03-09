@@ -44,7 +44,7 @@ spec:
               pool:
                 items:
                   properties:
-                    additionalNic:
+                    additionNic:
                       items:
                         properties:
                           dns:

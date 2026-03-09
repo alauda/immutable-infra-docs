@@ -279,7 +279,7 @@ spec:
                 type: object
               networkConfig:
                 properties:
-                  additionalNic:
+                  additionNic:
                     items:
                       properties:
                         dns:
