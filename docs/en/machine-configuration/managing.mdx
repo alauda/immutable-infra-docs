@@ -55,7 +55,7 @@ To configure the Chrony time synchronization service (`chronyd`) and specify the
                source: 'data:text/plain;base64,c2VydmVyIDAuY2VudG9zLnBvb2wubnRwLm9yZyBpYnVyc3QKc2VydmVyIDEuY2VudG9zLnBvb2wubnRwLm9yZyBpYnVyc3QKbWFrZXN0ZXAgMS4wIDMKcnRjc3luYwpsb2dkaXIgL3Zhci9sb2cvY2hyb255Cg=='
    ```
 
-   This configuration creates a `MachineConfig` object that applies a customized `chrony.conf` file to nodes associated with the `worker` machine configuration pool. The file will be written to `/etc/chrony.conf` on each node, with file permissions set to `0644`.
+   This configuration creates a `MachineConfig` object that applies a customized `chrony.conf` file to nodes associated with the `worker` machine configuration pool. The file will be written to `/etc/chrony.conf` on each node, with file permissions set to `0o644`.
 
 ## Disabling the Chrony Time Service
 
