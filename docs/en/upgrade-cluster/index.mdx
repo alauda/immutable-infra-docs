@@ -1,6 +1,12 @@
 ---
 weight: 50
 title: Upgrading Clusters
+author: dev@alauda.io
+category: index
+queries:
+  - upgrade kubernetes cluster
+  - cluster distribution version upgrade
+  - kubernetes version upgrade guide
 ---
 
 # Upgrading Clusters
@@ -9,16 +15,106 @@ title: Upgrading Clusters
 
 This section provides instructions for upgrading Kubernetes clusters managed by Cluster API.
 
+## Upgrade Overview
+
+Cluster upgrades on Immutable Infrastructure follow a two-phase approach:
+
+1. **Phase 1**: Upgrade Distribution Version (Aligned Extensions)
+2. **Phase 2**: Upgrade Kubernetes Version
+
+:::info
+This two-phase upgrade ensures that all cluster extensions and plugins are compatible with the new platform version before upgrading the underlying Kubernetes components.
+:::
+
+### Distribution Version vs Kubernetes Version
+
+| Component | Description | Managed By |
+|-----------|-------------|------------|
+| Distribution Version | ACP platform version (e.g., ACP 4.3.0) | Aligned Extensions upgrade |
+| Kubernetes Version | Kubernetes component version | Node Pool upgrade |
+
+Each Distribution Version corresponds to a specific Kubernetes version. Upgrading the Distribution Version updates cluster extensions and may enable new Kubernetes versions.
+
+### Prerequisites
+
+- Control Plane is reachable and healthy
+- All nodes are in Ready state
+- Sufficient IP Pool capacity for rolling updates
+
+---
+
+## Phase 1: Upgrading Distribution Version (Aligned Extensions)
+
+Upgrading the Distribution Version updates the cluster's Aligned Extensions (L3 and L4 plugins).
+
+### Using the Web UI
+
+**Navigation**: Clusters → Clusters → Select cluster → Aligned Extensions Tab → Click **Upgrade**
+
+#### Step 1: Review Modifications
+
+:::warning
+⚠️ All modifications must be reviewed with technical support to confirm whether they should be preserved or deleted. Unconfirmed modifications may cause the upgrade to fail.
+:::
+
+Review any detected modifications that may affect the upgrade.
+
+**Operations**:
+- **Acknowledge**: Confirm review and proceed to Step 2
+- **Cancel**: Abort the upgrade process
+
+#### Step 2: Upgrade Aligned Extensions
+
+**Version Information**:
+- **Current Version**: The cluster's current Distribution Version
+- **Target Version**: The global cluster's Distribution Version
+
+**Plugin Impact Assessment**:
+
+| Plugin | Current Version | Target Version | Impact |
+|--------|----------------|----------------|--------|
+| [Plugin List] | ... | ... | Low/Medium/High |
+
+For Medium and High impact plugins, check **Acknowledge** to confirm you understand the risks.
+
+**Operations**:
+- **Back**: Return to Step 1 to re-review modifications
+- **Start Upgrade**: Begin the upgrade (only available after acknowledging Medium/High impacts)
+- **Cancel**: Abort the upgrade process
+
+### Post-Upgrade Verification
+
+After the Distribution Version upgrade completes:
+- Cluster's Distribution Version is updated
+- Node Pools' Kubernetes versions are now lower than the new Distribution Version supports
+- Proceed to Phase 2 to upgrade Kubernetes
+
+---
+
+## Phase 2: Upgrading Kubernetes Version
+
+After upgrading Distribution Version, upgrade Kubernetes on each Node Pool.
+
+See platform-specific guides:
+- [Huawei DCS](./huawei-dcs.mdx)
+
+---
+
 ## Platform-Specific Instructions
 
 Select your platform for detailed upgrade instructions:
 
-- [Huawei DCS](./huawei-dcs.mdx)
-- [Huawei Cloud Stack](./huawei-cloud-stack.mdx)
-- VMware vSphere (In Development)
-- Bare Metal (Planned)
+| Provider | Description | Status |
+|----------|-------------|--------|
+| [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
+| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
+| VMware vSphere | VMware vSphere virtualization platform | 🚧 In Development |
+| Bare Metal | Bare-metal servers without virtualization | 📋 Planned |
+
+---
 
 ## Related Topics
 
 - [Creating Clusters](../create-cluster/)
 - [Managing Nodes](../manage-nodes/)
+- [Infrastructure Resources](../infrastructure/)

@@ -727,4 +727,180 @@ Ensure the VM template's Kubernetes version matches the version specified in the
 3. **Monitor Upgrade**
    - The system will perform a rolling upgrade of worker nodes
    - Verify that new nodes join the cluster with the correct Kubernetes version
+
+---
+
+## Managing Node Pools Using the Web UI
+
+<Overview />
+
+Node pools provide a declarative way to manage groups of nodes with identical configurations. You can view, add, and delete worker node pools through the web UI.
+
+:::info
+**Navigation**: Clusters → Clusters → Select cluster → Node Pools Tab
+:::
+
+### Viewing Node Pools
+
+The Node Pools Tab displays all node pools in the cluster:
+
+**Control Plane Node Pool**:
+- Fixed at 3 replicas for high availability
+- Displays Kubernetes version with upgrade indicator if available
+- Shows Conditions link for detailed status
+
+**Worker Node Pools**:
+- Customizable replica counts
+- Individual Kubernetes version management
+- Scale and upgrade operations
+
+**Node Pool Card Information**:
+
+| Field | Description |
+|-------|-------------|
+| Type | Control Plane / Worker Node |
+| Name | Resource name |
+| Status | Badge showing pool health |
+| Replicas | Current count (with Max Surge/Max Unavailable for workers) |
+| SSH Authorized Keys | List of SSH public keys |
+| Kubernetes Version | Current version (upgrade indicator if available) |
+| Machine Template | Associated template name |
+| Conditions | Link to conditions list (Control Plane only) |
+
+### Adding a Worker Node Pool
+
+**Navigation**: Node Pools Tab → Click **Add Worker Node Pool**
+
+**Form Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Pool Name | text | Yes | Unique identifier for the node pool |
+| Machine Template | dropdown | Yes | Filter by Type: Worker Node and compatible Kubernetes version |
+| Replicas | number | Yes | Number of nodes in the pool |
+| Max Surge | number | No | Default: 0, must be ≥ 0 |
+| Max Unavailable | number | No | Default: 1, must be ≥ 0. When maxSurge = 0, must be > 0 and ≤ Replicas |
+| SSH Authorized Keys | text | No | Add multiple SSH public keys |
+
+**Validation**:
+- Pool name must be unique within the cluster
+- IP Pool must have sufficient available IP addresses (≥ Replicas)
+- maxSurge/maxUnavailable constraints must be satisfied
+
+**Tip**: Prefix the pool name with the cluster name followed by a hyphen (e.g., `mycluster-worker-1`) to avoid naming conflicts.
+
+After creation, new nodes appear in the **Nodes** Tab. The number of nodes equals the configured Replicas value.
+
+### Deleting a Worker Node Pool
+
+**Steps**:
+1. Click the delete icon on the Worker Node Pool card
+2. Confirm deletion in the dialog
+
+:::warning
+Deleting a worker node pool permanently removes all associated nodes and machines. Ensure workloads can tolerate the loss of these nodes through proper replication.
+:::
+
+### Viewing Conditions (Control Plane Only)
+
+Click the **Conditions** link on the Control Plane Node Pool card to view detailed status information.
+
+**Conditions List**:
+
+| Type | Status | Last Transition Time | Reason | Message |
+|------|--------|---------------------|--------|---------|
+| Condition Type | Status | Timestamp | Reason | Human-readable details |
+
+---
+
+## Upgrading Kubernetes Using the Web UI
+
+<Overview />
+
+Kubernetes upgrades follow a specific sequence: Control Plane Node Pool must be upgraded first, followed by Worker Node Pools.
+
+:::warning
+**Upgrade Prerequisites**
+- Distribution Version upgrade must be completed first (see [Upgrading Distribution Version](../../upgrade-cluster/index.mdx))
+- Control Plane Node Pool must be in Running state
+- Sufficient IP Pool capacity for rolling updates
+:::
+
+### Checking Available Upgrades
+
+In the cluster details **Node Pools** Tab:
+- Node Pools with available upgrades show **Upgrade available** indicator
+- Click on the Node Pool card to view Current vs Target versions
+
+### Upgrade Sequence
+
+```
+1. Upgrade Distribution Version (Aligned Extensions)
+   ↓
+2. Upgrade Control Plane Node Pool
+   ↓
+3. Upgrade Worker Node Pools (in any order)
+```
+
+### Upgrading Control Plane Node Pool
+
+**Navigation**: Node Pools Tab → Locate Control Plane Node Pool → Click **Upgrade**
+
+**Upgrade Dialog**:
+- **Current Version**: Displays the current Kubernetes version
+- **Target Version**: Automatically selected (latest minor version supported)
+
+Click **Confirm** to start the upgrade.
+
+**Monitoring**:
+- Watch the Node Pool status
+- Nodes roll update one by one (maxSurge=0, maxUnavailable=1)
+- Upgrade time depends on node count and resources
+
+### Upgrading Worker Node Pools
+
+:::warning
+Worker Node Pools cannot be upgraded until the Control Plane Node Pool upgrade completes.
+:::
+
+**Upgrade Availability**:
+
+| Pool State | Upgrade Available |
+|------------|-------------------|
+| Control Plane not started | ❌ Upgrade the Control Plane Node Pool first |
+| Control Plane upgrading | ❌ Wait for the Control Plane Node Pool upgrade to complete |
+| Control Plane upgraded | ✅ Upgrade button enabled |
+| Pool not in Running state | ❌ Upgrade is unavailable when the Worker Node Pool is not in the Running state |
+
+**Upgrade Steps**:
+1. For each Worker Node Pool:
+   - Click **Upgrade** button
+   - Review and confirm
+2. Pools can be upgraded in parallel after Control Plane completes
+
+### Cross-Version Upgrades
+
+When upgrading across major versions (e.g., v1.32 → v1.34):
+
+1. Upgrade Control Plane to v1.33
+2. Wait for completion
+3. Upgrade Control Plane to v1.34
+4. Repeat for Worker Pools
+
+**Why**: Kubernetes only supports single minor version upgrades.
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Upgrade button disabled | Check pool status and Control Plane version |
+| Upgrade stuck | Check IP Pool availability, DCS platform resources |
+| Nodes not joining | Verify network connectivity, DNS settings |
+
+---
+
+## Next Steps
+
+- [Create Clusters](../create-cluster/huawei-dcs.mdx)
+- [Upgrade Clusters](../upgrade-cluster/huawei-dcs.mdx)
    - Monitor cluster health throughout the upgrade process

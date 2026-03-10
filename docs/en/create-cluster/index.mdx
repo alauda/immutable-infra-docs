@@ -1,6 +1,12 @@
 ---
 weight: 40
 title: Creating Clusters
+author: dev@alauda.io
+category: index
+queries:
+  - create kubernetes cluster
+  - deploy cluster on infrastructure
+  - cluster setup guide
 ---
 
 # Creating Clusters
@@ -9,14 +15,22 @@ title: Creating Clusters
 
 This section provides instructions for creating Kubernetes clusters on different infrastructure platforms.
 
+## Before Creating Clusters
+
+Before creating a cluster, configure the required infrastructure resources:
+
+- **[Infrastructure Resources](../infrastructure/)** - Configure cloud credentials, IP pools, and machine templates
+
 ## Platform-Specific Instructions
 
 Select your platform for detailed cluster creation instructions:
 
-- [Huawei DCS](./huawei-dcs.mdx)
-- [Huawei Cloud Stack](./huawei-cloud-stack.mdx)
-- [VMware vSphere](./vmware-vsphere.mdx) (In Development)
-- [Bare Metal](./bare-metal.mdx) (Planned)
+| Provider | Description | Status |
+|----------|-------------|--------|
+| [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
+| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
+| [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | 🚧 In Development |
+| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | 📋 Planned |
 
 ## Next Steps
 
