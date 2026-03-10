@@ -129,6 +129,97 @@ Worker node upgrades are managed via `MachineDeployment` resources.
 For detailed worker node procedures, see the [Managing Nodes](../manage-nodes/huawei-dcs.mdx#upgrading-kubernetes-version) section.
 :::
 
+---
+
+## Upgrading Kubernetes Using the Web UI
+
+This section covers the web UI workflow for upgrading Kubernetes on DCS clusters.
+
+### Prerequisites
+
+- Distribution Version upgrade completed (see [Upgrading Distribution Version](index.mdx))
+- Control Plane Node Pool is in Running state
+- Sufficient IP Pool capacity for rolling updates
+
+### Upgrade Workflow
+
+Kubernetes upgrades follow this sequence:
+
+```
+1. Upgrade Distribution Version (Aligned Extensions)
+   ↓
+2. Upgrade Control Plane Node Pool
+   ↓
+3. Upgrade Worker Node Pools (in any order)
+```
+
+### Checking Available Upgrades
+
+**Navigation**: Clusters → Clusters → Select cluster → Node Pools Tab
+
+Node Pools with available upgrades show **Upgrade available** indicator. Click on the Node Pool card to view Current vs Target versions.
+
+### Upgrading Control Plane Node Pool
+
+**Steps**:
+1. In the Node Pools Tab, locate the **Control Plane Node Pool**
+2. Click **Upgrade** button
+3. Review upgrade information:
+   - **Current Version**: Current Kubernetes version
+   - **Target Version**: Latest minor version supported (automatically selected)
+4. Click **Confirm** to start
+
+**Monitoring**:
+- Watch the Node Pool status
+- Nodes will roll update one by one (maxSurge=0, maxUnavailable=1)
+- Upgrade time depends on node count and resources
+
+### Upgrading Worker Node Pools
+
+:::warning
+Worker Node Pools cannot be upgraded until the Control Plane Node Pool upgrade completes.
+:::
+
+**When Worker Pool Upgrade is Available**:
+- Control Plane Kubernetes Version matches global cluster version
+- Control Plane is in Running state
+
+**Upgrade Steps**:
+1. For each Worker Node Pool:
+   - Click **Upgrade** button
+   - Review and confirm
+2. Pools can be upgraded in parallel after Control Plane completes
+
+**Upgrade Constraints**:
+
+| Pool State | Upgrade Button |
+|------------|----------------|
+| Not Running | ❌ Disabled: "Upgrade is unavailable when the Worker Node Pool is not in the Running state" |
+| Control Plane not started | ❌ Disabled: "Upgrade the Control Plane Node Pool first" |
+| Control Plane upgrading | ❌ Disabled: "Wait for the Control Plane Node Pool upgrade to complete" |
+| Control Plane upgraded | ✅ Enabled |
+
+### Cross-Version Upgrades
+
+When upgrading across major versions (e.g., v1.32 → v1.34):
+
+1. Upgrade Control Plane to v1.33
+2. Wait for completion
+3. Upgrade Control Plane to v1.34
+4. Repeat for Worker Pools
+
+**Why**: Kubernetes only supports single minor version upgrades.
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Upgrade button disabled | Check pool status and Control Plane version |
+| Upgrade stuck | Check IP Pool availability, DCS platform resources |
+| Nodes not joining | Verify network connectivity, DNS settings |
+
+---
+
 ## Additional Resources
 
 - [Cluster API Upgrade Documentation](https://cluster-api.sigs.k8s.io/tasks/upgrading-clusters)

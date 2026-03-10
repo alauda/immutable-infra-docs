@@ -1,6 +1,12 @@
 ---
 weight: 35
 title: Providers
+author: dev@alauda.io
+category: index
+queries:
+  - infrastructure providers
+  - cluster providers
+  - dcs hcs vsphere providers
 ---
 
 # Infrastructure Providers
@@ -18,6 +24,22 @@ Immutable Infrastructure supports multiple infrastructure platforms through plug
 | [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | 🚧 In Development |
 | [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | 📋 Planned |
 
+## Fleet Essentials Plugin
+
+Fleet Essentials is a core plugin that provides universal cluster management capabilities through a web UI. When installed, it enables:
+
+- **Unified Cluster Management**: Single interface for managing clusters across all platforms
+- **Infrastructure Resource Management**: Configure cloud credentials, IP pools, and machine templates
+- **Cluster Lifecycle Operations**: Create, view, upgrade, and destroy clusters through guided workflows
+- **Node Pool Management**: Declarative node pool management with scaling and upgrade capabilities
+
+Fleet Essentials works with Infrastructure Providers to deliver platform-specific cluster management. Each provider extends Fleet Essentials with its own cluster creation workflows and platform-specific features.
+
+**Provider Extensions**:
+- **DCS Provider**: Enables UI-based cluster creation and management on Huawei DCS platform
+- **HCS Provider**: Enables UI-based cluster creation and management on Huawei Cloud Stack (coming soon)
+- **vSphere Provider**: Will enable UI-based cluster creation and management on VMware vSphere (in development)
+
 ## Provider Architecture
 
 Each Infrastructure Provider is an independent plugin that integrates with the Cluster API framework to manage infrastructure resources on the target platform.
@@ -30,4 +52,4 @@ Each Infrastructure Provider is an independent plugin that integrates with the C
 
 ### Provider Independence
 
-Infrastructure Providers are versioned independently from ACP. A single-provider version can be compatible with multiple ACP versions, providing flexibility in deployment and upgrade scenarios.
+Infrastructure Providers are versioned independently from the core platform. A single-provider version can be compatible with multiple platform versions, providing flexibility in deployment and upgrade scenarios.
