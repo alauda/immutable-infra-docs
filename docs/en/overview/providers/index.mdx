@@ -26,17 +26,19 @@ Immutable Infrastructure supports multiple infrastructure platforms through plug
 
 ## Fleet Essentials Plugin
 
-Fleet Essentials is a core plugin that provides universal cluster management capabilities through a web UI. When installed, it enables:
+Fleet Essentials is a core plugin that provides a shared web UI framework for cluster management. Infrastructure Providers can extend it through UI extension anchors to add platform-specific pages and workflows.
+
+When installed, Fleet Essentials enables:
 
 - **Unified Cluster Management**: Single interface for managing clusters across all platforms
 - **Infrastructure Resource Management**: Configure cloud credentials, IP pools, and machine templates
 - **Cluster Lifecycle Operations**: Create, view, upgrade, and destroy clusters through guided workflows
 - **Node Pool Management**: Declarative node pool management with scaling and upgrade capabilities
 
-Fleet Essentials works with Infrastructure Providers to deliver platform-specific cluster management. Each provider extends Fleet Essentials with its own cluster creation workflows and platform-specific features.
+Fleet Essentials works with Infrastructure Providers to deliver platform-specific cluster management. Providers that implement these Fleet Essentials extension anchors can add their own cluster creation workflows and management pages.
 
 **Provider Extensions**:
-- **DCS Provider**: Enables UI-based cluster creation and management on Huawei DCS platform
+- **DCS Provider**: Alauda Container Platform DCS Infrastructure Provider `1.0.13` and later adds DCS-specific UI pages and workflows on Huawei DCS
 - **HCS Provider**: Enables UI-based cluster creation and management on Huawei Cloud Stack (coming soon)
 - **vSphere Provider**: Will enable UI-based cluster creation and management on VMware vSphere (in development)
 

@@ -736,6 +736,8 @@ Ensure the VM template's Kubernetes version matches the version specified in the
 
 Node pools provide a declarative way to manage groups of nodes with identical configurations. You can view, add, and delete worker node pools through the web UI.
 
+**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use the YAML-based node pool workflows in this document.
+
 :::info
 **Navigation**: Clusters → Clusters → Select cluster → Node Pools Tab
 :::
@@ -818,6 +820,8 @@ Click the **Conditions** link on the Control Plane Node Pool card to view detail
 <Overview />
 
 Kubernetes upgrades follow a specific sequence: Control Plane Node Pool must be upgraded first, followed by Worker Node Pools.
+
+**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use the YAML-based upgrade workflow in this document.
 
 :::warning
 **Upgrade Prerequisites**

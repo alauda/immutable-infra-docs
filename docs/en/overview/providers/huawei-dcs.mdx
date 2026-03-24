@@ -27,11 +27,13 @@ DCS (Datacenter Virtualization Solution) is Huawei's virtualization platform tha
 
 ## Cluster Management Capabilities
 
-The DCS Provider supports both **YAML-based** and **UI-based** cluster management through Fleet Essentials.
+The DCS Provider always supports **YAML-based** cluster management through Cluster API manifests.
+It also supports **UI-based** cluster management when **Fleet Essentials** is installed and **Alauda Container Platform DCS Infrastructure Provider** is `1.0.13` or later.
 
 ### UI-Based Management (Fleet Essentials)
 
-With the **Fleet Essentials** plugin installed, you can manage DCS clusters through a web interface:
+Fleet Essentials provides the UI extension anchors that allow Alauda Container Platform DCS Infrastructure Provider to add DCS-specific pages dynamically.
+When Fleet Essentials is installed and the provider version is `1.0.13` or later, you can manage DCS clusters through the web UI:
 
 **Infrastructure Resource Management**:
 - [Cloud Credentials](../../infrastructure/huawei-dcs.mdx#cloud-credentials) - Store DCS platform access credentials
@@ -53,7 +55,7 @@ With the **Fleet Essentials** plugin installed, you can manage DCS clusters thro
 
 ### YAML-Based Management
 
-For automation and GitOps workflows, you can manage DCS clusters using YAML manifests:
+For automation and GitOps workflows, you can manage DCS clusters using YAML manifests. This workflow does not depend on Fleet Essentials:
 
 - Define infrastructure resources (Secret, DCSIpHostnamePool, DCSMachineTemplate)
 - Create cluster resources (KubeadmControlPlane, DCSCluster, Cluster)
