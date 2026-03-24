@@ -204,7 +204,7 @@ Before creating control plane resources, plan the network architecture and deplo
 **Requirements**:
 - **Network segmentation**: Plan IP address ranges for control plane nodes
 - **Load balancer**: Deploy and configure access to the API server
-- **IP association**: Bind the load balancer to an IP from the control plane IP pool
+- **API server address**: Prepare a stable VIP or load balancer address for the Kubernetes API Server
 - **Connectivity**: Ensure network connectivity between all components
 
 ### Configure KubeadmControlPlane
@@ -537,6 +537,7 @@ spec:
           - group: "devops.alauda.io"
         - level: None
           verbs: ["get", "list", "watch"]
+        - level: None
           resources:
           - group: "coordination.k8s.io"
             resources: ["leases"]
@@ -587,6 +588,7 @@ spec:
           - group: "portal.alauda.io"
           - group: "rbac.authorization.k8s.io"
           - group: "storage.k8s.io"
+          - group: "tke.cloud.tencent.com"
           - group: "devopsx.alauda.io"
           - group: "core.katanomi.dev"
           - group: "deliveries.katanomi.dev"
@@ -596,7 +598,7 @@ spec:
           - group: "versioning.katanomi.dev"
           - group: "sources.katanomi.dev"
           - group: "tekton.dev"
-          - group: "operator.tekdev"
+          - group: "operator.tekton.dev"
           - group: "eventing.knative.dev"
           - group: "flows.knative.dev"
           - group: "messaging.knative.dev"
@@ -609,7 +611,7 @@ spec:
             resources: ["deletebackuprequests"]
           - group: "connectors.alauda.io"
           - group: "operator.connectors.alauda.io"
-            resources: ["connectcores", "connectgits", "connectocis"]
+            resources: ["connectorscores", "connectorsgits", "connectorsocis"]
         - level: Metadata
     preKubeadmCommands:
     - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
