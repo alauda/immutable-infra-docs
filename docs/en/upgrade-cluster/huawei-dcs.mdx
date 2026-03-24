@@ -63,9 +63,9 @@ Upgrading the control plane machine template lets you roll out updated VM specif
    Update the new template as needed:
    - Set `metadata.name` to `<new-template-name>`
    - Update `spec.template.spec.vmTemplateName`
-   - Update `spec.template.spec.dcsMachineCpuSpec.quantity`
-   - Update `spec.template.spec.dcsMachineMemorySpec.quantity`
-   - Update `spec.template.spec.dcsMachineDiskSpec`
+   - Update `spec.template.spec.vmConfig.dcsMachineCpuSpec.quantity`
+   - Update `spec.template.spec.vmConfig.dcsMachineMemorySpec.quantity`
+   - Update `spec.template.spec.vmConfig.dcsMachineDiskSpec`
 
 3. **Apply the updated template**
 
