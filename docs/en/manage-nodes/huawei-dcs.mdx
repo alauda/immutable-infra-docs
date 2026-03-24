@@ -139,7 +139,7 @@ spec:
           datastoreClusterName: <datastore-cluster-name>
           path: /var/lib/containerd
           format: xfs
-        - quantity: 100
+        - quantity: 40
           datastoreClusterName: <datastore-cluster-name>
           path: /var/cpaas
           format: xfs
@@ -705,26 +705,94 @@ Existing machines continue using the old bootstrap configuration. Only newly cre
 
 ### Upgrading Kubernetes Version
 
-Kubernetes version upgrades require coordinated updates to both the MachineDeployment and the underlying VM template to ensure compatibility.
+For Kubernetes upgrades on Huawei DCS, see [Upgrading Kubernetes on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx). That guide covers the required upgrade order, the YAML workflow for `MachineDeployment` resources, and the web UI workflow for Node Pool upgrades.
 
-:::warning
-**Version Compatibility**
-Ensure the VM template's Kubernetes version matches the version specified in the MachineDeployment. Mismatched versions will cause node join failures.
+---
+
+## Managing Node Pools Using the Web UI
+
+Node pools provide a declarative way to manage groups of nodes with identical configurations. You can view, add, and delete worker node pools through the web UI.
+
+**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use the YAML-based node pool workflows in this document.
+
+:::info
+**Navigation**: Clusters → Clusters → Select cluster → Node Pools Tab
 :::
 
-**Upgrade Process:**
+### Viewing Node Pools
 
-1. **Update Machine Template**
-   - Create a new `DCSMachineTemplate` with an updated `vmTemplateName` that supports the target Kubernetes version
-   - Ensure the VM template includes the correct Kubernetes binaries and dependencies
+The Node Pools Tab displays all node pools in the cluster:
 
-2. **Update MachineDeployment**
-   - Modify the `MachineDeployment` resource with the following changes:
-     - Update `spec.template.spec.version` to the target Kubernetes version
-     - Update `spec.template.spec.infrastructureRef.name` to reference the new machine template
-     - Optionally update `spec.template.spec.bootstrap.configRef.name` if bootstrap configuration changes are needed
+**Control Plane Node Pool**:
+- Fixed at 3 replicas for high availability
+- Displays Kubernetes version with upgrade indicator if available
+- Shows Conditions link for detailed status
 
-3. **Monitor Upgrade**
-   - The system will perform a rolling upgrade of worker nodes
-   - Verify that new nodes join the cluster with the correct Kubernetes version
-   - Monitor cluster health throughout the upgrade process
+**Worker Node Pools**:
+- Customizable replica counts
+- Individual Kubernetes version management
+- Scale and upgrade operations
+
+**Node Pool Card Information**:
+
+| Field | Description |
+|-------|-------------|
+| Type | Control Plane / Worker Node |
+| Name | Resource name |
+| Status | Badge showing pool health |
+| Replicas | Current count (with Max Surge/Max Unavailable for workers) |
+| SSH Authorized Keys | List of SSH public keys |
+| Kubernetes Version | Current version (upgrade indicator if available) |
+| Machine Template | Associated template name |
+| Conditions | Link to conditions list (Control Plane only) |
+
+### Adding a Worker Node Pool
+
+**Navigation**: Node Pools Tab → Click **Add Worker Node Pool**
+
+**Form Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Pool Name | text | Yes | Unique identifier for the node pool |
+| Machine Template | dropdown | Yes | Filter by Type: Worker Node and compatible Kubernetes version |
+| Replicas | number | Yes | Number of nodes in the pool |
+| Max Surge | number | No | Default: 0, must be ≥ 0 |
+| Max Unavailable | number | No | Default: 1, must be ≥ 0. When maxSurge = 0, must be > 0 and ≤ Replicas |
+| SSH Authorized Keys | text | No | Add multiple SSH public keys |
+
+**Validation**:
+- Pool name must be unique within the cluster
+- IP Pool must have sufficient available IP addresses (≥ Replicas)
+- maxSurge/maxUnavailable constraints must be satisfied
+
+**Tip**: Prefix the pool name with the cluster name followed by a hyphen (e.g., `mycluster-worker-1`) to avoid naming conflicts.
+
+After creation, new nodes appear in the **Nodes** Tab. The number of nodes equals the configured Replicas value.
+
+### Deleting a Worker Node Pool
+
+**Steps**:
+1. Click the delete icon on the Worker Node Pool card
+2. Confirm deletion in the dialog
+
+:::warning
+Deleting a worker node pool permanently removes all associated nodes and machines. Ensure workloads can tolerate the loss of these nodes through proper replication.
+:::
+
+### Viewing Conditions (Control Plane Only)
+
+Click the **Conditions** link on the Control Plane Node Pool card to view detailed status information.
+
+**Conditions List**:
+
+| Type | Status | Last Transition Time | Reason | Message |
+|------|--------|---------------------|--------|---------|
+| Condition Type | Status | Timestamp | Reason | Human-readable details |
+
+---
+
+## Next Steps
+
+- [Create Clusters](../create-cluster/huawei-dcs.mdx)
+- [Upgrade Clusters](../upgrade-cluster/huawei-dcs.mdx)

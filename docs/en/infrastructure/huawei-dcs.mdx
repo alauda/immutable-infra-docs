@@ -1,0 +1,452 @@
+---
+weight: 10
+title: Infrastructure Resources for Huawei DCS
+author: dev@alauda.io
+category: howto
+queries:
+  - dcs cloud credential configuration
+  - dcs ip pool setup
+  - dcs machine template creation
+  - dcs infrastructure prerequisites
+---
+
+# Infrastructure Resources for Huawei DCS
+
+## Overview
+
+Before creating clusters on Huawei DCS, you need to configure infrastructure resources including cloud credentials, IP pools, and machine templates.
+
+You can manage infrastructure resources using either the web UI or YAML manifests. The web UI provides a guided interface with validation, while YAML offers automation capabilities.
+
+:::info
+**Namespace Requirement**
+All infrastructure resources must be deployed in the `cpaas-system` namespace to ensure proper integration with the platform as business clusters.
+:::
+
+---
+
+## Cloud Credentials
+
+Cloud credentials store the DCS platform access information required for cluster operations.
+
+### Using the Web UI
+
+#### Prerequisites
+
+Before creating a cloud credential, verify the following DCS platform requirements:
+
+**User Configuration**:
+- **User Type**: Must be `Interface interconnection user`
+- **Role**: Must be `administrator`
+
+**Password Policy**:
+Navigate to **System Management** → **Rights Management** → **Rights Management Policy** and verify:
+- **Policy**: `Whether to modify the password of an interface interconnection user upon password resetting and first login`
+- **Value**: Must be set to **No**
+
+If set to `Yes`, the user's password will be forced to change upon first login, breaking authentication and causing cluster creation failures.
+
+#### Creating a Cloud Credential
+
+**Navigation**: Clusters → Cloud Credentials → Create Cloud Credential → Select Huawei DCS
+
+**Form Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Name | text | Yes | Unique identifier for the credential (1-63 characters, lowercase letters, numbers, and hyphens only) |
+| Display Name | text | No | Custom description for easy identification |
+| DCS Endpoint | URL | Yes | DCS platform API address (must start with `http://` or `https://`) |
+| Username | text | Yes | DCS platform API user login name |
+| Password | password | Yes | DCS platform API user login password |
+| Site | text | Yes | Site where the VM templates are located (all resources must be in the same site) |
+
+**Validation Rules**:
+- Name must be 1-63 characters, containing only lowercase letters, numbers, and hyphens, and must start and end with a letter or number
+- DCS Endpoint must be a valid URL format starting with `http://` or `https://`
+
+#### Managing Cloud Credentials
+
+**Viewing Credentials**: Navigate to Clusters → Cloud Credentials to view all configured credentials with their type, creation time, and creator.
+
+**Updating Credentials**: Click **Update** on a credential to modify the Display Name. Password updates are not supported in the current version (planned for a future release).
+
+**Deleting Credentials**: Click **Delete** to remove a credential. Confirm the deletion in the dialog.
+
+### Using YAML
+
+Create a Secret resource to store DCS authentication information:
+
+```yaml title="dcs-secret.yaml"
+apiVersion: v1
+data:
+  authUser: <base64-encoded-auth-user>
+  authKey: <base64-encoded-auth-key>
+  endpoint: <base64-encoded-endpoint>
+kind: Secret
+metadata:
+  name: <auth-secret-name>
+  namespace: cpaas-system
+type: Opaque
+```
+
+**Parameter Descriptions**:
+
+| Parameter | Description |
+|-----------|-------------|
+| `.data.authUser` | DCS platform API user login name (base64-encoded) |
+| `.data.authKey` | DCS platform API user login password (base64-encoded) |
+| `.data.endpoint` | DCS platform API address with http or https protocol (base64-encoded). **Note**: The default API port for DCS platform is 7443 (not the common 8443). If your environment uses a custom port, confirm with your administrator. |
+
+**Example**:
+
+```bash
+# Encode credentials
+echo -n "admin" | base64
+echo -n "your-password" | base64
+echo -n "https://dcs.example.com:7443" | base64
+
+# Apply the Secret
+kubectl apply -f dcs-secret.yaml -n cpaas-system
+```
+
+---
+
+## IP Pools
+
+IP pools define the network configuration (IP addresses, subnet masks, gateways, DNS) for cluster nodes. Each pool can contain multiple node entries, and each node can have multiple network interface configurations.
+
+### Using the Web UI
+
+#### Prerequisites
+
+- Cloud Credential has been created
+
+#### Creating an IP Pool
+
+**Navigation**: Clusters → Virtual Machine → IP Pools → Create IP Pool → Select Credential
+
+**Form Structure**:
+
+The IP Pool form consists of a list of **Pools**. Each Pool represents one node and contains:
+
+1. **Node IP** (required, exactly one per Pool)
+2. **Additional NIC IPs** (optional, multiple per Pool)
+
+**Node IP Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| IP | IP address | Yes | IP address for the Kubernetes Node |
+| Subnet Mask | CIDR | Yes | Subnet mask for the network |
+| Gateway | IP address | Yes | Gateway IP address |
+| DNS | IP address | No | DNS server addresses (comma-separated for multiple) |
+| Hostname | text | No | Hostname for the virtual machine |
+| Machine Name | text | No | Virtual machine name in the DCS platform |
+| dvSwitch Name | dropdown | No | Virtual switch name (from DCS platform) |
+| Port Group Name | dropdown | No | Port group name (from DCS platform) |
+
+**Additional NIC IPs Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| IP | IP address | Yes | Non-Node IP address (e.g., storage network) |
+| Subnet Mask | CIDR | Yes | Subnet mask for the network |
+| Gateway | IP address | Yes | Gateway IP address |
+| DNS | IP address | No | DNS server addresses |
+| dvSwitch Name | dropdown | Yes | Virtual switch name (from DCS platform) |
+| Port Group Name | dropdown | Yes | Port group name (from DCS platform) |
+
+**Validation Rules**:
+- IP addresses must be unique within the same IP Pool
+- IP addresses must be valid IPv4 format
+- Subnet mask must be valid format
+- IP address must be within the configured subnet range
+- Gateway must be a valid IPv4 address within the subnet range
+
+**Tips**:
+- At least one node entry is required
+- Exactly one Node IP configuration is required per node
+- Additional NIC IPs are optional for multi-NIC scenarios (e.g., storage network separation)
+
+#### Managing IP Pools
+
+**Viewing Pools**: Navigate to Clusters → Virtual Machine → IP Pools to view all configured pools with their node IPs and creation time.
+
+**Updating Pools**: Click **Update** to add or remove node entries and modify network configurations.
+
+**Deleting Pools**: Click **Delete** to remove a pool. Confirm the deletion in the dialog.
+
+### Using YAML
+
+Create a `DCSIpHostnamePool` resource:
+
+```yaml title="dcs-ippool.yaml"
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSIpHostnamePool
+metadata:
+  name: <iphostname-pool-name>
+  namespace: cpaas-system
+spec:
+  pool:
+  - ip: "<ip-1>"
+    mask: "<mask>"
+    gateway: "<gateway>"
+    dns: "<dns>"
+    hostname: "<hostname-1>"
+    machineName: "<machine-name-1>"
+  - ip: "<ip-2>"
+    mask: "<mask>"
+    gateway: "<gateway>"
+    dns: "<dns>"
+    hostname: "<hostname-2>"
+    machineName: "<machine-name-2>"
+  - ip: "<ip-3>"
+    mask: "<mask>"
+    gateway: "<gateway>"
+    dns: "<dns>"
+    hostname: "<hostname-3>"
+    machineName: "<machine-name-3>"
+```
+
+**Parameter Descriptions**:
+
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----------|
+| `.spec.pool[].ip` | string | IP address for the virtual machine to be created | Yes |
+| `.spec.pool[].mask` | string | Subnet mask | Yes |
+| `.spec.pool[].gateway` | string | Gateway IP address | Yes |
+| `.spec.pool[].dns` | string | DNS server IP (use ',' to separate multiple servers) | No |
+| `.spec.pool[].machineName` | string | Name of the virtual machine in the DCS platform | No |
+| `.spec.pool[].hostname` | string | Hostname of the virtual machine | No |
+
+:::warning
+You must configure machine information for a number of machines greater than or equal to the number of nodes you plan to deploy. Insufficient entries will prevent node deployment.
+:::
+
+---
+
+## Machine Templates
+
+Machine templates define the virtual machine specifications (VM template, CPU, memory, disk, network) for cluster nodes. Each machine template has a **Type** that determines its usage:
+
+- **Control Plane**: For control plane nodes
+- **Worker Node**: For worker nodes
+
+### Using the Web UI
+
+#### Prerequisites
+
+- IP Pool has been created
+- VM Template has been created in the DCS platform using MicroOS image
+- ConfigMap YAML has been applied to the global cluster
+
+**VM Template and ConfigMap**:
+
+Each MicroOS release includes a ConfigMap YAML that maps VM templates to Kubernetes versions. Apply this YAML before creating machine templates:
+
+```yaml
+apiVersion: v1
+data:
+  corednsTag: 1.12.4-v4.2.3
+  etcdTag: v3.5.21-251117
+  kubernetesVersion: v1.33.6
+  vmImageVersion: MicroOS-5.5-v4.2.0
+kind: ConfigMap
+metadata:
+  labels:
+    cpaas.io/dcs-vm-template: microos5.5-4.2.0
+    cpaas.io/distribution-version: v4.2.0
+    cpaas.io/kubernetes-version: v1.33
+  name: 420-dcs-vm-template
+  namespace: cpaas-system
+```
+
+**Important**: The `cpaas.io/dcs-vm-template` label value must match the VM template name in the DCS platform.
+
+#### Creating a Machine Template
+
+**Navigation**: Clusters → Virtual Machine → Machine Templates → Create Machine Template → Select Credential
+
+**Form Fields**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Name | text | Yes | Unique identifier for the template (1-63 characters, lowercase letters, numbers, and hyphens only) |
+| Type | dropdown | Yes | Control Plane or Worker Node |
+| VM Template Name | dropdown | Yes | From ConfigMap, shows OS Version and Kubernetes Version |
+| Location | dropdown | No | DCS platform location (datacenter, rack, etc.) |
+| Resource | dropdown | No | DCS platform resource pool or cluster |
+| Specs | - | Yes | CPU and memory specifications |
+| Specs.CPU | number | Yes | CPU cores (integer) |
+| Specs.Mem | number | Yes | Memory size in MB (displayed as GB in list view) |
+| Disk | - | Yes | Disk configuration (see below) |
+| IP Pool | dropdown | Yes | Reference to an existing IP Pool |
+
+**Disk Configuration**:
+
+The disk configuration varies by template type.
+
+**Control Plane Required Disks**:
+
+| Mount Path | Default Size (GB) | Can Delete |
+|------------|-------------------|------------|
+| System Volume | (template default) | No |
+| `/var/lib/etcd` | 10 | No |
+| `/var/lib/kubelet` | 100 | No |
+| `/var/lib/containerd` | 100 | No |
+| `/var/cpaas` | 40 | No |
+
+**Worker Node Required Disks**:
+
+| Mount Path | Default Size (GB) | Can Delete |
+|------------|-------------------|------------|
+| System Volume | (template default) | No |
+| `/var/lib/kubelet` | 100 | No |
+| `/var/lib/containerd` | 100 | No |
+| `/var/cpaas` | 40 | No |
+
+You may add additional disks, but must retain all mandatory disks listed above.
+
+**Disk Field Descriptions**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| Mount Path | text | Directory path for disk mounting |
+| Disk Size | number (GB) | Size of the disk |
+| Datastore | dropdown | Type: ClusterName or Name, then select from DCS platform |
+
+**VM Template Selection Tip**:
+
+:::tip
+If multiple VM templates have the same Kubernetes version, select the template with the most recent OS version to benefit from the latest security updates and system improvements.
+:::
+
+#### Managing Machine Templates
+
+**Viewing Templates**: Navigate to Clusters → Virtual Machine → Machine Templates to view all templates with their VM Template Name, Resource, Location, Specs, and IP Pool.
+
+**Updating Templates**: Click **Update** to modify specifications. Note that the Name field cannot be changed after creation.
+
+**Deleting Templates**: Click **Delete** to remove a template. Confirm the deletion in the dialog.
+
+### Using YAML
+
+Create a `DCSMachineTemplate` resource:
+
+```yaml title="dcs-machinetemplate.yaml"
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSMachineTemplate
+metadata:
+  name: <machine-template-name>
+  namespace: cpaas-system
+spec:
+  template:
+    spec:
+      vmTemplateName: <vm-template-name>
+      location:
+        type: folder
+        name: <folder-name>
+      resource: # Optional, if not specified, uses template defaults
+        type: cluster # cluster | host
+        name: <cluster-name>
+      vmConfig:
+        dvSwitchName: <dv-switch-name> # Optional
+        portGroupName: <port-group-name> # Optional
+        dcsMachineCpuSpec:
+          quantity: <cpu-cores>
+        dcsMachineMemorySpec: # MB
+          quantity: <memory-mb>
+        dcsMachineDiskSpec: # GB
+        - quantity: 0
+          datastoreClusterName: <datastore-cluster-name>
+          systemVolume: true
+        - quantity: 10
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/lib/etcd
+          format: xfs
+        - quantity: 100
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/lib/kubelet
+          format: xfs
+        - quantity: 100
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/lib/containerd
+          format: xfs
+        - quantity: 40
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/cpaas
+          format: xfs
+      ipHostPoolRef:
+        name: <iphostname-pool-name>
+```
+
+**Parameter Descriptions**:
+
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----------|
+| `.spec.template.spec.vmTemplateName` | string | DCS virtual machine template name | Yes |
+| `.spec.template.spec.location` | object | Location where the VM will be created (auto-selected if not specified) | No |
+| `.spec.template.spec.location.type` | string | VM creation location type (currently only supports "folder") | Yes* |
+| `.spec.template.spec.location.name` | string | VM creation folder name | Yes* |
+| `.spec.template.spec.resource` | object | Compute resource selection for VM creation (auto-selected if not specified) | No |
+| `.spec.template.spec.resource.type` | string | Compute resource type: cluster or host | Yes* |
+| `.spec.template.spec.resource.name` | string | Compute resource name | Yes* |
+| `.spec.template.spec.vmConfig` | object | Virtual machine configuration | Yes |
+| `.spec.template.spec.vmConfig.dvSwitchName` | string | Virtual machine switch name (uses template default if not specified) | No |
+| `.spec.template.spec.vmConfig.portGroupName` | string | Port group name (must belong to the specified switch, uses template default if not specified) | No |
+| `.spec.template.spec.vmConfig.dcsMachineCpuSpec.quantity` | int | VM CPU specification (cores) | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineMemorySpec.quantity` | int | VM memory size in MB | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec` | []object | VM disk configuration | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].quantity` | int | Disk size in GB (0 for system disk uses template size) | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].datastoreClusterName` | string | Datastore cluster name for the disk | Yes |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].systemVolume` | bool | Whether this is the system disk (only one disk can be true) | No |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].path` | string | Disk mount directory (disk won't be mounted if not specified) | No |
+| `.spec.template.spec.vmConfig.dcsMachineDiskSpec[].format` | string | File system format | No |
+| `.spec.template.spec.ipHostPoolRef.name` | string | Referenced DCSIpHostnamePool name | Yes |
+
+\*Required when parent object is specified
+
+:::warning
+**Storage Requirements**
+
+**Datastore Cross-Host Access**
+The datastore clusters (`datastoreClusterName`) must support cross-host access across all physical machines in the DCS platform. If a datastore is only available on specific hosts, VM creation will fail when the DCS platform attempts to schedule the VM on a different host.
+
+**Shared Storage for Ignition**
+If your datastore does not support direct file uploads (required for Ignition configs), you must provide a shared storage solution (e.g., NFS) that supports multi-host mounting.
+
+**Disk Configuration Rules**
+You may add custom disks, but must retain the mandatory system and data disks shown in the example (`systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`, `/var/cpaas`).
+:::
+
+---
+
+## Resource Relationships
+
+Infrastructure resources have the following dependency relationships:
+
+```
+Cloud Credential
+    ↓
+IP Pool
+    ↓
+Machine Template → references IP Pool
+    ↓
+Cluster Creation
+```
+
+**Resource Reusability**:
+- One Cloud Credential can be used for multiple clusters
+- Multiple IP Pools can be created for different network segments
+- Multiple Machine Templates can be created for different node types and specifications
+
+---
+
+## Next Steps
+
+After configuring infrastructure resources:
+
+- [Create a Cluster](../create-cluster/huawei-dcs.mdx)
+- [Manage Node Pools](../manage-nodes/huawei-dcs.mdx)
+- [Upgrade Clusters](../upgrade-cluster/huawei-dcs.mdx)
