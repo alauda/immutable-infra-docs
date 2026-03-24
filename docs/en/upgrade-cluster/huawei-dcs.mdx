@@ -1,30 +1,38 @@
 ---
 weight: 10
+title: Upgrading Kubernetes on Huawei DCS
+author: dev@alauda.io
+category: howto
+queries:
+  - upgrade kubernetes on huawei dcs
+  - dcs kubernetes upgrade guide
+  - upgrade dcs worker nodes
 ---
 
-# Upgrading Clusters on Huawei DCS
+# Upgrading Kubernetes on Huawei DCS
 
-This guide explains how to upgrade Kubernetes clusters on Huawei DCS with minimal downtime, while preserving stability and data integrity.
+This guide explains how to complete Phase 2 of the upgrade workflow for clusters on Huawei DCS. Before you upgrade Kubernetes, complete the Distribution Version upgrade described in [Upgrading Clusters](index.mdx).
 
-## Overview
+## Upgrade Sequence
 
-Cluster upgrades on DCS encompass multiple components and follow a structured approach to ensure system reliability:
+Upgrade DCS clusters in the following order:
 
-- **Control Plane Upgrades**: Update Kubernetes control plane components and underlying infrastructure
-- **Worker Node Upgrades**: Upgrade worker nodes with new machine images and Kubernetes versions
-- **Infrastructure Updates**: Modify virtual machine specifications, storage, and network configurations
+1. Upgrade the Distribution Version (Aligned Extensions). See [Upgrading Distribution Version](index.mdx).
+2. Upgrade the control plane Kubernetes version.
+3. Upgrade worker nodes to the target Kubernetes version.
 
-Cluster API orchestrates declarative rolling updates with built-in safety mechanisms.
+Cluster API orchestrates rolling updates with built-in safety mechanisms to reduce service disruption.
 
-:::info
-**Prerequisites**
+## Prerequisites
 
-Before you start, ensure:
+Before you start, ensure all of the following prerequisites are met:
+
+- The Distribution Version upgrade is complete
 - The control plane is reachable
-- All nodes are healthy (Ready)
-
-For initial deployment, see the [Create Cluster](../create-cluster/huawei-dcs.mdx) guide.
-:::
+- All nodes are healthy and in Ready state
+- The IP Pool has sufficient capacity for rolling updates
+- The VM template supports the target Kubernetes version. See [OS Support Matrix](../overview/os-support-matrix.mdx) for version mapping
+- The target Kubernetes version is compatible with your workloads and add-ons
 
 :::warning
 **Data Loss During Upgrades**
@@ -32,44 +40,40 @@ For initial deployment, see the [Create Cluster](../create-cluster/huawei-dcs.md
 Upgrades rely on Cluster API's rolling update mechanism. During a rolling update on DCS, data disks are detached from old VMs and reattached to new VMs. Ensure that no cluster functionality or workloads depend on data stored on the system disk.
 :::
 
-## Control Plane Upgrades
+## Using YAML
 
-Control plane upgrades update the Kubernetes API server, etcd, scheduler, and controller manager, along with the underlying VM infrastructure.
+YAML-based upgrades do not depend on Fleet Essentials.
 
-### Infrastructure Image Updates
+### Upgrade Control Plane Infrastructure
 
-Upgrading the underlying machine images for control plane nodes provides security patches, performance improvements, and updated system components.
+Upgrading the control plane machine template lets you roll out updated VM specifications, system patches, and infrastructure settings.
 
 #### Procedure
 
-1. **Create Updated Machine Template**
+1. **Create an updated machine template**
 
-   Copy the existing `DCSMachineTemplate` referenced by `KubeadmControlPlane` and modify the required specifications:
+   Copy the existing `DCSMachineTemplate` referenced by `KubeadmControlPlane` and save it as a new file:
 
    ```bash
    kubectl get dcsmachinetemplate <current-template-name> -n cpaas-system -o yaml > new-cp-template.yaml
    ```
 
-2. **Modify Template Specifications**
+2. **Modify the template specifications**
 
-   Modify the new template:
+   Update the new template as needed:
    - Set `metadata.name` to `<new-template-name>`
-   - Update as needed:
-     - `spec.template.spec.vmTemplateName`
-     - `spec.template.spec.dcsMachineCpuSpec.quantity`
-     - `spec.template.spec.dcsMachineMemorySpec.quantity`
-     - `spec.template.spec.dcsMachineDiskSpec`
-     - etc
+   - Update `spec.template.spec.vmTemplateName`
+   - Update `spec.template.spec.dcsMachineCpuSpec.quantity`
+   - Update `spec.template.spec.dcsMachineMemorySpec.quantity`
+   - Update `spec.template.spec.dcsMachineDiskSpec`
 
-3. **Deploy Updated Template**
-
-   Apply the new machine template:
+3. **Apply the updated template**
 
    ```bash
    kubectl apply -f new-cp-template.yaml -n cpaas-system
    ```
 
-4. **Update Control Plane Reference**
+4. **Update the control plane reference**
 
    Modify the `KubeadmControlPlane` resource to reference the new template:
 
@@ -77,83 +81,75 @@ Upgrading the underlying machine images for control plane nodes provides securit
    kubectl patch kubeadmcontrolplane <kcp-name> -n cpaas-system --type='merge' -p='{"spec":{"machineTemplate":{"infrastructureRef":{"name":"<new-template-name>"}}}}'
    ```
 
-5. **Monitor Rolling Update**
-
-   The control plane will automatically perform a rolling update:
+5. **Monitor the rolling update**
 
    ```bash
    kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system -w
    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/control-plane
    ```
 
-### Kubernetes Version Upgrades
+### Upgrade Control Plane Kubernetes Version
 
-Upgrading the Kubernetes version involves updating both the control plane software and the supporting virtual machine images.
-
-#### Prerequisites
-
-- Verify compatibility between the target Kubernetes version and existing workloads
-- Ensure the VM template supports the target Kubernetes version. See [OS Support Matrix](../overview/os-support-matrix.mdx) for version mapping.
-- Review the Kubernetes upgrade path and version skew policy
+Upgrading the control plane Kubernetes version requires both a compatible VM template and an updated `KubeadmControlPlane` version.
 
 #### Procedure
 
-1. **Update VM Template Reference**
+1. **Prepare a compatible VM template**
 
-   Update `spec.template.spec.vmTemplateName` in the referenced `DCSMachineTemplate`. The new VM template must match the target Kubernetes version.
+   Ensure the referenced `DCSMachineTemplate` uses a `vmTemplateName` that matches the target Kubernetes version.
 
-2. **Update Control Plane Version**
+2. **Update the control plane version**
 
-   Modify the `spec.version` field in the `KubeadmControlPlane` resource (required). Optionally adjust related fields as needed (for example, rollout strategy, drain/deletion timeouts, or the referenced infrastructure template) to align with the new version and upgrade policy
+   Modify `spec.version` in the `KubeadmControlPlane` resource. Optionally update related rollout settings or the referenced infrastructure template at the same time to match your upgrade policy.
 
-3. **Verify Upgrade Progress**
-
-   Monitor the rolling upgrade process:
+3. **Monitor the upgrade**
 
    ```bash
-   # Check control plane status
    kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system
-
-   # Monitor individual machines
    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/control-plane
-
-   # Verify cluster health
    kubectl get nodes
    ```
 
-## Worker Node Upgrades
+### Upgrade Worker Nodes
 
-Worker node upgrades are managed via `MachineDeployment` resources.
+Worker node Kubernetes upgrades are managed through `MachineDeployment` resources.
 
-:::info
-For detailed worker node procedures, see the [Managing Nodes](../manage-nodes/huawei-dcs.mdx#upgrading-kubernetes-version) section.
-:::
+#### Procedure
+
+1. **Create an updated machine template**
+   - Create a new `DCSMachineTemplate` with a `vmTemplateName` that supports the target Kubernetes version
+   - Ensure the VM template includes the correct Kubernetes binaries and dependencies
+
+2. **Update the MachineDeployment**
+   - Update `spec.template.spec.version` to the target Kubernetes version
+   - Update `spec.template.spec.infrastructureRef.name` to reference the new machine template
+   - Optionally update `spec.template.spec.bootstrap.configRef.name` if bootstrap configuration changes are required
+
+3. **Monitor the rolling update**
+   - Verify that the rolling update completes successfully
+   - Verify that the new worker nodes join the cluster with the target Kubernetes version
 
 ---
 
-## Upgrading Kubernetes Using the Web UI
+## Using the Web UI
 
-This section covers the web UI workflow for upgrading Kubernetes on DCS clusters.
+Use this workflow to upgrade Kubernetes from the web UI after Phase 1 is complete.
 
-**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use the YAML-based workflow in this document.
+**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests.
 
 ### Prerequisites
 
-- Distribution Version upgrade completed (see [Upgrading Distribution Version](index.mdx))
-- Control Plane Node Pool is in Running state
-- Sufficient IP Pool capacity for rolling updates
+- The Distribution Version upgrade is complete. See [Upgrading Distribution Version](index.mdx)
+- The Control Plane Node Pool is in Running state
+- The IP Pool has sufficient capacity for rolling updates
 
 ### Upgrade Workflow
 
-Kubernetes upgrades follow this sequence:
+Kubernetes upgrades follow this sequence after the Distribution Version upgrade:
 
-```
-1. Upgrade Distribution Version (Aligned Extensions)
-   ↓
-2. Upgrade Control Plane Node Pool
-   ↓
-3. Upgrade Worker Node Pools (in any order)
-```
+1. Upgrade the Control Plane Node Pool.
+2. Wait for the Control Plane Node Pool upgrade to complete.
+3. Upgrade Worker Node Pools in any order.
 
 ### Checking Available Upgrades
 
@@ -161,11 +157,11 @@ Kubernetes upgrades follow this sequence:
 
 Node Pools with available upgrades show **Upgrade available** indicator. Click on the Node Pool card to view Current vs Target versions.
 
-### Upgrading Control Plane Node Pool
+### Upgrade the Control Plane Node Pool
 
 **Steps**:
 1. In the Node Pools Tab, locate the **Control Plane Node Pool**
-2. Click **Upgrade** button
+2. Click **Upgrade**
 3. Review upgrade information:
    - **Current Version**: Current Kubernetes version
    - **Target Version**: Latest minor version supported (automatically selected)
@@ -176,7 +172,7 @@ Node Pools with available upgrades show **Upgrade available** indicator. Click o
 - Nodes will roll update one by one (maxSurge=0, maxUnavailable=1)
 - Upgrade time depends on node count and resources
 
-### Upgrading Worker Node Pools
+### Upgrade Worker Node Pools
 
 :::warning
 Worker Node Pools cannot be upgraded until the Control Plane Node Pool upgrade completes.
@@ -203,7 +199,7 @@ Worker Node Pools cannot be upgraded until the Control Plane Node Pool upgrade c
 
 ### Cross-Version Upgrades
 
-When upgrading across major versions (e.g., v1.32 → v1.34):
+When upgrading across multiple minor versions (for example, v1.32 → v1.34):
 
 1. Upgrade Control Plane to v1.33
 2. Wait for completion
