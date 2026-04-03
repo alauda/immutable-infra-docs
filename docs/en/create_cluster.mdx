@@ -31,7 +31,7 @@ Ensure that all nodes in the <Term name="product" textCase="capitalize" />'s `gl
 
 > **Requirement:** Connectivity to **both ports** is mandatory for cluster creation and management.
 
-### 4. DCS Platform Credentials
+### 4. DCS Platform Credentials \{#4-dcs-platform-credentials}
 The DCS platform credentials used for cluster creation must meet specific requirements.
 
 **Required User Configuration**
@@ -375,13 +375,13 @@ spec:
   controlPlaneLoadBalancer: # Configure HA
     host: <load-balancer-ip-or-domain-name>
     port: 6443
-    type: external 
+    type: external
   credentialSecretRef: # Reference authentication secret
     name: <auth-secret-name>
   controlPlaneEndpoint: # Cluster API specification, keep consistent with controlPlane
     host: <load-balancer-ip-or-domain-name>
     port: 6443
-  networkType: kube-ovn 
+  networkType: kube-ovn
   site: <site>  # DCS platform parameter, resource pool ID
 ```
 
@@ -487,7 +487,7 @@ A successfully created cluster should show:
 
 ## Appendix
 
-### Complete KubeadmControlPlane Configuration
+### Complete KubeadmControlPlane Configuration \{#complete-kubeadmcontrolplane-configuration}
 
 Below is the complete `KubeadmControlPlane` configuration, including all default audit policies, admission controls, and file contents. You can copy this entire block and modify the `<placeholders>` as needed.
 
