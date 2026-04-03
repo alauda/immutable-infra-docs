@@ -160,7 +160,8 @@ The template should also meet the following requirements:
 | Worker replicas | `<worker_replicas>` | Yes | The baseline topology uses `1`. | `1` | - |
 | Pod CIDR | `<pod_cidr>` | Yes | Must not overlap with existing networks. | `10.244.0.0/16` | - |
 | Service CIDR | `<service_cidr>` | Yes | Must not overlap with existing networks. | `10.96.0.0/12` | - |
-| Image repository | `<image_repository>` | Yes | Used by kubeadm for control plane images. | `registry.example.local/kubernetes` | - |
+| Image registry | `<image_registry>` | Yes | Private registry address. kubeadm `imageRepository` is set to `<image_registry>/tkestack`. | `registry.example.local` | - |
+| Sandbox (pause) image tag | `<pause_image_tag>` | Yes | Tag for the pause image used by containerd as the pod sandbox. The full reference is `<image_registry>/tkestack/pause:<pause_image_tag>`. | `3.10` | - |
 | `kube-ovn` version | `<kube_ovn_version>` | Yes | Must match the platform network plugin requirements. | `v4.2.26` | - |
 | `kube-ovn-join-cidr` | `<kube_ovn_join_cidr>` | Yes | Must not overlap with other networks. | `100.64.0.0/16` | - |
 | CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `1.12.4` | - |
@@ -230,9 +231,9 @@ The template should also meet the following requirements:
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| CPI delivery namespace | `<cpi_namespace>` | Yes | The namespace that stores the CPI ConfigMap, Secret, and ClusterResourceSet resources. | `cpaas-system` | - |
+| ~~CPI delivery namespace~~ | ~~`<cpi_namespace>`~~ | — | Removed. The CPI resources (ConfigMap, Secret, and ClusterResourceSet) **must** be deployed in the same namespace as the `Cluster` resource (`<namespace>`), because a ClusterResourceSet can only match clusters within its own namespace. | — | — |
 | CPI datacenter list | `<cpi_datacenters>` | Yes | Include every target datacenter when multiple datacenters are enabled. | `dc-a,dc-b` | - |
-| CPI image | `<cpi_image>` | Yes | Image address for the vSphere CPI component. | `registry.example.com/...` | - |
+| CPI image tag | `<cpi_image_tag>` | Yes | Tag for the vSphere CPI component. The full reference is `<image_registry>/ait/cloud-provider-vsphere:<cpi_image_tag>`. | `v1.33.1-alauda.1` | - |
 | CPI insecure flag | `<cpi_insecure_flag>` | Yes | The baseline example uses `1`. | `1` | - |
 
 ## Optional Extension Parameters

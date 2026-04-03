@@ -134,7 +134,7 @@ kubectl get ns
 kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere
 kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-kubeadm
 kubectl -n cpaas-system get deploy capi-controller-manager -o jsonpath='{.spec.template.spec.containers[0].args}'
-kubectl -n cpaas-system get secret public-registry-credential
+kubectl -n cpaas-system get secret public-registry-credential -o jsonpath='{.data.content}'
 ```
 
 Confirm the following results:
@@ -142,7 +142,7 @@ Confirm the following results:
 - The management cluster is reachable.
 - Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider are running.
 - The controller arguments include `ClusterResourceSet=true`.
-- The public registry credential is present.
+- The public registry credential `data.content` is not empty.
 
 Before you continue, also verify the following items:
 
@@ -253,19 +253,16 @@ kubectl apply -f 10-cluster.yaml
 
 Create a `ClusterResourceSet` so the workload cluster receives the vSphere CPI configuration and manifests automatically after the workload API server becomes reachable.
 
+**Important:** The CPI `ConfigMap`, `Secret`, and `ClusterResourceSet` resources **must** be created in the same namespace as the `Cluster` resource (`<namespace>`). A `ClusterResourceSet` can only match clusters within its own namespace; deploying it in a different namespace will silently prevent resource delivery.
+
 **Note:** The `kube-ovn` configuration in the `Cluster` annotations is consumed by platform controllers. This document does not install the network plugin directly.
 
 ```yaml title="15-vsphere-cpi-clusterresourceset.yaml"
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: <cpi_namespace>
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: <cluster_name>-vsphere-cpi-config
-  namespace: <cpi_namespace>
+  namespace: <namespace>
 data:
   data: |
     apiVersion: v1
@@ -293,7 +290,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: <cluster_name>-vsphere-cpi-secret
-  namespace: <cpi_namespace>
+  namespace: <namespace>
 type: addons.cluster.x-k8s.io/resource-set
 stringData:
   data: |
@@ -311,7 +308,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: <cluster_name>-vsphere-cpi-manifests
-  namespace: <cpi_namespace>
+  namespace: <namespace>
 data:
   data: |
     apiVersion: v1
@@ -416,6 +413,15 @@ data:
           securityContext:
             runAsUser: 1001
           automountServiceAccountToken: true
+          # Optional: required when the CPI image is stored in a private
+          # registry that needs authentication. The platform automatically
+          # syncs a dockerconfigjson secret named "global-registry-auth"
+          # into every namespace of the workload cluster when the
+          # management-cluster secret "public-registry-credential"
+          # (data.content) is configured. If your environment does not
+          # use a private registry, remove the imagePullSecrets block.
+          imagePullSecrets:
+          - name: global-registry-auth
           serviceAccountName: cloud-controller-manager
           hostNetwork: true
           tolerations:
@@ -430,7 +436,7 @@ data:
             operator: Exists
           containers:
           - name: vsphere-cloud-controller-manager
-            image: <cpi_image>
+            image: <image_registry>/ait/cloud-provider-vsphere:<cpi_image_tag>
             args:
             - --v=2
             - --cloud-provider=vsphere
@@ -467,7 +473,7 @@ apiVersion: addons.cluster.x-k8s.io/v1beta1
 kind: ClusterResourceSet
 metadata:
   name: <cluster_name>-vsphere-cpi
-  namespace: <cpi_namespace>
+  namespace: <namespace>
 spec:
   strategy: Reconcile
   clusterSelector:
@@ -624,8 +630,6 @@ kind: KubeadmControlPlane
 metadata:
   name: <cluster_name>
   namespace: <namespace>
-  annotations:
-    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
 spec:
   rolloutStrategy:
     type: RollingUpdate
@@ -814,10 +818,11 @@ spec:
     - echo "127.0.0.1   {{ ds.meta_data.hostname }} {{ local_hostname }} localhost localhost.localdomain localhost4 localhost4.localdomain4" >>/etc/hosts
     - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
     - mkdir -p /run/cluster-api && (command -v restorecon >/dev/null 2>&1 && restorecon -Rv /run/cluster-api || true)
+    - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
     postKubeadmCommands:
     - chmod 600 /var/lib/kubelet/config.yaml
     clusterConfiguration:
-      imageRepository: <image_repository>
+      imageRepository: <image_registry>/tkestack
       dns:
         imageTag: <dns_image_tag>
       etcd:
@@ -932,6 +937,7 @@ spec:
       - echo "127.0.0.1   {{ ds.meta_data.hostname }} {{ local_hostname }} localhost localhost.localdomain localhost4 localhost4.localdomain4" >>/etc/hosts
       - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
       - mkdir -p /run/cluster-api && (command -v restorecon >/dev/null 2>&1 && restorecon -Rv /run/cluster-api || true)
+      - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
       postKubeadmCommands:
       - chmod 600 /var/lib/kubelet/config.yaml
       users:
@@ -1003,8 +1009,8 @@ Use the following commands to verify the cluster creation workflow.
 
 1. Check the CPI delivery resources in the management cluster:
    ```bash
-   kubectl -n <cpi_namespace> get clusterresourceset
-   kubectl -n <cpi_namespace> get clusterresourcesetbinding
+   kubectl -n <namespace> get clusterresourceset
+   kubectl -n <namespace> get clusterresourcesetbinding
    ```
 2. Export the workload kubeconfig:
    ```bash
