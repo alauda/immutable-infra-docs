@@ -104,7 +104,7 @@ Use the following table to record the required values and validation results.
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
 | `global` cluster kubeconfig path | - | Yes | `kubectl get ns` succeeds with this kubeconfig. | `/path/to/kubeconfig` | - |
-| Workload object namespace | `<namespace>` | Yes | `cpaas-system` is commonly used. | `cpaas-system` | - |
+| Workload object namespace | `<namespace>` | Yes | The namespace that stores workload cluster objects. | `cpaas-system` | - |
 | `cluster-api-provider-vsphere` is installed | - | Yes | `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere` returns a result. | `Yes` | - |
 | `cluster-api-provider-kubeadm` is installed | - | Yes | `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-kubeadm` returns a result. | `Yes` | - |
 | `ClusterResourceSet=true` is enabled | - | Yes | The `capi-controller-manager` arguments include `ClusterResourceSet=true`. | `Yes` | - |
@@ -164,6 +164,7 @@ The template should also meet the following requirements:
 | `kube-ovn-join-cidr` | `<kube_ovn_join_cidr>` | Yes | Must not overlap with other networks. | `100.64.0.0/16` | - |
 | CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `1.12.4` | - |
 | etcd image tag | `<etcd_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `v3.5.0` | - |
+| Encryption provider secret | `<encryption_provider_secret>` | Yes | Base64-encoded AES key for secret encryption at rest. Generate with `head -c 32 /dev/urandom \| base64`. Do not reuse example values. | *(generated)* | - |
 
 ## Minimum Single-Datacenter Parameters
 

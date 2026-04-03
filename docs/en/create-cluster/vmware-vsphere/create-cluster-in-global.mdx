@@ -40,20 +40,14 @@ This document is written for the current platform environment. The `kube-ovn` de
 
 Before you begin, ensure the following conditions are met:
 
-- You completed the values collection in [Preparing Parameters for a VMware vSphere Cluster](./parameter-checklist.mdx).
-- The `global` cluster can reach vCenter.
-- The target template, networks, datastores, and vCenter resource pool are available.
-- The control plane VIP and load balancer are ready.
-- The platform can process the cluster annotations required to install the network plugin.
-
-Also confirm the following technical prerequisites:
-
-1. The management cluster can reach vCenter.
-2. The template, networks, datastore, and vCenter resource pool are available.
-3. The control plane VIP and load balancer are preconfigured.
-4. All required static IP addresses are allocated and not in use.
-5. `ClusterResourceSet=true` is enabled.
-6. The platform already has a valid public registry configuration.
+1. You completed the values collection in [Preparing Parameters for a VMware vSphere Cluster](./parameter-checklist.mdx).
+2. The `global` cluster can reach vCenter.
+3. The target template, networks, datastores, and vCenter resource pool are available.
+4. The control plane VIP and load balancer are ready.
+5. All required static IP addresses are allocated and not in use.
+6. `ClusterResourceSet=true` is enabled.
+7. The platform already has a valid public registry configuration.
+8. The platform can process the cluster annotations required to install the network plugin.
 
 ## Key Objects
 
@@ -140,7 +134,7 @@ kubectl get ns
 kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere
 kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-kubeadm
 kubectl -n <namespace> get deploy capi-controller-manager -o jsonpath='{.spec.template.spec.containers[0].args}'
-kubectl -n cpaas-system get secret public-registry-credential
+kubectl -n <namespace> get secret public-registry-credential
 ```
 
 Confirm the following results:
@@ -696,7 +690,7 @@ spec:
           - aescbc:
               keys:
               - name: key1
-                secret: O/VjJyoIg8iYppjoVUXiCm+nsWoGzNxxbXlByPpgy4k=
+                secret: <encryption_provider_secret>
     - path: /etc/kubernetes/audit/policy.yaml
       owner: "root:root"
       append: false
@@ -927,9 +921,14 @@ spec:
           name: '{{ local_hostname }}'
       preKubeadmCommands:
       - hostnamectl set-hostname "{{ ds.meta_data.hostname }}"
+      - echo "::1         ipv6-localhost ipv6-loopback localhost6 localhost6.localdomain6" >/etc/hosts
+      - echo "127.0.0.1   {{ ds.meta_data.hostname }} {{ local_hostname }} localhost localhost.localdomain localhost4 localhost4.localdomain4" >>/etc/hosts
+      - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
+      - mkdir -p /run/cluster-api && (command -v restorecon >/dev/null 2>&1 && restorecon -Rv /run/cluster-api || true)
+      postKubeadmCommands:
+      - chmod 600 /var/lib/kubelet/config.yaml
       users:
-      - name: capv
-        sudo: ALL=(ALL) NOPASSWD:ALL
+      - name: boot
         sshAuthorizedKeys:
         - "<ssh_public_key>"
 ---
@@ -1024,7 +1023,7 @@ kubectl -n <namespace> describe vspherecluster <cluster_name>
 kubectl -n <namespace> describe kubeadmcontrolplane <cluster_name>
 kubectl -n <namespace> describe machinedeployment <cluster_name>-md-0
 kubectl -n <namespace> get cluster,vspherecluster,kubeadmcontrolplane,machinedeployment,machine,vspheremachine,vspherevm
-kubectl -n cpaas-system logs deploy/capi-controller-manager
+kubectl -n <namespace> logs deploy/capi-controller-manager
 ```
 
 Prioritize the following checks:
@@ -1041,7 +1040,7 @@ Prioritize the following checks:
 
 When you review controller logs, use the following rules:
 
-- `deploy/capi-controller-manager` runs in the `cpaas-system` namespace of the `global` cluster.
+- `deploy/capi-controller-manager` runs in the `<namespace>` namespace of the `global` cluster.
 - Do not use the workload-cluster kubeconfig to inspect `capi-controller-manager` logs.
 - If platform controllers process the cluster network annotations, also inspect the platform network-controller logs and the platform cluster-lifecycle-controller logs.
 
