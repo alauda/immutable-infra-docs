@@ -133,6 +133,14 @@ The following principles apply:
 - The control plane uses `VSphereCluster.spec.failureDomainSelector`.
 - A worker `MachineDeployment` uses `spec.template.spec.failureDomain` when it must target a specific deployment zone.
 
+Prepare the following placeholders for the first datacenter:
+
+- `<compute_cluster_1>`
+- `<default_datastore_1>`
+- `<resource_pool_path_1>`
+- `<fd_name_1>`
+- `<dz_name_1>`
+
 Prepare the following placeholders for the second datacenter:
 
 - `<dc_name_2>`
@@ -151,9 +159,42 @@ If you add a third datacenter, continue with the same placeholder pattern:
 - `<default_datastore_3>`
 - `<resource_pool_path_3>`
 
-Append additional failure-domain objects in `04-failure-domains.yaml`:
+Create the failure-domain objects in `04-failure-domains.yaml`. The first datacenter also needs a `VSphereFailureDomain` and `VSphereDeploymentZone` when failure domains are enabled:
 
 ```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereFailureDomain
+metadata:
+  name: <fd_name_1>
+spec:
+  region:
+    name: region-a
+    type: Datacenter
+    tagCategory: k8s-region
+    autoConfigure: true
+  zone:
+    name: zone-1
+    type: ComputeCluster
+    tagCategory: k8s-zone
+    autoConfigure: true
+  topology:
+    datacenter: <default_datacenter>
+    computeCluster: <compute_cluster_1>
+    datastore: <default_datastore_1>
+    networks:
+    - <nic1_network_name>
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereDeploymentZone
+metadata:
+  name: <dz_name_1>
+spec:
+  server: <vsphere_server>
+  failureDomain: <fd_name_1>
+  controlPlane: true
+  placementConstraint:
+    resourcePool: <resource_pool_path_1>
+---
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: VSphereFailureDomain
 metadata:

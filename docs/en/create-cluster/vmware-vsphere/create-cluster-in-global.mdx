@@ -133,8 +133,8 @@ Run the following commands from the management environment to verify the minimum
 kubectl get ns
 kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere
 kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-kubeadm
-kubectl -n <namespace> get deploy capi-controller-manager -o jsonpath='{.spec.template.spec.containers[0].args}'
-kubectl -n <namespace> get secret public-registry-credential
+kubectl -n cpaas-system get deploy capi-controller-manager -o jsonpath='{.spec.template.spec.containers[0].args}'
+kubectl -n cpaas-system get secret public-registry-credential
 ```
 
 Confirm the following results:
@@ -257,10 +257,15 @@ Create a `ClusterResourceSet` so the workload cluster receives the vSphere CPI c
 
 ```yaml title="15-vsphere-cpi-clusterresourceset.yaml"
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: <cpi_namespace>
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: <cluster_name>-vsphere-cpi-config
-  namespace: <namespace>
+  namespace: <cpi_namespace>
 data:
   data: |
     apiVersion: v1
@@ -288,7 +293,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: <cluster_name>-vsphere-cpi-secret
-  namespace: <namespace>
+  namespace: <cpi_namespace>
 type: addons.cluster.x-k8s.io/resource-set
 stringData:
   data: |
@@ -306,7 +311,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: <cluster_name>-vsphere-cpi-manifests
-  namespace: <namespace>
+  namespace: <cpi_namespace>
 data:
   data: |
     apiVersion: v1
@@ -462,7 +467,7 @@ apiVersion: addons.cluster.x-k8s.io/v1beta1
 kind: ClusterResourceSet
 metadata:
   name: <cluster_name>-vsphere-cpi
-  namespace: <namespace>
+  namespace: <cpi_namespace>
 spec:
   strategy: Reconcile
   clusterSelector:
@@ -486,6 +491,8 @@ kubectl apply -f 15-vsphere-cpi-clusterresourceset.yaml
 ### Create the static allocation pools
 
 Create the control plane static allocation pool.
+
+**Note:** `deviceName` is optional. If you do not need to force the guest NIC name, remove the `deviceName` line from every node slot. CAPV will assign NIC names such as `eth0`, `eth1` by NIC order.
 
 ```yaml title="02-vsphereresourcepool-control-plane.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -543,7 +550,7 @@ spec:
       fsFormat: "<master_03_disk_fs>"
 ```
 
-Create the worker static allocation pool.
+Create the worker static allocation pool. If worker nodes do not need data disks, remove the `persistentDisks` block from the worker node slots.
 
 ```yaml title="03-vsphereresourcepool-worker.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -976,8 +983,17 @@ kubectl apply -f 30-workers-md-0.yaml
 In the baseline workflow, note the following worker-specific rules:
 
 - `failureDomain` is not set by default in the main worker manifest because the baseline workflow assumes a single datacenter. If you need a worker `MachineDeployment` to land in a specific `VSphereDeploymentZone`, add `failureDomain` as described in [Extension Scenarios](./extension-scenarios.mdx).
-- The worker manifest includes a dedicated `persistentDisks` block so the sample can be used directly in the baseline environment. If the worker nodes do not need data disks, remove that block exactly as described in [Extension Scenarios](./extension-scenarios.mdx).
 - Some environments add extra runtime-image replacement commands or service-restart commands to `KubeadmConfigTemplate`. Those commands are intentionally not included in the baseline sample. Add them only when the platform requirements in your environment explicitly require them.
+
+### Wait for the cluster to become ready
+
+After all manifests are applied, the cluster creation is asynchronous. Monitor the progress with:
+
+```bash
+kubectl -n <namespace> get cluster,kubeadmcontrolplane,machinedeployment,machine -w
+```
+
+Wait until `KubeadmControlPlane` reports the expected number of ready replicas and all `Machine` objects reach the `Running` phase before proceeding to verification.
 
 </Steps>
 
@@ -987,8 +1003,8 @@ Use the following commands to verify the cluster creation workflow.
 
 1. Check the CPI delivery resources in the management cluster:
    ```bash
-   kubectl -n <namespace> get clusterresourceset
-   kubectl -n <namespace> get clusterresourcesetbinding
+   kubectl -n <cpi_namespace> get clusterresourceset
+   kubectl -n <cpi_namespace> get clusterresourcesetbinding
    ```
 2. Export the workload kubeconfig:
    ```bash
@@ -1023,7 +1039,7 @@ kubectl -n <namespace> describe vspherecluster <cluster_name>
 kubectl -n <namespace> describe kubeadmcontrolplane <cluster_name>
 kubectl -n <namespace> describe machinedeployment <cluster_name>-md-0
 kubectl -n <namespace> get cluster,vspherecluster,kubeadmcontrolplane,machinedeployment,machine,vspheremachine,vspherevm
-kubectl -n <namespace> logs deploy/capi-controller-manager
+kubectl -n cpaas-system logs deploy/capi-controller-manager
 ```
 
 Prioritize the following checks:
@@ -1040,7 +1056,7 @@ Prioritize the following checks:
 
 When you review controller logs, use the following rules:
 
-- `deploy/capi-controller-manager` runs in the `<namespace>` namespace of the `global` cluster.
+- `deploy/capi-controller-manager` runs in the `cpaas-system` namespace of the `global` cluster.
 - Do not use the workload-cluster kubeconfig to inspect `capi-controller-manager` logs.
 - If platform controllers process the cluster network annotations, also inspect the platform network-controller logs and the platform cluster-lifecycle-controller logs.
 
