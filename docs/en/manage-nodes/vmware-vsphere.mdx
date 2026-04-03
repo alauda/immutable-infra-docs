@@ -1,13 +1,90 @@
 ---
 weight: 30
+title: Managing Nodes on VMware vSphere
+author: dev@alauda.io
+category: howto
+queries:
+  - manage vmware vsphere worker nodes
+  - scale worker nodes on vsphere cluster
+  - update worker node pool on vsphere
 ---
 
 # Managing Nodes on VMware vSphere
 
-This document provides instructions for managing worker nodes on VMware vSphere.
+This document explains how to manage worker nodes on VMware vSphere after the baseline cluster is running. Node lifecycle operations are managed through `VSphereResourcePool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` resources.
 
-## Status
+## Prerequisites
 
-🚧 **In Development**
+Before you begin, ensure the following conditions are met:
 
-Documentation will be available when the provider is released.
+- The workload cluster was created successfully. See [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere/).
+- The worker CAPV static allocation pool has enough available slots.
+- The control plane is healthy and reachable.
+- You know which manifest files currently define the worker nodes.
+
+## Steps
+
+<Steps>
+### Scale out worker nodes
+
+When you add more worker nodes, update the worker static allocation pool before you increase the replica count.
+
+1. Add one or more new node slots to `03-vsphereresourcepool-worker.yaml`.
+2. Update `replicas` in `30-workers-md-0.yaml`.
+3. Apply the updated manifests.
+
+Use the following order:
+
+```bash
+kubectl apply -f 03-vsphereresourcepool-worker.yaml
+kubectl apply -f 30-workers-md-0.yaml
+```
+
+**Note:** If `MachineDeployment.spec.replicas` is greater than the number of available slots in `VSphereResourcePool.spec.resources[]`, the new worker nodes cannot be assigned correctly.
+
+### Roll out updated worker node configuration
+
+When you need to change worker VM specifications or bootstrap settings, create a new worker template revision and update the `MachineDeployment` references.
+
+Typical changes include:
+
+- Updating the VM template name
+- Changing CPU or memory sizing
+- Updating the worker system disk or data disk layout
+- Updating bootstrap settings in `KubeadmConfigTemplate`
+
+After you update the manifests, apply them again:
+
+```bash
+kubectl apply -f 30-workers-md-0.yaml
+```
+
+### Verify worker node status
+
+Run the following commands to verify the management-cluster and workload-cluster status:
+
+```bash
+kubectl -n <namespace> get machinedeployment,machine,vspheremachine,vspherevm
+kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get nodes -o wide
+```
+
+Confirm the following results:
+
+- The target worker replica count is reached.
+- Every new worker node joins the cluster.
+- The nodes eventually become `Ready`.
+
+</Steps>
+
+## Troubleshooting
+
+Use the following checks first when worker node management fails:
+
+- Verify that the worker CAPV static allocation pool still has free slots.
+- Verify that the worker IP addresses, gateway, and DNS settings are correct.
+- Verify that the worker VM template still matches the required Kubernetes version and guest-tools requirements.
+- Check `VSphereVM.status.addresses` when a node is waiting for IP allocation.
+
+## Next Steps
+
+If you need to change worker networking, placement, or disk topology, continue with [Extending a VMware vSphere Cluster Deployment](../create-cluster/vmware-vsphere/extension-scenarios.mdx).

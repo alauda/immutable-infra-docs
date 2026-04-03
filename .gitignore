@@ -4,6 +4,7 @@ local/*
 .yarn/*
 .claude/*
 .agents/*
+.notes/
 skills-lock.json
 !.yarn/patches
 !.yarn/plugins

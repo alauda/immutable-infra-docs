@@ -1,13 +1,107 @@
 ---
 weight: 30
+title: Upgrading Clusters on VMware vSphere
+author: dev@alauda.io
+category: howto
+queries:
+  - upgrade kubernetes on vmware vsphere
+  - upgrade vsphere cluster control plane
+  - upgrade vsphere worker nodes
 ---
 
 # Upgrading Clusters on VMware vSphere
 
-This document provides instructions for upgrading Kubernetes clusters on VMware vSphere.
+This document explains how to upgrade Kubernetes clusters on VMware vSphere after the platform-side distribution upgrade is complete. The documented workflow focuses on updating the control plane and worker nodes through Cluster API resources.
 
-## Status
+## Upgrade Sequence
 
-🚧 **In Development**
+Upgrade VMware vSphere clusters in the following order:
 
-Documentation will be available when the provider is released.
+1. Complete the distribution-version upgrade described in [Upgrading Clusters](./index.mdx).
+2. Verify that the control plane is healthy and the current cluster is stable.
+3. Upgrade the control plane Kubernetes version.
+4. Upgrade worker nodes to the target Kubernetes version.
+
+## Prerequisites
+
+Before you begin, ensure the following conditions are met:
+
+- The distribution-version upgrade is complete.
+- The control plane is healthy and reachable.
+- All nodes are in the `Ready` state.
+- The target VM template is compatible with the target Kubernetes version.
+- The CAPV static allocation pools have enough capacity for rolling updates.
+
+## Steps
+
+<Steps>
+### Prepare the target templates and versions
+
+Before you start the rolling upgrade, review the current worker and control plane manifests and prepare the target values:
+
+- The target Kubernetes version
+- The target VM template name
+- The target image tags required by kubeadm
+- Any worker or control plane sizing changes that must be rolled out together with the version upgrade
+
+### Upgrade the control plane
+
+Update the control plane manifest used by `KubeadmControlPlane`.
+
+Typical changes include:
+
+- Updating `spec.version` in `KubeadmControlPlane`
+- Updating `spec.template.spec.template` in `VSphereMachineTemplate` if a new VM template is required
+- Updating related image tags such as `dns.imageTag` and `etcd.local.imageTag` when the target release requires them
+
+Apply the updated control plane manifest:
+
+```bash
+kubectl apply -f 20-control-plane.yaml
+```
+
+Monitor the control plane rollout:
+
+```bash
+kubectl -n <namespace> get kubeadmcontrolplane <cluster_name> -w
+kubectl -n <namespace> get machine -l cluster.x-k8s.io/control-plane
+```
+
+### Upgrade the worker nodes
+
+After the control plane upgrade completes, update the worker manifests.
+
+Typical changes include:
+
+- Updating `spec.template.spec.version` in `MachineDeployment`
+- Updating the referenced `VSphereMachineTemplate` if a new worker VM template is required
+- Updating the referenced `KubeadmConfigTemplate` if bootstrap settings must change
+
+Apply the updated worker manifest:
+
+```bash
+kubectl apply -f 30-workers-md-0.yaml
+```
+
+Monitor the worker rollout:
+
+```bash
+kubectl -n <namespace> get machinedeployment <cluster_name>-md-0 -w
+kubectl -n <namespace> get machine
+kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get nodes -o wide
+```
+
+</Steps>
+
+## Verification
+
+Confirm the following results after the upgrade:
+
+- `KubeadmControlPlane` reaches the target version and desired replica count.
+- `MachineDeployment` reaches the target version and desired replica count.
+- Control plane and worker nodes return to the `Ready` state.
+- The vSphere CPI daemonset remains available in the workload cluster.
+
+## Next Steps
+
+After the Kubernetes upgrade is complete, continue with routine node operations in [Managing Nodes on VMware vSphere](../manage-nodes/vmware-vsphere.mdx).
