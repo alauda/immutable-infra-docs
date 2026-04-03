@@ -23,9 +23,7 @@ You can manage infrastructure resources using either the web UI or YAML manifest
 All infrastructure resources must be deployed in the `cpaas-system` namespace to ensure proper integration with the platform as business clusters.
 :::
 
----
-
-## Cloud Credentials
+## Cloud Credentials \{#cloud-credentials}
 
 Cloud credentials store the DCS platform access information required for cluster operations.
 
@@ -112,7 +110,7 @@ kubectl apply -f dcs-secret.yaml -n cpaas-system
 
 ---
 
-## IP Pools
+## IP Pools \{#ip-pools}
 
 IP pools define the network configuration (IP addresses, subnet masks, gateways, DNS) for cluster nodes. Each pool can contain multiple node entries, and each node can have multiple network interface configurations.
 
@@ -226,7 +224,7 @@ You must configure machine information for a number of machines greater than or 
 
 ---
 
-## Machine Templates
+## Machine Templates \{#machine-templates}
 
 Machine templates define the virtual machine specifications (VM template, CPU, memory, disk, network) for cluster nodes. Each machine template has a **Type** that determines its usage:
 
