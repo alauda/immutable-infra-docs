@@ -80,6 +80,7 @@ Confirm the following results:
 
 Use the following checks first when worker node management fails:
 
+- Verify that each `VSphereResourcePool` is referenced by only one `KubeadmControlPlane` or one `MachineDeployment`. Sharing a pool across multiple groups causes machines to stall at `WaitingForBootstrapData`.
 - Verify that the worker CAPV static allocation pool still has free slots.
 - Verify that the worker IP addresses, gateway, and DNS settings are correct.
 - Verify that the worker VM template still matches the required Kubernetes version and guest-tools requirements.

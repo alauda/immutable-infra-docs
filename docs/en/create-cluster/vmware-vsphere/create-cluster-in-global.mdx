@@ -253,9 +253,17 @@ kubectl apply -f 10-cluster.yaml
 
 Create a `ClusterResourceSet` so the workload cluster receives the vSphere CPI configuration and manifests automatically after the workload API server becomes reachable.
 
-**Important:** The CPI `ConfigMap`, `Secret`, and `ClusterResourceSet` resources **must** be created in the same namespace as the `Cluster` resource (`<namespace>`). A `ClusterResourceSet` can only match clusters within its own namespace; deploying it in a different namespace will silently prevent resource delivery.
+<Directive type="warning">
+The CPI `ConfigMap`, `Secret`, and `ClusterResourceSet` resources **must** be created in the same namespace as the `Cluster` resource (`<namespace>`). A `ClusterResourceSet` can only match clusters within its own namespace; deploying it in a different namespace will silently prevent resource delivery.
+</Directive>
 
-**Note:** The `kube-ovn` configuration in the `Cluster` annotations is consumed by platform controllers. This document does not install the network plugin directly.
+<Directive type="info">
+The `kube-ovn` configuration in the `Cluster` annotations is consumed by platform controllers. This document does not install the network plugin directly.
+</Directive>
+
+<Directive type="tip">
+This manifest is long and contains nested YAML inside `data` fields. Validate the manifest before applying: `kubectl apply --dry-run=client -f 15-vsphere-cpi-clusterresourceset.yaml`.
+</Directive>
 
 ```yaml title="15-vsphere-cpi-clusterresourceset.yaml"
 apiVersion: v1
@@ -498,7 +506,9 @@ kubectl apply -f 15-vsphere-cpi-clusterresourceset.yaml
 
 Create the control plane static allocation pool.
 
-**Note:** `deviceName` is optional. If you do not need to force the guest NIC name, remove the `deviceName` line from every node slot. CAPV will assign NIC names such as `eth0`, `eth1` by NIC order.
+<Directive type="info">
+`deviceName` is optional. If you do not need to force the guest NIC name, remove the `deviceName` line from every node slot. CAPV will assign NIC names such as `eth0`, `eth1` by NIC order.
+</Directive>
 
 ```yaml title="02-vsphereresourcepool-control-plane.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -507,9 +517,11 @@ metadata:
   name: <cp_pool_name>
   namespace: <namespace>
 spec:
+  clusterRef:
+    apiVersion: cluster.x-k8s.io/v1beta1
+    kind: Cluster
+    name: <cluster_name>
   datacenter: "<default_datacenter>"
-  server: "<vsphere_server>"
-  thumbprint: "<thumbprint>"
   releaseDelayHours: <release_delay_hours>
   resources:
   - hostname: "<cp_node_name_1>"
@@ -522,10 +534,18 @@ spec:
       dns:
       - "<nic1_dns_1>"
     persistentDisks:
-    - name: "<master_01_disk_name>"
-      sizeGiB: <master_01_disk_size_gib>
-      mountPath: "<master_01_disk_mount_path>"
-      fsFormat: "<master_01_disk_fs>"
+    - name: var-cpaas
+      sizeGiB: <cp_var_cpaas_size_gib>
+      mountPath: /var/cpaas
+      fsFormat: ext4
+    - name: var-lib-containerd
+      sizeGiB: <cp_var_lib_containerd_size_gib>
+      mountPath: /var/lib/containerd
+      fsFormat: ext4
+    - name: var-lib-etcd
+      sizeGiB: <cp_var_lib_etcd_size_gib>
+      mountPath: /var/lib/etcd
+      fsFormat: ext4
   - hostname: "<cp_node_name_2>"
     datacenter: "<master_02_datacenter>"
     network:
@@ -536,10 +556,18 @@ spec:
       dns:
       - "<nic1_dns_1>"
     persistentDisks:
-    - name: "<master_02_disk_name>"
-      sizeGiB: <master_02_disk_size_gib>
-      mountPath: "<master_02_disk_mount_path>"
-      fsFormat: "<master_02_disk_fs>"
+    - name: var-cpaas
+      sizeGiB: <cp_var_cpaas_size_gib>
+      mountPath: /var/cpaas
+      fsFormat: ext4
+    - name: var-lib-containerd
+      sizeGiB: <cp_var_lib_containerd_size_gib>
+      mountPath: /var/lib/containerd
+      fsFormat: ext4
+    - name: var-lib-etcd
+      sizeGiB: <cp_var_lib_etcd_size_gib>
+      mountPath: /var/lib/etcd
+      fsFormat: ext4
   - hostname: "<cp_node_name_3>"
     datacenter: "<master_03_datacenter>"
     network:
@@ -550,13 +578,21 @@ spec:
       dns:
       - "<nic1_dns_1>"
     persistentDisks:
-    - name: "<master_03_disk_name>"
-      sizeGiB: <master_03_disk_size_gib>
-      mountPath: "<master_03_disk_mount_path>"
-      fsFormat: "<master_03_disk_fs>"
+    - name: var-cpaas
+      sizeGiB: <cp_var_cpaas_size_gib>
+      mountPath: /var/cpaas
+      fsFormat: ext4
+    - name: var-lib-containerd
+      sizeGiB: <cp_var_lib_containerd_size_gib>
+      mountPath: /var/lib/containerd
+      fsFormat: ext4
+    - name: var-lib-etcd
+      sizeGiB: <cp_var_lib_etcd_size_gib>
+      mountPath: /var/lib/etcd
+      fsFormat: ext4
 ```
 
-Create the worker static allocation pool. If worker nodes do not need data disks, remove the `persistentDisks` block from the worker node slots.
+Create the worker static allocation pool.
 
 ```yaml title="03-vsphereresourcepool-worker.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -565,9 +601,11 @@ metadata:
   name: <worker_pool_name>
   namespace: <namespace>
 spec:
+  clusterRef:
+    apiVersion: cluster.x-k8s.io/v1beta1
+    kind: Cluster
+    name: <cluster_name>
   datacenter: "<default_datacenter>"
-  server: "<vsphere_server>"
-  thumbprint: "<thumbprint>"
   releaseDelayHours: <release_delay_hours>
   resources:
   - hostname: "<worker_node_name_1>"
@@ -580,10 +618,14 @@ spec:
       dns:
       - "<nic1_dns_1>"
     persistentDisks:
-    - name: "<worker_01_disk_name>"
-      sizeGiB: <worker_01_disk_size_gib>
-      mountPath: "<worker_01_disk_mount_path>"
-      fsFormat: "<worker_01_disk_fs>"
+    - name: var-cpaas
+      sizeGiB: <worker_var_cpaas_size_gib>
+      mountPath: /var/cpaas
+      fsFormat: ext4
+    - name: var-lib-containerd
+      sizeGiB: <worker_var_lib_containerd_size_gib>
+      mountPath: /var/lib/containerd
+      fsFormat: ext4
 ```
 
 Apply both manifests:
@@ -617,8 +659,7 @@ spec:
       powerOffMode: <power_off_mode>
       network:
         devices:
-        - dhcp4: true
-          networkName: "<nic1_network_name>"
+        - networkName: "<nic1_network_name>"
       resourcePoolRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: VSphereResourcePool
@@ -650,6 +691,7 @@ spec:
   kubeadmConfigSpec:
     users:
     - name: boot
+      sudo: ALL=(ALL) NOPASSWD:ALL
       sshAuthorizedKeys:
       - "<ssh_public_key>"
     files:
@@ -687,6 +729,7 @@ spec:
           "protectKernelDefaults": true,
           "streamingConnectionIdleTimeout": "5m"
         }
+    # Generate the encryption key with: head -c 32 /dev/urandom | base64
     - path: /etc/kubernetes/encryption-provider.conf
       owner: "root:root"
       append: false
@@ -909,8 +952,7 @@ spec:
       powerOffMode: <power_off_mode>
       network:
         devices:
-        - dhcp4: true
-          networkName: "<nic1_network_name>"
+        - networkName: "<nic1_network_name>"
       resourcePoolRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: VSphereResourcePool
@@ -942,6 +984,7 @@ spec:
       - chmod 600 /var/lib/kubelet/config.yaml
       users:
       - name: boot
+        sudo: ALL=(ALL) NOPASSWD:ALL
         sshAuthorizedKeys:
         - "<ssh_public_key>"
 ---

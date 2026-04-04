@@ -52,6 +52,10 @@ A CAPV static allocation pool is the `VSphereResourcePool` custom resource. It p
 - Static IP configuration for each NIC
 - Persistent disk definitions
 
+:::warning
+Each `VSphereResourcePool` can only be referenced by a single `KubeadmControlPlane` or a single `MachineDeployment`. Do not share one `VSphereResourcePool` across multiple control plane or worker groups. Reusing the same pool causes machines to stall at `WaitingForBootstrapData`.
+:::
+
 ### Node slot
 
 A node slot is an entry under `VSphereResourcePool.spec.resources[]`. A single slot usually maps to one node, such as `cp-01` or `worker-01`.
@@ -227,11 +231,39 @@ The template should also meet the following requirements:
 | Worker system datastore | `<worker_system_datastore>` | Yes | Datastore for the worker system disk. | `datastore-worker` | - |
 | Worker system disk size GiB | `<worker_system_disk_gib>` | Yes | Baseline example value is `300`. | `300` | - |
 
+### Standard data disks
+
+Each node role requires a set of dedicated data disks. The disks listed below are the minimum required set. You can append additional disks to the `persistentDisks` list if your workload requires them. Only the size of the required disks is configurable; the name, mount path, and file system format are fixed.
+
+#### Control plane nodes (3 disks per node)
+
+| Disk Name | Mount Path | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | Stores logs, audit data, and other platform data | 100 GiB | `<cp_var_cpaas_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<cp_var_lib_containerd_size_gib>` |
+| `var-lib-etcd` | `/var/lib/etcd` | Stores etcd data | 100 GiB | `<cp_var_lib_etcd_size_gib>` |
+
+#### Worker nodes (2 disks per node)
+
+| Disk Name | Mount Path | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | Stores logs, audit data, and other platform data | 100 GiB | `<worker_var_cpaas_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<worker_var_lib_containerd_size_gib>` |
+
+#### Size parameters
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| CP `/var/cpaas` size GiB | `<cp_var_cpaas_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| CP `/var/lib/containerd` size GiB | `<cp_var_lib_containerd_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| CP `/var/lib/etcd` size GiB | `<cp_var_lib_etcd_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| Worker `/var/cpaas` size GiB | `<worker_var_cpaas_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| Worker `/var/lib/containerd` size GiB | `<worker_var_lib_containerd_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+
 ### vSphere CPI parameters
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| ~~CPI delivery namespace~~ | ~~`<cpi_namespace>`~~ | — | Removed. The CPI resources (ConfigMap, Secret, and ClusterResourceSet) **must** be deployed in the same namespace as the `Cluster` resource (`<namespace>`), because a ClusterResourceSet can only match clusters within its own namespace. | — | — |
 | CPI datacenter list | `<cpi_datacenters>` | Yes | Include every target datacenter when multiple datacenters are enabled. | `dc-a,dc-b` | - |
 | CPI image tag | `<cpi_image_tag>` | Yes | Tag for the vSphere CPI component. The full reference is `<image_registry>/ait/cloud-provider-vsphere:<cpi_image_tag>`. | `v1.33.1-alauda.1` | - |
 | CPI insecure flag | `<cpi_insecure_flag>` | Yes | The baseline example uses `1`. | `1` | - |
@@ -275,39 +307,6 @@ The template should also meet the following requirements:
 | Control plane node 3 secondary IP | `<master_03_nic2_ip>` | No | Used only when nodes require a second NIC. | `10.20.10.13` | - |
 | Worker node 1 secondary IP | `<worker_01_nic2_ip>` | No | Used only when nodes require a second NIC. | `10.20.10.21` | - |
 | Worker node 2 secondary IP | `<worker_02_nic2_ip>` | No | Used when workers are expanded and require a second NIC. | `10.20.10.22` | - |
-
-### Data disk extensions
-
-| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
-|-----------|-------------|----------|---------------------|---------|--------------|
-| Control plane node 1 data disk name | `<master_01_disk_name>` | Yes | Baseline example value for `master-01`. | `cp-01-data` | - |
-| Control plane node 1 data disk size GiB | `<master_01_disk_size_gib>` | Yes | Data disk size. | `20` | - |
-| Control plane node 1 mount path | `<master_01_disk_mount_path>` | Yes | Mount path for the data disk. | `/var/cpaas` | - |
-| Control plane node 1 file system | `<master_01_disk_fs>` | Yes | File system type. | `ext4` | - |
-| Control plane node 2 data disk name | `<master_02_disk_name>` | Yes | Baseline example value for `master-02`. | `cp-02-data` | - |
-| Control plane node 2 data disk size GiB | `<master_02_disk_size_gib>` | Yes | Data disk size. | `20` | - |
-| Control plane node 2 mount path | `<master_02_disk_mount_path>` | Yes | Mount path for the data disk. | `/var/cpaas` | - |
-| Control plane node 2 file system | `<master_02_disk_fs>` | Yes | File system type. | `ext4` | - |
-| Control plane node 3 data disk name | `<master_03_disk_name>` | Yes | Baseline example value for `master-03`. | `cp-03-data` | - |
-| Control plane node 3 data disk size GiB | `<master_03_disk_size_gib>` | Yes | Data disk size. | `20` | - |
-| Control plane node 3 mount path | `<master_03_disk_mount_path>` | Yes | Mount path for the data disk. | `/var/cpaas` | - |
-| Control plane node 3 file system | `<master_03_disk_fs>` | Yes | File system type. | `ext4` | - |
-| Worker node 1 data disk name | `<worker_01_disk_name>` | No | Set it when workers need a dedicated data disk. | `worker-01-data` | - |
-| Worker node 1 data disk size GiB | `<worker_01_disk_size_gib>` | No | Set it when workers need a dedicated data disk. | `20` | - |
-| Worker node 1 mount path | `<worker_01_disk_mount_path>` | No | Set it when workers need a dedicated data disk. | `/var/cpaas` | - |
-| Worker node 1 file system | `<worker_01_disk_fs>` | No | Set it when workers need a dedicated data disk. | `ext4` | - |
-| Worker node 2 data disk name | `<worker_02_disk_name>` | No | Used only when the worker pool is expanded. | `worker-02-data` | - |
-| Worker node 2 data disk size GiB | `<worker_02_disk_size_gib>` | No | Used only when the worker pool is expanded. | `20` | - |
-| Worker node 2 mount path | `<worker_02_disk_mount_path>` | No | Used only when the worker pool is expanded. | `/var/cpaas` | - |
-| Worker node 2 file system | `<worker_02_disk_fs>` | No | Used only when the worker pool is expanded. | `ext4` | - |
-| Extra disk A name | `<disk_a_name>` | No | Used only when a node requires multiple data disks. | `data-a` | - |
-| Extra disk A size GiB | `<disk_a_size_gib>` | No | Used only when a node requires multiple data disks. | `100` | - |
-| Extra disk A mount path | `<disk_a_mount_path>` | No | Used only when a node requires multiple data disks. | `/data-a` | - |
-| Extra disk A file system | `<disk_a_fs>` | No | Used only when a node requires multiple data disks. | `ext4` | - |
-| Extra disk B name | `<disk_b_name>` | No | Used only when a node requires multiple data disks. | `data-b` | - |
-| Extra disk B size GiB | `<disk_b_size_gib>` | No | Used only when a node requires multiple data disks. | `200` | - |
-| Extra disk B mount path | `<disk_b_mount_path>` | No | Used only when a node requires multiple data disks. | `/data-b` | - |
-| Extra disk B file system | `<disk_b_fs>` | No | Used only when a node requires multiple data disks. | `ext4` | - |
 
 ## Final Readiness Check
 

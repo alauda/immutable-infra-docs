@@ -81,10 +81,8 @@ Add the second NIC to the machine templates:
 ```yaml
 network:
   devices:
-  - dhcp4: true
-    networkName: "<nic1_network_name>"
-  - dhcp4: true
-    networkName: "<nic2_network_name>"
+  - networkName: "<nic1_network_name>"
+  - networkName: "<nic2_network_name>"
 ```
 
 If failure domains are enabled, update the network list in `VSphereFailureDomain.spec.topology.networks`:
@@ -229,16 +227,43 @@ spec:
     resourcePool: <resource_pool_path_2>
 ```
 
-Enable control plane selection across the available failure domains:
+Enable control plane selection across the available failure domains by adding `failureDomainSelector` to the `VSphereCluster` spec in `10-cluster.yaml`:
 
 ```yaml
-failureDomainSelector: {}
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereCluster
+metadata:
+  name: <cluster_name>
+  namespace: <namespace>
+spec:
+  controlPlaneEndpoint:
+    host: "<vip>"
+    port: <api_server_port>
+  identityRef:
+    kind: Secret
+    name: <credentials_secret_name>
+  server: "<vsphere_server>"
+  thumbprint: "<thumbprint>"
+  failureDomainSelector: {}
 ```
 
-Set a worker deployment zone when a worker `MachineDeployment` must be pinned to one deployment target:
+Set a worker deployment zone when a worker `MachineDeployment` must be pinned to one deployment target. Add `failureDomain` to `spec.template.spec` in `30-workers-md-0.yaml`:
 
 ```yaml
-failureDomain: <worker_failure_domain>
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: <cluster_name>-md-0
+  namespace: <namespace>
+spec:
+  clusterName: <cluster_name>
+  replicas: <worker_replicas>
+  template:
+    spec:
+      clusterName: <cluster_name>
+      failureDomain: <worker_failure_domain>
+      version: "<k8s_version>"
+      # ... rest of spec
 ```
 
 Use a `VSphereDeploymentZone` name for `<worker_failure_domain>`, not a `VSphereFailureDomain` name.
@@ -252,39 +277,14 @@ Before you enable multiple datacenters, also confirm the following prerequisites
 3. The datastore names are resolvable in every target datacenter.
 4. The vSphere CPI datacenter list covers every target datacenter.
 
-## Add or remove data disks
+## Add data disks
 
-The baseline example includes dedicated data disks for control plane nodes and can include dedicated data disks for worker nodes.
+The baseline deployment includes the following required data disks:
 
-In the baseline target scenario, the control plane data disk is part of the minimum deployment set. If the control plane design depends on an additional disk for `/var/cpaas` or another directory, do not remove it.
+- **Control plane nodes**: `var-cpaas`, `var-lib-containerd`, and `var-lib-etcd` (3 disks per node). Do not remove any of these disks.
+- **Worker nodes**: `var-cpaas` and `var-lib-containerd` (2 disks per node). Do not remove any of these disks.
 
-Worker data disks are optional and depend on workload requirements.
-
-If a worker node does not need a data disk, remove the `persistentDisks` section entirely from the corresponding node slot:
-
-```yaml
-persistentDisks:
-- name: "<worker_01_disk_name>"
-  sizeGiB: <worker_01_disk_size_gib>
-  mountPath: "<worker_01_disk_mount_path>"
-  fsFormat: "<worker_01_disk_fs>"
-```
-
-If no worker node requires a data disk, remove that block from every worker slot in the worker CAPV static allocation pool.
-
-If a node needs multiple data disks, append more entries to the same `persistentDisks` list:
-
-```yaml
-persistentDisks:
-- name: "<disk_a_name>"
-  sizeGiB: <disk_a_size_gib>
-  mountPath: "<disk_a_mount_path>"
-  fsFormat: "<disk_a_fs>"
-- name: "<disk_b_name>"
-  sizeGiB: <disk_b_size_gib>
-  mountPath: "<disk_b_mount_path>"
-  fsFormat: "<disk_b_fs>"
-```
+If a node needs additional data disks beyond the required set, append more entries to the same `persistentDisks` list in the corresponding `VSphereResourcePool` node slot.
 
 ## Scale out worker nodes
 
@@ -313,10 +313,14 @@ The following example adds a new worker slot:
     dns:
     - "<nic1_dns_1>"
   persistentDisks:
-  - name: "<worker_02_disk_name>"
-    sizeGiB: <worker_02_disk_size_gib>
-    mountPath: "<worker_02_disk_mount_path>"
-    fsFormat: "<worker_02_disk_fs>"
+  - name: var-cpaas
+    sizeGiB: <worker_var_cpaas_size_gib>
+    mountPath: /var/cpaas
+    fsFormat: ext4
+  - name: var-lib-containerd
+    sizeGiB: <worker_var_lib_containerd_size_gib>
+    mountPath: /var/lib/containerd
+    fsFormat: ext4
 ```
 
 Then update the worker replicas:
