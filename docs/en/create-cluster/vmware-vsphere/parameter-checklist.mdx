@@ -53,7 +53,7 @@ A CAPV static allocation pool is the `VSphereResourcePool` custom resource. It p
 - Persistent disk definitions
 
 :::warning
-Each `VSphereResourcePool` can only be referenced by a single `KubeadmControlPlane` or a single `MachineDeployment`. Do not share one `VSphereResourcePool` across multiple control plane or worker groups. Reusing the same pool causes machines to stall at `WaitingForBootstrapData`.
+Each `VSphereResourcePool` can only be referenced by a single `KubeadmControlPlane` or a single `MachineDeployment`. Do not share one `VSphereResourcePool` across multiple control plane or worker groups. If a pool is already bound to another consumer, the `VSphereMachine` will report a `ResourcePoolReady=False` condition with reason `PoolBoundToOtherConsumer`.
 :::
 
 ### Node slot

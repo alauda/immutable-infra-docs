@@ -1097,6 +1097,7 @@ Prioritize the following checks:
 - If `ClusterResourceSet` exists but no `ClusterResourceSetBinding` is created, check whether the controller has the required delete permission on the referenced `ConfigMap` and `Secret` resources.
 - If the network plugin is not installed, verify that the required cluster annotations are present and that the platform controllers processed them.
 - If the `cpaas.io/registry-address` annotation is missing, verify the public registry credential and the platform controller that injects the annotation.
+- If a machine is stuck in `Provisioning`, check `VSphereMachine` conditions for `ResourcePoolReady` — it shows whether slot allocation failed due to pool binding or datacenter mismatch.
 - If a VM is waiting for IP allocation, verify VMware Tools, the static IP settings, and `VSphereVM.status.addresses`.
 - If datastore space is exhausted, verify whether old VM directories or `.vmdk` files remain in the target datastore.
 - If the template system disk size does not match the manifest values, verify that `diskGiB` is not smaller than the template disk size.
