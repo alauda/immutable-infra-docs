@@ -1,0 +1,1115 @@
+---
+weight: 20
+title: Creating a VMware vSphere Cluster in the global Cluster
+author: dev@alauda.io
+category: howto
+queries:
+  - create vmware cluster in global cluster
+  - deploy capv cluster from global cluster
+  - create vsphere workload cluster
+---
+
+# Creating a VMware vSphere Cluster in the global Cluster
+
+This document explains how to create a VMware vSphere workload cluster from the `global` cluster by using the standard CAPV mode that connects directly to vCenter. The procedure covers a minimum supported topology with one datacenter, one NIC per node, and static IP allocation through `VSphereResourcePool`.
+
+## Scenarios
+
+Use this document in the following scenarios:
+
+- You want to create the first baseline VMware vSphere workload cluster in your environment.
+- You use one datacenter and one NIC per node for the initial validation.
+- You want to keep the first deployment simple before enabling advanced placement or networking features.
+
+This document applies to the following deployment model:
+
+- CAPV connects directly to vCenter.
+- Control plane and worker nodes both use `VSphereResourcePool` for static IP allocation and data disks.
+- `ClusterResourceSet` delivers the vSphere CPI component automatically.
+- The first validation uses one datacenter and one NIC per node.
+
+This document does not apply to the following scenarios:
+
+- A deployment that depends on vSphere Supervisor or `vm-operator`.
+- A deployment that does not use `VSphereResourcePool`.
+- A first-time deployment that enables multiple datacenters, multiple NICs, and complex disk extensions at the same time.
+
+This document is written for the current platform environment. The `kube-ovn` delivery path depends on platform controllers that consume annotations on the `Cluster` resource, so this workflow is not intended to be a generic standalone CAPV deployment guide outside the platform context.
+
+## Prerequisites
+
+Before you begin, ensure the following conditions are met:
+
+1. You completed the values collection in [Preparing Parameters for a VMware vSphere Cluster](./parameter-checklist.mdx).
+2. The `global` cluster can reach vCenter.
+3. The target template, networks, datastores, and vCenter resource pool are available.
+4. The control plane VIP and load balancer are ready.
+5. All required static IP addresses are allocated and not in use.
+6. `ClusterResourceSet=true` is enabled.
+7. The platform already has a valid public registry configuration.
+8. The platform can process the cluster annotations required to install the network plugin.
+
+## Key Objects
+
+### `ClusterResourceSet`
+
+`ClusterResourceSet` is a Cluster API resource in the management cluster. After the workload API server becomes reachable, it applies the referenced `ConfigMap` and `Secret` resources to the workload cluster.
+
+In this workflow, `ClusterResourceSet` is used to deliver the vSphere CPI resources automatically.
+
+### vSphere CPI component
+
+The vSphere CPI component is delivered to the workload cluster through `ClusterResourceSet`. It connects workload nodes to the vSphere infrastructure so the cluster can report infrastructure identities and complete cloud-provider initialization.
+
+### CAPV static allocation pool
+
+The CAPV static allocation pool is the `VSphereResourcePool` custom resource. In the baseline workflow:
+
+- One CAPV static allocation pool is used for control plane nodes.
+- One CAPV static allocation pool is used for worker nodes.
+
+Each node slot includes the hostname, datacenter, static IP assignment, and optional data disk definitions.
+
+For network configuration, distinguish the following fields:
+
+- `networkName` is the vCenter network or port group name.
+- `deviceName` is the NIC name inside the guest operating system.
+
+If `deviceName` is set, CAPV writes that value into the generated guest-network metadata. If it is omitted, the current implementation typically uses NIC names such as `eth0`, `eth1`, and `eth2` by NIC order.
+
+Also distinguish the following value formats:
+
+- A node IP address is used together with a prefix length, for example `10.10.10.11/24`.
+- The gateway field contains only the gateway IP address, for example `10.10.10.1`.
+
+In the baseline workflow:
+
+- One `VSphereResourcePool` is used for control plane nodes.
+- One `VSphereResourcePool` is used for worker nodes.
+
+### VM template requirements
+
+The VM template used by this workflow should meet the following minimum requirements:
+
+1. It uses the required operating system for the target platform environment.
+2. It includes `cloud-init`.
+3. It includes VMware Tools or `open-vm-tools`.
+4. It includes `containerd`.
+5. It includes the baseline components required by kubeadm bootstrap.
+
+Static IP configuration, hostname injection, and other initialization settings depend on `cloud-init`. Node IP reporting depends on guest tools.
+
+## Local File Layout
+
+Create a local working directory and store the manifests with the following layout:
+
+```text
+capv-cluster/
+├── 00-namespace.yaml
+├── 01-vsphere-credentials-secret.yaml
+├── 02-vsphereresourcepool-control-plane.yaml
+├── 03-vsphereresourcepool-worker.yaml
+├── 10-cluster.yaml
+├── 15-vsphere-cpi-clusterresourceset.yaml
+├── 20-control-plane.yaml
+└── 30-workers-md-0.yaml
+```
+
+Use the following commands to create the directory:
+
+```bash
+mkdir -p ./capv-cluster
+cd ./capv-cluster
+```
+
+## Steps
+
+<Steps>
+### Validate the environment
+
+Run the following commands from the management environment to verify the minimum prerequisites:
+
+```bash
+kubectl get ns
+kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere
+kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-kubeadm
+kubectl -n cpaas-system get deploy capi-controller-manager -o jsonpath='{.spec.template.spec.containers[0].args}'
+kubectl -n cpaas-system get secret public-registry-credential -o jsonpath='{.data.content}'
+```
+
+Confirm the following results:
+
+- The management cluster is reachable.
+- Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider are running.
+- The controller arguments include `ClusterResourceSet=true`.
+- The public registry credential `data.content` is not empty.
+
+Before you continue, also verify the following items:
+
+- The vCenter server address is reachable.
+- The vCenter username and password are valid.
+- The thumbprint is correct.
+- The template name is correct.
+- The template is resolvable in the target datacenter.
+- The template system disk is not larger than the `diskGiB` value used later in the manifests.
+- VMware Tools or `open-vm-tools` is installed in the template.
+- The VIP exists and port `6443` is reachable from the execution environment.
+- The load balancer ownership model for real-server maintenance is clear.
+
+### Create the namespace and vCenter credential secret
+
+Create the namespace that stores the workload cluster objects.
+
+```yaml title="00-namespace.yaml"
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <namespace>
+```
+
+Create the vCenter credential secret referenced by `VSphereCluster.spec.identityRef`.
+
+```yaml title="01-vsphere-credentials-secret.yaml"
+apiVersion: v1
+kind: Secret
+metadata:
+  name: <credentials_secret_name>
+  namespace: <namespace>
+type: Opaque
+stringData:
+  username: "<vsphere_username>"
+  password: "<vsphere_password>"
+```
+
+Apply both manifests:
+
+```bash
+kubectl apply -f 00-namespace.yaml
+kubectl apply -f 01-vsphere-credentials-secret.yaml
+```
+
+### Create the `Cluster` and `VSphereCluster` objects
+
+Create the base cluster manifest with the workload cluster network settings, the control plane endpoint, and the vCenter connection settings.
+
+```yaml title="10-cluster.yaml"
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: <cluster_name>
+  namespace: <namespace>
+  labels:
+    cluster.x-k8s.io/cluster-name: <cluster_name>
+    cluster-type: VSphere
+    addons.cluster.x-k8s.io/vsphere-cpi: "enabled"
+  annotations:
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: VSphereCluster
+    cpaas.io/sentry-deploy-type: Baremetal
+    cpaas.io/alb-address-type: ClusterAddress
+    cpaas.io/network-type: kube-ovn
+    cpaas.io/kube-ovn-version: <kube_ovn_version>
+    cpaas.io/kube-ovn-join-cidr: <kube_ovn_join_cidr>
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+      - <pod_cidr>
+    services:
+      cidrBlocks:
+      - <service_cidr>
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: <cluster_name>
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: VSphereCluster
+    name: <cluster_name>
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereCluster
+metadata:
+  name: <cluster_name>
+  namespace: <namespace>
+spec:
+  controlPlaneEndpoint:
+    host: "<vip>"
+    port: <api_server_port>
+  identityRef:
+    kind: Secret
+    name: <credentials_secret_name>
+  server: "<vsphere_server>"
+  thumbprint: "<thumbprint>"
+```
+
+Apply the manifest:
+
+```bash
+kubectl apply -f 10-cluster.yaml
+```
+
+### Create the vSphere CPI delivery resources
+
+Create a `ClusterResourceSet` so the workload cluster receives the vSphere CPI configuration and manifests automatically after the workload API server becomes reachable.
+
+<Directive type="warning">
+The CPI `ConfigMap`, `Secret`, and `ClusterResourceSet` resources **must** be created in the same namespace as the `Cluster` resource (`<namespace>`). A `ClusterResourceSet` can only match clusters within its own namespace; deploying it in a different namespace will silently prevent resource delivery.
+</Directive>
+
+<Directive type="info">
+The `kube-ovn` configuration in the `Cluster` annotations is consumed by platform controllers. This document does not install the network plugin directly.
+</Directive>
+
+<Directive type="tip">
+This manifest is long and contains nested YAML inside `data` fields. Validate the manifest before applying: `kubectl apply --dry-run=client -f 15-vsphere-cpi-clusterresourceset.yaml`.
+</Directive>
+
+```yaml title="15-vsphere-cpi-clusterresourceset.yaml"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: <cluster_name>-vsphere-cpi-config
+  namespace: <namespace>
+data:
+  data: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cloud-config
+      namespace: kube-system
+    data:
+      vsphere.conf: |
+        [Global]
+        secret-name = "vsphere-cloud-secret"
+        secret-namespace = "kube-system"
+        service-account = "cloud-controller-manager"
+        port = "443"
+        insecure-flag = "<cpi_insecure_flag>"
+        datacenters = "<cpi_datacenters>"
+
+        [Labels]
+        zone = "k8s-zone"
+        region = "k8s-region"
+
+        [VirtualCenter "<vsphere_server>"]
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: <cluster_name>-vsphere-cpi-secret
+  namespace: <namespace>
+type: addons.cluster.x-k8s.io/resource-set
+stringData:
+  data: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: vsphere-cloud-secret
+      namespace: kube-system
+    type: Opaque
+    stringData:
+      <vsphere_server>.username: <vsphere_username>
+      <vsphere_server>.password: <vsphere_password>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: <cluster_name>-vsphere-cpi-manifests
+  namespace: <namespace>
+data:
+  data: |
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: cloud-controller-manager
+      namespace: kube-system
+    automountServiceAccountToken: false
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: system:cloud-controller-manager
+    rules:
+    - apiGroups: [""]
+      resources: ["events"]
+      verbs: ["create", "patch", "update"]
+    - apiGroups: [""]
+      resources: ["nodes"]
+      verbs: ["*"]
+    - apiGroups: [""]
+      resources: ["nodes/status"]
+      verbs: ["patch"]
+    - apiGroups: [""]
+      resources: ["services"]
+      verbs: ["list", "patch", "update", "watch"]
+    - apiGroups: [""]
+      resources: ["services/status"]
+      verbs: ["patch"]
+    - apiGroups: [""]
+      resources: ["serviceaccounts"]
+      verbs: ["create", "get", "list", "watch", "update"]
+    - apiGroups: [""]
+      resources: ["persistentvolumes"]
+      verbs: ["get", "list", "update", "watch"]
+    - apiGroups: [""]
+      resources: ["endpoints"]
+      verbs: ["create", "get", "list", "watch", "update"]
+    - apiGroups: [""]
+      resources: ["secrets"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["coordination.k8s.io"]
+      resources: ["leases"]
+      verbs: ["get", "list", "watch", "create", "update"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: servicecatalog.k8s.io:apiserver-authentication-reader
+      namespace: kube-system
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: extension-apiserver-authentication-reader
+    subjects:
+    - apiGroup: ""
+      kind: ServiceAccount
+      name: cloud-controller-manager
+      namespace: kube-system
+    - apiGroup: ""
+      kind: User
+      name: cloud-controller-manager
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: system:cloud-controller-manager
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: system:cloud-controller-manager
+    subjects:
+    - kind: ServiceAccount
+      name: cloud-controller-manager
+      namespace: kube-system
+    - kind: User
+      name: cloud-controller-manager
+    ---
+    apiVersion: apps/v1
+    kind: DaemonSet
+    metadata:
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ""
+      labels:
+        component: cloud-controller-manager
+        tier: control-plane
+        k8s-app: vsphere-cloud-controller-manager
+      name: vsphere-cloud-controller-manager
+      namespace: kube-system
+    spec:
+      selector:
+        matchLabels:
+          k8s-app: vsphere-cloud-controller-manager
+      updateStrategy:
+        type: RollingUpdate
+      template:
+        metadata:
+          labels:
+            component: cloud-controller-manager
+            k8s-app: vsphere-cloud-controller-manager
+        spec:
+          securityContext:
+            runAsUser: 1001
+          automountServiceAccountToken: true
+          # Optional: required when the CPI image is stored in a private
+          # registry that needs authentication. The platform automatically
+          # syncs a dockerconfigjson secret named "global-registry-auth"
+          # into every namespace of the workload cluster when the
+          # management-cluster secret "public-registry-credential"
+          # (data.content) is configured. If your environment does not
+          # use a private registry, remove the imagePullSecrets block.
+          imagePullSecrets:
+          - name: global-registry-auth
+          serviceAccountName: cloud-controller-manager
+          hostNetwork: true
+          tolerations:
+          - operator: Exists
+          - key: node.cloudprovider.kubernetes.io/uninitialized
+            value: "true"
+            effect: NoSchedule
+          - key: node-role.kubernetes.io/master
+            effect: NoSchedule
+          - key: node.kubernetes.io/not-ready
+            effect: NoSchedule
+            operator: Exists
+          containers:
+          - name: vsphere-cloud-controller-manager
+            image: <image_registry>/ait/cloud-provider-vsphere:<cpi_image_tag>
+            args:
+            - --v=2
+            - --cloud-provider=vsphere
+            - --cloud-config=/etc/cloud/vsphere.conf
+            volumeMounts:
+            - mountPath: /etc/cloud
+              name: vsphere-config-volume
+              readOnly: true
+            resources:
+              requests:
+                cpu: 200m
+          volumes:
+          - name: vsphere-config-volume
+            configMap:
+              name: cloud-config
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        component: cloud-controller-manager
+      name: vsphere-cloud-controller-manager
+      namespace: kube-system
+    spec:
+      type: NodePort
+      ports:
+      - port: 43001
+        protocol: TCP
+        targetPort: 43001
+      selector:
+        component: cloud-controller-manager
+---
+apiVersion: addons.cluster.x-k8s.io/v1beta1
+kind: ClusterResourceSet
+metadata:
+  name: <cluster_name>-vsphere-cpi
+  namespace: <namespace>
+spec:
+  strategy: Reconcile
+  clusterSelector:
+    matchLabels:
+      addons.cluster.x-k8s.io/vsphere-cpi: "enabled"
+  resources:
+  - name: <cluster_name>-vsphere-cpi-config
+    kind: ConfigMap
+  - name: <cluster_name>-vsphere-cpi-secret
+    kind: Secret
+  - name: <cluster_name>-vsphere-cpi-manifests
+    kind: ConfigMap
+```
+
+Apply the manifest:
+
+```bash
+kubectl apply -f 15-vsphere-cpi-clusterresourceset.yaml
+```
+
+### Create the static allocation pools
+
+Create the control plane static allocation pool.
+
+<Directive type="info">
+`deviceName` is optional. If you do not need to force the guest NIC name, remove the `deviceName` line from every node slot. The provider assigns NIC names such as `eth0`, `eth1` by NIC order.
+</Directive>
+
+```yaml title="02-vsphereresourcepool-control-plane.yaml"
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereResourcePool
+metadata:
+  name: <cp_pool_name>
+  namespace: <namespace>
+spec:
+  clusterRef:
+    apiVersion: cluster.x-k8s.io/v1beta1
+    kind: Cluster
+    name: <cluster_name>
+  datacenter: "<default_datacenter>"
+  releaseDelayHours: <release_delay_hours>
+  resources:
+  - hostname: "<cp_node_name_1>"
+    datacenter: "<master_01_datacenter>"
+    network:
+    - networkName: "<nic1_network_name>"
+      deviceName: "<nic1_device_name>"
+      ip: "<master_01_nic1_ip>/<nic1_prefix>"
+      gateway: "<nic1_gateway>"
+      dns:
+      - "<nic1_dns_1>"
+    persistentDisks:
+    - name: var-cpaas
+      sizeGiB: <cp_var_cpaas_size_gib>
+      mountPath: /var/cpaas
+      fsFormat: ext4
+    - name: var-lib-containerd
+      sizeGiB: <cp_var_lib_containerd_size_gib>
+      mountPath: /var/lib/containerd
+      fsFormat: ext4
+    - name: var-lib-etcd
+      sizeGiB: <cp_var_lib_etcd_size_gib>
+      mountPath: /var/lib/etcd
+      fsFormat: ext4
+  - hostname: "<cp_node_name_2>"
+    datacenter: "<master_02_datacenter>"
+    network:
+    - networkName: "<nic1_network_name>"
+      deviceName: "<nic1_device_name>"
+      ip: "<master_02_nic1_ip>/<nic1_prefix>"
+      gateway: "<nic1_gateway>"
+      dns:
+      - "<nic1_dns_1>"
+    persistentDisks:
+    - name: var-cpaas
+      sizeGiB: <cp_var_cpaas_size_gib>
+      mountPath: /var/cpaas
+      fsFormat: ext4
+    - name: var-lib-containerd
+      sizeGiB: <cp_var_lib_containerd_size_gib>
+      mountPath: /var/lib/containerd
+      fsFormat: ext4
+    - name: var-lib-etcd
+      sizeGiB: <cp_var_lib_etcd_size_gib>
+      mountPath: /var/lib/etcd
+      fsFormat: ext4
+  - hostname: "<cp_node_name_3>"
+    datacenter: "<master_03_datacenter>"
+    network:
+    - networkName: "<nic1_network_name>"
+      deviceName: "<nic1_device_name>"
+      ip: "<master_03_nic1_ip>/<nic1_prefix>"
+      gateway: "<nic1_gateway>"
+      dns:
+      - "<nic1_dns_1>"
+    persistentDisks:
+    - name: var-cpaas
+      sizeGiB: <cp_var_cpaas_size_gib>
+      mountPath: /var/cpaas
+      fsFormat: ext4
+    - name: var-lib-containerd
+      sizeGiB: <cp_var_lib_containerd_size_gib>
+      mountPath: /var/lib/containerd
+      fsFormat: ext4
+    - name: var-lib-etcd
+      sizeGiB: <cp_var_lib_etcd_size_gib>
+      mountPath: /var/lib/etcd
+      fsFormat: ext4
+```
+
+Create the worker static allocation pool.
+
+```yaml title="03-vsphereresourcepool-worker.yaml"
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereResourcePool
+metadata:
+  name: <worker_pool_name>
+  namespace: <namespace>
+spec:
+  clusterRef:
+    apiVersion: cluster.x-k8s.io/v1beta1
+    kind: Cluster
+    name: <cluster_name>
+  datacenter: "<default_datacenter>"
+  releaseDelayHours: <release_delay_hours>
+  resources:
+  - hostname: "<worker_node_name_1>"
+    datacenter: "<worker_01_datacenter>"
+    network:
+    - networkName: "<nic1_network_name>"
+      deviceName: "<nic1_device_name>"
+      ip: "<worker_01_nic1_ip>/<nic1_prefix>"
+      gateway: "<nic1_gateway>"
+      dns:
+      - "<nic1_dns_1>"
+    persistentDisks:
+    - name: var-cpaas
+      sizeGiB: <worker_var_cpaas_size_gib>
+      mountPath: /var/cpaas
+      fsFormat: ext4
+    - name: var-lib-containerd
+      sizeGiB: <worker_var_lib_containerd_size_gib>
+      mountPath: /var/lib/containerd
+      fsFormat: ext4
+```
+
+Apply both manifests:
+
+```bash
+kubectl apply -f 02-vsphereresourcepool-control-plane.yaml
+kubectl apply -f 03-vsphereresourcepool-worker.yaml
+```
+
+### Create the control plane objects
+
+Create the `VSphereMachineTemplate` and `KubeadmControlPlane` objects. Replace the placeholders in the following full template with the values collected in the checklist document.
+
+```yaml title="20-control-plane.yaml"
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereMachineTemplate
+metadata:
+  name: <cluster_name>-control-plane
+  namespace: <namespace>
+spec:
+  template:
+    spec:
+      server: "<vsphere_server>"
+      template: "<template_name>"
+      cloneMode: <clone_mode>
+      datastore: "<cp_system_datastore>"
+      diskGiB: <cp_system_disk_gib>
+      memoryMiB: <cp_memory_mib>
+      numCPUs: <cp_num_cpus>
+      os: Linux
+      powerOffMode: <power_off_mode>
+      network:
+        devices:
+        - networkName: "<nic1_network_name>"
+      resourcePoolRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: VSphereResourcePool
+        name: <cp_pool_name>
+        namespace: <namespace>
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: <cluster_name>
+  namespace: <namespace>
+spec:
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+  version: "<k8s_version>"
+  replicas: <cp_replicas>
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    metadata:
+      labels:
+        node-role.kubernetes.io/control-plane: ""
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: VSphereMachineTemplate
+      name: <cluster_name>-control-plane
+  kubeadmConfigSpec:
+    users:
+    - name: boot
+      sudo: ALL=(ALL) NOPASSWD:ALL
+      sshAuthorizedKeys:
+      - "<ssh_public_key>"
+    files:
+    - path: /etc/kubernetes/admission/psa-config.yaml
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: AdmissionConfiguration
+        plugins:
+        - name: PodSecurity
+          configuration:
+            apiVersion: pod-security.admission.config.k8s.io/v1
+            kind: PodSecurityConfiguration
+            defaults:
+              enforce: "privileged"
+              enforce-version: "latest"
+              audit: "baseline"
+              audit-version: "latest"
+              warn: "baseline"
+              warn-version: "latest"
+            exemptions:
+              usernames: []
+              runtimeClasses: []
+              namespaces:
+              - kube-system
+              - <namespace>
+    - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        {
+          "apiVersion": "kubelet.config.k8s.io/v1beta1",
+          "kind": "KubeletConfiguration",
+          "protectKernelDefaults": true,
+          "streamingConnectionIdleTimeout": "5m"
+        }
+    # Generate the encryption key with: head -c 32 /dev/urandom | base64
+    - path: /etc/kubernetes/encryption-provider.conf
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: EncryptionConfiguration
+        resources:
+        - resources:
+          - secrets
+          providers:
+          - aescbc:
+              keys:
+              - name: key1
+                secret: <encryption_provider_secret>
+    - path: /etc/kubernetes/audit/policy.yaml
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        apiVersion: audit.k8s.io/v1
+        kind: Policy
+        omitStages:
+        - "RequestReceived"
+        rules:
+        - level: None
+          users:
+          - system:kube-controller-manager
+          - system:kube-scheduler
+          - system:serviceaccount:kube-system:endpoint-controller
+          verbs: ["get", "update"]
+          namespaces: ["kube-system"]
+          resources:
+          - group: ""
+            resources: ["endpoints"]
+        - level: None
+          nonResourceURLs:
+          - /healthz*
+          - /version
+          - /swagger*
+        - level: None
+          resources:
+          - group: ""
+            resources: ["events"]
+        - level: None
+          resources:
+          - group: "devops.alauda.io"
+        - level: None
+          verbs: ["get", "list", "watch"]
+        - level: None
+          resources:
+          - group: "coordination.k8s.io"
+            resources: ["leases"]
+        - level: None
+          resources:
+          - group: "authorization.k8s.io"
+            resources: ["subjectaccessreviews", "selfsubjectaccessreviews"]
+          - group: "authentication.k8s.io"
+            resources: ["tokenreviews"]
+        - level: None
+          resources:
+          - group: "app.alauda.io"
+            resources: ["imagewhitelists"]
+          - group: "k8s.io"
+            resources: ["namespaceoverviews"]
+        - level: Metadata
+          resources:
+          - group: ""
+            resources: ["secrets", "configmaps"]
+        - level: Metadata
+          resources:
+          - group: "operator.connectors.alauda.io"
+            resources: ["installmanifests"]
+          - group: "operators.katanomi.dev"
+            resources: ["katanomis"]
+        - level: RequestResponse
+          resources:
+          - group: ""
+          - group: "aiops.alauda.io"
+          - group: "apps"
+          - group: "app.k8s.io"
+          - group: "authentication.istio.io"
+          - group: "auth.alauda.io"
+          - group: "autoscaling"
+          - group: "asm.alauda.io"
+          - group: "clusterregistry.k8s.io"
+          - group: "crd.alauda.io"
+          - group: "infrastructure.alauda.io"
+          - group: "monitoring.coreos.com"
+          - group: "operators.coreos.com"
+          - group: "networking.istio.io"
+          - group: "extensions.istio.io"
+          - group: "install.istio.io"
+          - group: "security.istio.io"
+          - group: "telemetry.istio.io"
+          - group: "opentelemetry.io"
+          - group: "networking.k8s.io"
+          - group: "portal.alauda.io"
+          - group: "rbac.authorization.k8s.io"
+          - group: "storage.k8s.io"
+          - group: "tke.cloud.tencent.com"
+          - group: "devopsx.alauda.io"
+          - group: "core.katanomi.dev"
+          - group: "deliveries.katanomi.dev"
+          - group: "integrations.katanomi.dev"
+          - group: "artifacts.katanomi.dev"
+          - group: "builds.katanomi.dev"
+          - group: "versioning.katanomi.dev"
+          - group: "sources.katanomi.dev"
+          - group: "tekton.dev"
+          - group: "operator.tekton.dev"
+          - group: "eventing.knative.dev"
+          - group: "flows.knative.dev"
+          - group: "messaging.knative.dev"
+          - group: "operator.knative.dev"
+          - group: "sources.knative.dev"
+          - group: "operator.devops.alauda.io"
+          - group: "flagger.app"
+          - group: "jaegertracing.io"
+          - group: "velero.io"
+            resources: ["deletebackuprequests"]
+          - group: "connectors.alauda.io"
+          - group: "operator.connectors.alauda.io"
+            resources: ["connectorscores", "connectorsgits", "connectorsocis"]
+        - level: Metadata
+    preKubeadmCommands:
+    - hostnamectl set-hostname "{{ ds.meta_data.hostname }}"
+    - echo "::1         ipv6-localhost ipv6-loopback localhost6 localhost6.localdomain6" >/etc/hosts
+    - echo "127.0.0.1   {{ ds.meta_data.hostname }} {{ local_hostname }} localhost localhost.localdomain localhost4 localhost4.localdomain4" >>/etc/hosts
+    - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
+    - mkdir -p /run/cluster-api && (command -v restorecon >/dev/null 2>&1 && restorecon -Rv /run/cluster-api || true)
+    - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
+    postKubeadmCommands:
+    - chmod 600 /var/lib/kubelet/config.yaml
+    clusterConfiguration:
+      imageRepository: <image_registry>/tkestack
+      dns:
+        imageTag: <dns_image_tag>
+      etcd:
+        local:
+          imageTag: <etcd_image_tag>
+      apiServer:
+        extraArgs:
+          admission-control-config-file: /etc/kubernetes/admission/psa-config.yaml
+          audit-log-format: json
+          audit-log-maxage: "30"
+          audit-log-maxbackup: "10"
+          audit-log-maxsize: "200"
+          audit-log-mode: batch
+          audit-log-path: /etc/kubernetes/audit/audit.log
+          audit-policy-file: /etc/kubernetes/audit/policy.yaml
+          encryption-provider-config: /etc/kubernetes/encryption-provider.conf
+          kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
+          profiling: "false"
+          tls-cipher-suites: TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+          tls-min-version: VersionTLS12
+        extraVolumes:
+        - hostPath: /etc/kubernetes
+          mountPath: /etc/kubernetes
+          name: vol-dir-0
+          pathType: Directory
+      controllerManager:
+        extraArgs:
+          bind-address: "::"
+          cloud-provider: external
+          profiling: "false"
+          tls-min-version: VersionTLS12
+      scheduler:
+        extraArgs:
+          bind-address: "::"
+          profiling: "false"
+          tls-min-version: VersionTLS12
+    initConfiguration:
+      nodeRegistration:
+        criSocket: /var/run/containerd/containerd.sock
+        kubeletExtraArgs:
+          cloud-provider: external
+          node-labels: kube-ovn/role=master
+        name: '{{ local_hostname }}'
+      patches:
+        directory: /etc/kubernetes/patches
+    joinConfiguration:
+      nodeRegistration:
+        criSocket: /var/run/containerd/containerd.sock
+        kubeletExtraArgs:
+          cloud-provider: external
+          node-labels: kube-ovn/role=master
+        name: '{{ local_hostname }}'
+      patches:
+        directory: /etc/kubernetes/patches
+```
+
+Apply the manifest:
+
+```bash
+kubectl apply -f 20-control-plane.yaml
+```
+
+### Create the worker objects
+
+Create the worker machine template, bootstrap template, and `MachineDeployment`.
+
+```yaml title="30-workers-md-0.yaml"
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereMachineTemplate
+metadata:
+  name: <cluster_name>-worker
+  namespace: <namespace>
+spec:
+  template:
+    spec:
+      server: "<vsphere_server>"
+      template: "<template_name>"
+      cloneMode: <clone_mode>
+      datastore: "<worker_system_datastore>"
+      diskGiB: <worker_system_disk_gib>
+      memoryMiB: <worker_memory_mib>
+      numCPUs: <worker_num_cpus>
+      os: Linux
+      powerOffMode: <power_off_mode>
+      network:
+        devices:
+        - networkName: "<nic1_network_name>"
+      resourcePoolRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: VSphereResourcePool
+        name: <worker_pool_name>
+        namespace: <namespace>
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+kind: KubeadmConfigTemplate
+metadata:
+  name: <cluster_name>-worker-bootstrap
+  namespace: <namespace>
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          criSocket: /var/run/containerd/containerd.sock
+          kubeletExtraArgs:
+            cloud-provider: external
+          name: '{{ local_hostname }}'
+      preKubeadmCommands:
+      - hostnamectl set-hostname "{{ ds.meta_data.hostname }}"
+      - echo "::1         ipv6-localhost ipv6-loopback localhost6 localhost6.localdomain6" >/etc/hosts
+      - echo "127.0.0.1   {{ ds.meta_data.hostname }} {{ local_hostname }} localhost localhost.localdomain localhost4 localhost4.localdomain4" >>/etc/hosts
+      - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
+      - mkdir -p /run/cluster-api && (command -v restorecon >/dev/null 2>&1 && restorecon -Rv /run/cluster-api || true)
+      - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
+      postKubeadmCommands:
+      - chmod 600 /var/lib/kubelet/config.yaml
+      users:
+      - name: boot
+        sudo: ALL=(ALL) NOPASSWD:ALL
+        sshAuthorizedKeys:
+        - "<ssh_public_key>"
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: <cluster_name>-md-0
+  namespace: <namespace>
+spec:
+  clusterName: <cluster_name>
+  replicas: <worker_replicas>
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      nodepool: md-0
+  template:
+    metadata:
+      labels:
+        cluster.x-k8s.io/cluster-name: <cluster_name>
+        nodepool: md-0
+    spec:
+      clusterName: <cluster_name>
+      version: "<k8s_version>"
+      bootstrap:
+        configRef:
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          kind: KubeadmConfigTemplate
+          name: <cluster_name>-worker-bootstrap
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: VSphereMachineTemplate
+        name: <cluster_name>-worker
+```
+
+Apply the manifest:
+
+```bash
+kubectl apply -f 30-workers-md-0.yaml
+```
+
+In the baseline workflow, note the following worker-specific rules:
+
+- `failureDomain` is not set by default in the main worker manifest because the baseline workflow assumes a single datacenter. If you need a worker `MachineDeployment` to land in a specific `VSphereDeploymentZone`, add `failureDomain` as described in [Extension Scenarios](./extension-scenarios.mdx).
+- Some environments add extra runtime-image replacement commands or service-restart commands to `KubeadmConfigTemplate`. Those commands are intentionally not included in the baseline sample. Add them only when the platform requirements in your environment explicitly require them.
+
+### Wait for the cluster to become ready
+
+After all manifests are applied, the cluster creation is asynchronous. Monitor the progress with:
+
+```bash
+kubectl -n <namespace> get cluster,kubeadmcontrolplane,machinedeployment,machine -w
+```
+
+Wait until `KubeadmControlPlane` reports the expected number of ready replicas and all `Machine` objects reach the `Running` phase before proceeding to verification.
+
+</Steps>
+
+## Verification
+
+Use the following commands to verify the cluster creation workflow.
+
+1. Check the CPI delivery resources in the management cluster:
+   ```bash
+   kubectl -n <namespace> get clusterresourceset
+   kubectl -n <namespace> get clusterresourcesetbinding
+   ```
+2. Export the workload kubeconfig:
+   ```bash
+   kubectl -n <namespace> get secret <cluster_name>-kubeconfig -o jsonpath='{.data.value}' | base64 -d > /tmp/<cluster_name>.kubeconfig
+   ```
+3. Check whether the vSphere CPI daemonset is created in the workload cluster:
+   ```bash
+   kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig -n kube-system get daemonset
+   ```
+4. Check the management-cluster objects:
+   ```bash
+   kubectl -n <namespace> get cluster,vspherecluster,kubeadmcontrolplane,machinedeployment,machine,vspheremachine,vspherevm
+   ```
+5. Check the workload nodes:
+   ```bash
+   kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get nodes -o wide
+   ```
+
+Confirm the following results:
+
+- `vsphere-cloud-controller-manager` appears in the workload cluster.
+- Control plane and worker nodes are created.
+- The nodes eventually become `Ready`.
+
+## Troubleshooting
+
+Use the following commands first when the workflow fails:
+
+```bash
+kubectl -n <namespace> describe cluster <cluster_name>
+kubectl -n <namespace> describe vspherecluster <cluster_name>
+kubectl -n <namespace> describe kubeadmcontrolplane <cluster_name>
+kubectl -n <namespace> describe machinedeployment <cluster_name>-md-0
+kubectl -n <namespace> get cluster,vspherecluster,kubeadmcontrolplane,machinedeployment,machine,vspheremachine,vspherevm
+kubectl -n cpaas-system logs deploy/capi-controller-manager
+```
+
+Prioritize the following checks:
+
+- If the CPI resources are not delivered, verify `ClusterResourceSet=true`, `ClusterResourceSet`, and `ClusterResourceSetBinding`.
+- If `ClusterResourceSet` exists but no `ClusterResourceSetBinding` is created, check whether the controller has the required delete permission on the referenced `ConfigMap` and `Secret` resources.
+- If the network plugin is not installed, verify that the required cluster annotations are present and that the platform controllers processed them.
+- If the `cpaas.io/registry-address` annotation is missing, verify the public registry credential and the platform controller that injects the annotation.
+- If a machine is stuck in `Provisioning`, check `VSphereMachine` conditions for `ResourcePoolReady` — it shows whether slot allocation failed due to pool binding or datacenter mismatch.
+- If a VM is waiting for IP allocation, verify VMware Tools, the static IP settings, and `VSphereVM.status.addresses`.
+- If datastore space is exhausted, verify whether old VM directories or `.vmdk` files remain in the target datastore.
+- If the template system disk size does not match the manifest values, verify that `diskGiB` is not smaller than the template disk size.
+- If the control plane endpoint does not come up, verify the load balancer, the VIP, and port `6443`.
+- If the TLS connection to vCenter fails, verify the thumbprint, the vCenter address, and whether proxy settings interfere with the connection.
+
+When you review controller logs, use the following rules:
+
+- `deploy/capi-controller-manager` runs in the `cpaas-system` namespace of the `global` cluster.
+- Do not use the workload-cluster kubeconfig to inspect `capi-controller-manager` logs.
+- If platform controllers process the cluster network annotations, also inspect the platform network-controller logs and the platform cluster-lifecycle-controller logs.
+
+## Next Steps
+
+After the baseline topology is running, continue with [Extension Scenarios](./extension-scenarios.mdx) if you need a second NIC, multiple datacenters, failure domains, extra data disks, or more worker replicas.

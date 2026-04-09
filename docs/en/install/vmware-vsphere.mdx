@@ -1,22 +1,68 @@
 ---
 weight: 30
+title: VMware vSphere Provider Installation
+author: dev@alauda.io
+category: howto
+queries:
+  - install vmware vsphere provider
+  - install capv provider on global cluster
+  - verify vmware provider installation
 ---
 
 # VMware vSphere Provider Installation
 
-This document describes how to install the VMware vSphere Infrastructure Provider for Immutable Infrastructure.
+This document explains how to install the VMware vSphere Infrastructure Provider and verify that the required Cluster API components are available on the `global` cluster.
 
-## Status
+## Prerequisites
 
-🚧 **In Development**
+Before installing the provider, ensure the following conditions are met:
 
-This provider is currently under active development. Documentation will be available when the provider is released.
+- You can access the <Term name="product" textCase="capitalize" /> `global` cluster.
+- You can access Customer Portal to download provider packages.
+- You know which platform release and provider package version you plan to install.
 
-## Planned Installation Steps
+## Steps
 
-1. Download the vSphere Provider plugin from Customer Portal
-2. Upload the plugin to <Term name="product" textCase="capitalize" />
-3. Install the plugin on the `global` cluster
-4. Configure vCenter credentials
+<Steps>
+### Download the required packages
 
-For more information about the vSphere platform, see [Provider Overview](../overview/providers/vmware-vsphere.mdx).
+To use VMware vSphere with Immutable Infrastructure, download the following cluster plugins from Customer Portal:
+
+1. **Alauda Container Platform Kubeadm Provider**
+2. **Alauda Container Platform VMware vSphere Infrastructure Provider**
+
+### Upload the packages
+
+Upload the downloaded packages to the platform repository.
+
+For the detailed upload procedure, refer to <ExternalSiteLink name="acp" href="/extend/upload_package.html#upload-packages" children="Upload Packages" />.
+
+### Install the provider on the `global` cluster
+
+Install both cluster plugins on the `global` cluster.
+
+For the detailed cluster-plugin procedure, refer to <ExternalSiteLink name="acp" href="/extend/cluster_plugin.html#cluster-plugin" children="Cluster Plugin" />.
+
+### Verify the installation
+
+Run the following commands to verify the installation result:
+
+```bash
+kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere
+kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-kubeadm
+kubectl get crd | grep -E '^vsphere.*\.infrastructure\.cluster\.x-k8s\.io$'
+```
+
+Confirm the following results:
+
+- Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider are present and in the `Running` state.
+- The VMware vSphere CRDs are registered on the `global` cluster.
+
+</Steps>
+
+## Next Steps
+
+After the provider is installed, continue with:
+
+- [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere/)
+- [VMware vSphere Provider](../overview/providers/vmware-vsphere.mdx)

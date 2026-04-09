@@ -1,0 +1,349 @@
+---
+weight: 30
+title: Extending a VMware vSphere Cluster Deployment
+author: dev@alauda.io
+category: howto
+queries:
+  - extend vmware vsphere cluster deployment
+  - add second nic or failure domain to vsphere cluster
+  - scale workers on vsphere cluster
+---
+
+# Extending a VMware vSphere Cluster Deployment
+
+This document explains how to extend a baseline VMware vSphere cluster deployment after the minimum single-datacenter workflow is running successfully.
+
+## Scenarios
+
+Use this document in the following scenarios:
+
+- You need a second NIC on control plane or worker nodes.
+- You want to distribute nodes across multiple datacenters or deployment zones.
+- You want to add more data disks.
+- You want to scale out the worker pool.
+
+## Prerequisites
+
+Before you begin, ensure the following conditions are met:
+
+- The baseline workflow in [Creating a VMware vSphere Cluster in the global Cluster](./create-cluster-in-global.mdx) completed successfully.
+- You validated the extra parameters in [Preparing Parameters for a VMware vSphere Cluster](./parameter-checklist.mdx).
+- You understand which manifests own the network, placement, and disk settings in your deployment.
+
+## Add a second NIC
+
+When nodes require an additional management, storage, or service network, extend the manifests in the following resources:
+
+- `02-vsphereresourcepool-control-plane.yaml`
+- `03-vsphereresourcepool-worker.yaml`
+- `20-control-plane.yaml`
+- `30-workers-md-0.yaml`
+- `04-failure-domains.yaml` if failure domains are enabled
+
+Add the second NIC to each node slot in the static allocation pools:
+
+```yaml
+network:
+- networkName: "<nic1_network_name>"
+  deviceName: "<nic1_device_name>"
+  ip: "<master_01_nic1_ip>/<nic1_prefix>"
+  gateway: "<nic1_gateway>"
+  dns:
+  - "<nic1_dns_1>"
+- networkName: "<nic2_network_name>"
+  deviceName: "<nic2_device_name>"
+  ip: "<master_01_nic2_ip>/<nic2_prefix>"
+  gateway: "<nic2_gateway>"
+  dns:
+  - "<nic2_dns_1>"
+```
+
+Apply the same pattern to the worker node slots:
+
+```yaml
+network:
+- networkName: "<nic1_network_name>"
+  deviceName: "<nic1_device_name>"
+  ip: "<worker_01_nic1_ip>/<nic1_prefix>"
+  gateway: "<nic1_gateway>"
+  dns:
+  - "<nic1_dns_1>"
+- networkName: "<nic2_network_name>"
+  deviceName: "<nic2_device_name>"
+  ip: "<worker_01_nic2_ip>/<nic2_prefix>"
+  gateway: "<nic2_gateway>"
+  dns:
+  - "<nic2_dns_1>"
+```
+
+Add the second NIC to the machine templates:
+
+```yaml
+network:
+  devices:
+  - networkName: "<nic1_network_name>"
+  - networkName: "<nic2_network_name>"
+```
+
+If failure domains are enabled, update the network list in `VSphereFailureDomain.spec.topology.networks`:
+
+```yaml
+topology:
+  networks:
+  - <nic1_network_name>
+  - <nic2_network_name>
+```
+
+When you define the second NIC values, prepare the following placeholders in the checklist and manifests:
+
+- `<master_01_nic2_ip>`
+- `<master_02_nic2_ip>`
+- `<master_03_nic2_ip>`
+- `<worker_01_nic2_ip>`
+- `<worker_02_nic2_ip>` when you also expand the worker pool
+
+When you move between one NIC and two NICs, apply the following rules:
+
+### Expand from one NIC to two NICs
+
+Update all of the following fields together:
+
+1. `VSphereResourcePool.spec.resources[].network`
+2. `VSphereMachineTemplate.spec.template.spec.network.devices`
+3. `VSphereFailureDomain.spec.topology.networks` when failure domains are enabled
+
+### Revert from two NICs to one NIC
+
+Remove the second NIC block from all of the following fields:
+
+1. The second NIC entry in `VSphereResourcePool.spec.resources[].network`
+2. The second device entry in `VSphereMachineTemplate.spec.template.spec.network.devices`
+3. The second network name in `VSphereFailureDomain.spec.topology.networks`
+
+## Enable multiple datacenters and failure domains
+
+Use multiple datacenters and failure domains when you need node placement across different vCenter datacenters or compute clusters.
+
+The following principles apply:
+
+- One cluster can define multiple `VSphereFailureDomain` objects.
+- Each `VSphereDeploymentZone` references one `VSphereFailureDomain`.
+- The control plane uses `VSphereCluster.spec.failureDomainSelector`.
+- A worker `MachineDeployment` uses `spec.template.spec.failureDomain` when it must target a specific deployment zone.
+
+Prepare the following placeholders for the first datacenter:
+
+- `<compute_cluster_1>`
+- `<default_datastore_1>`
+- `<resource_pool_path_1>`
+- `<fd_name_1>`
+- `<dz_name_1>`
+
+Prepare the following placeholders for the second datacenter:
+
+- `<dc_name_2>`
+- `<fd_name_2>`
+- `<dz_name_2>`
+- `<compute_cluster_2>`
+- `<default_datastore_2>`
+- `<resource_pool_path_2>`
+
+If you add a third datacenter, continue with the same placeholder pattern:
+
+- `<dc_name_3>`
+- `<fd_name_3>`
+- `<dz_name_3>`
+- `<compute_cluster_3>`
+- `<default_datastore_3>`
+- `<resource_pool_path_3>`
+
+Create the failure-domain objects in `04-failure-domains.yaml`. The first datacenter also needs a `VSphereFailureDomain` and `VSphereDeploymentZone` when failure domains are enabled:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereFailureDomain
+metadata:
+  name: <fd_name_1>
+spec:
+  region:
+    name: region-a
+    type: Datacenter
+    tagCategory: k8s-region
+    autoConfigure: true
+  zone:
+    name: zone-1
+    type: ComputeCluster
+    tagCategory: k8s-zone
+    autoConfigure: true
+  topology:
+    datacenter: <default_datacenter>
+    computeCluster: <compute_cluster_1>
+    datastore: <default_datastore_1>
+    networks:
+    - <nic1_network_name>
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereDeploymentZone
+metadata:
+  name: <dz_name_1>
+spec:
+  server: <vsphere_server>
+  failureDomain: <fd_name_1>
+  controlPlane: true
+  placementConstraint:
+    resourcePool: <resource_pool_path_1>
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereFailureDomain
+metadata:
+  name: <fd_name_2>
+spec:
+  region:
+    name: region-a
+    type: Datacenter
+    tagCategory: k8s-region
+    autoConfigure: true
+  zone:
+    name: zone-2
+    type: ComputeCluster
+    tagCategory: k8s-zone
+    autoConfigure: true
+  topology:
+    datacenter: <dc_name_2>
+    computeCluster: <compute_cluster_2>
+    datastore: <default_datastore_2>
+    networks:
+    - <nic1_network_name>
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereDeploymentZone
+metadata:
+  name: <dz_name_2>
+spec:
+  server: <vsphere_server>
+  failureDomain: <fd_name_2>
+  controlPlane: true
+  placementConstraint:
+    resourcePool: <resource_pool_path_2>
+```
+
+Enable control plane selection across the available failure domains by adding `failureDomainSelector` to the `VSphereCluster` spec in `10-cluster.yaml`:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereCluster
+metadata:
+  name: <cluster_name>
+  namespace: <namespace>
+spec:
+  controlPlaneEndpoint:
+    host: "<vip>"
+    port: <api_server_port>
+  identityRef:
+    kind: Secret
+    name: <credentials_secret_name>
+  server: "<vsphere_server>"
+  thumbprint: "<thumbprint>"
+  failureDomainSelector: {}
+```
+
+Set a worker deployment zone when a worker `MachineDeployment` must be pinned to one deployment target. Add `failureDomain` to `spec.template.spec` in `30-workers-md-0.yaml`:
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: <cluster_name>-md-0
+  namespace: <namespace>
+spec:
+  clusterName: <cluster_name>
+  replicas: <worker_replicas>
+  template:
+    spec:
+      clusterName: <cluster_name>
+      failureDomain: <worker_failure_domain>
+      version: "<k8s_version>"
+      # ... rest of spec
+```
+
+Use a `VSphereDeploymentZone` name for `<worker_failure_domain>`, not a `VSphereFailureDomain` name.
+
+**Recommendation:** Before you enable multiple datacenters, confirm that the VM template, networks, and datastores are available in every target datacenter.
+
+Before you enable multiple datacenters, also confirm the following prerequisites:
+
+1. The template is already synchronized to every target datacenter.
+2. The network names are resolvable in every target datacenter.
+3. The datastore names are resolvable in every target datacenter.
+4. The vSphere CPI datacenter list covers every target datacenter.
+
+## Add data disks
+
+The baseline deployment includes the following required data disks:
+
+- **Control plane nodes**: `var-cpaas`, `var-lib-containerd`, and `var-lib-etcd` (3 disks per node). Do not remove any of these disks.
+- **Worker nodes**: `var-cpaas` and `var-lib-containerd` (2 disks per node). Do not remove any of these disks.
+
+If a node needs additional data disks beyond the required set, append more entries to the same `persistentDisks` list in the corresponding `VSphereResourcePool` node slot.
+
+## Scale out worker nodes
+
+Worker scale-out depends on the relationship between `MachineDeployment.spec.replicas` and the available node slots in the worker CAPV static allocation pool, `VSphereResourcePool.spec.resources[]`.
+
+Apply the following rules:
+
+1. The number of node slots can be greater than `replicas`.
+2. Idle slots do not affect a running cluster.
+3. If `replicas` exceeds the number of available slots, CAPV cannot assign the new worker nodes correctly.
+
+Use the following order when you scale out workers:
+
+1. Add new worker node slots to `03-vsphereresourcepool-worker.yaml`.
+2. Increase `MachineDeployment.spec.replicas` in `30-workers-md-0.yaml`.
+
+The following example adds a new worker slot:
+
+```yaml
+- hostname: "<worker_node_name_2>"
+  datacenter: "<worker_02_datacenter>"
+  network:
+  - networkName: "<nic1_network_name>"
+    ip: "<worker_02_nic1_ip>/<nic1_prefix>"
+    gateway: "<nic1_gateway>"
+    dns:
+    - "<nic1_dns_1>"
+  persistentDisks:
+  - name: var-cpaas
+    sizeGiB: <worker_var_cpaas_size_gib>
+    mountPath: /var/cpaas
+    fsFormat: ext4
+  - name: var-lib-containerd
+    sizeGiB: <worker_var_lib_containerd_size_gib>
+    mountPath: /var/lib/containerd
+    fsFormat: ext4
+```
+
+Then update the worker replicas:
+
+```yaml
+replicas: <worker_replicas>
+```
+
+## Verification
+
+After each extension, validate the cluster state with the following commands:
+
+```bash
+kubectl -n <namespace> get cluster,vspherecluster,kubeadmcontrolplane,machinedeployment,machine,vspheremachine,vspherevm
+kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get nodes -o wide
+```
+
+Confirm the following results:
+
+- The new placement, NIC, or disk definitions are reflected in the target resources.
+- New worker nodes reach the `Ready` state.
+- Existing nodes remain healthy after the change.
+
+## Next Steps
+
+Apply one extension at a time. Validate the result before you combine multiple changes in the same cluster.
