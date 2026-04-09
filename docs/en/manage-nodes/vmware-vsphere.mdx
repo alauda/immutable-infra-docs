@@ -42,7 +42,7 @@ kubectl apply -f 30-workers-md-0.yaml
 
 **Note:** If `MachineDeployment.spec.replicas` is greater than the number of available slots in `VSphereResourcePool.spec.resources[]`, the new worker nodes cannot be assigned correctly.
 
-### Roll out updated worker node configuration
+### Roll out updated worker node configuration \{#roll-out-updated-worker-node-configuration}
 
 When you need to change worker VM specifications, create a new `VSphereMachineTemplate` and update the `MachineDeployment` to reference it. This triggers a rolling update that replaces worker nodes with the new configuration.
 
@@ -126,7 +126,7 @@ Confirm the following results:
 
 </Steps>
 
-## Updating Bootstrap Templates
+## Updating Bootstrap Templates \{#updating-bootstrap-templates}
 
 `KubeadmConfigTemplate` resources are also immutable. Changes to an existing template do not trigger rollouts of existing machines. To update bootstrap configuration, create a new template and update the `MachineDeployment` reference.
 

@@ -507,7 +507,7 @@ kubectl apply -f 15-vsphere-cpi-clusterresourceset.yaml
 Create the control plane static allocation pool.
 
 <Directive type="info">
-`deviceName` is optional. If you do not need to force the guest NIC name, remove the `deviceName` line from every node slot. CAPV will assign NIC names such as `eth0`, `eth1` by NIC order.
+`deviceName` is optional. If you do not need to force the guest NIC name, remove the `deviceName` line from every node slot. The provider assigns NIC names such as `eth0`, `eth1` by NIC order.
 </Directive>
 
 ```yaml title="02-vsphereresourcepool-control-plane.yaml"
