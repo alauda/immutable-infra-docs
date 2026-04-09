@@ -32,33 +32,81 @@ Before you begin, ensure the following conditions are met:
 - The target VM template is compatible with the target Kubernetes version.
 - The CAPV static allocation pools have enough capacity for rolling updates.
 
+:::warning
+**Templates are immutable**
+
+`VSphereMachineTemplate` resources cannot be modified in-place. Each upgrade that changes VM specifications or the VM template name requires creating a new `VSphereMachineTemplate` with a new name and updating the reference in `KubeadmControlPlane` or `MachineDeployment`.
+:::
+
 ## Steps
 
 <Steps>
-### Prepare the target templates and versions
+### Create the target machine templates
 
-Before you start the rolling upgrade, review the current worker and control plane manifests and prepare the target values:
+Before you start the rolling upgrade, create new `VSphereMachineTemplate` resources for the control plane and workers.
 
-- The target Kubernetes version
-- The target VM template name
-- The target image tags required by kubeadm
-- Any worker or control plane sizing changes that must be rolled out together with the version upgrade
+1. **Export the existing control plane template**
+
+   ```bash
+   kubectl get vspheremachinetemplate <cluster_name>-control-plane -n <namespace> -o yaml > new-cp-template.yaml
+   ```
+
+2. **Modify the control plane template**
+
+   Edit `new-cp-template.yaml`:
+   - Set `metadata.name` to a new unique name (for example, `<cluster_name>-control-plane-v2`)
+   - Update `spec.template.spec.template` to the target VM template name
+   - Update CPU, memory, or disk settings if needed
+   - Remove server-generated fields: `metadata.resourceVersion`, `metadata.uid`, `metadata.generation`, `metadata.creationTimestamp`, `metadata.managedFields`, `metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]`, and `status`
+
+3. **Export and modify the worker template**
+
+   ```bash
+   kubectl get vspheremachinetemplate <cluster_name>-worker -n <namespace> -o yaml > new-worker-template.yaml
+   ```
+
+   Edit `new-worker-template.yaml`:
+   - Set `metadata.name` to a new unique name (for example, `<cluster_name>-worker-v2`)
+   - Update `spec.template.spec.template` to the target VM template name
+   - Update CPU, memory, or disk settings if needed
+   - Remove the same server-generated fields listed above
+
+4. **Apply both new templates**
+
+   ```bash
+   kubectl apply -f new-cp-template.yaml
+   kubectl apply -f new-worker-template.yaml
+   ```
 
 ### Upgrade the control plane
 
-Update the control plane manifest used by `KubeadmControlPlane`.
+Update the `KubeadmControlPlane` resource to reference the new control plane template and the target Kubernetes version.
 
 Typical changes include:
 
-- Updating `spec.version` in `KubeadmControlPlane`
-- Updating `spec.template.spec.template` in `VSphereMachineTemplate` if a new VM template is required
-- Updating related image tags such as `dns.imageTag` and `etcd.local.imageTag` when the target release requires them
+- `spec.version` — the target Kubernetes version
+- `spec.machineTemplate.infrastructureRef.name` — the new `VSphereMachineTemplate` name
+- Related image tags such as `dns.imageTag` and `etcd.local.imageTag` when the target release requires them
 
-Apply the updated control plane manifest:
+Apply the changes:
 
 ```bash
-kubectl apply -f 20-control-plane.yaml
+kubectl patch kubeadmcontrolplane <cluster_name> -n <namespace> \
+  --type='merge' -p='{
+    "spec": {
+      "version": "<target_kubernetes_version>",
+      "machineTemplate": {
+        "infrastructureRef": {
+          "name": "<new-cp-template-name>"
+        }
+      }
+    }
+  }'
 ```
+
+:::tip
+If the target Kubernetes release also requires updated image tags (for example, `dns.imageTag` or `etcd.local.imageTag`), include them in the patch payload or apply a complete manifest with `kubectl apply -f`.
+:::
 
 Monitor the control plane rollout:
 
@@ -69,18 +117,30 @@ kubectl -n <namespace> get machine -l cluster.x-k8s.io/control-plane
 
 ### Upgrade the worker nodes
 
-After the control plane upgrade completes, update the worker manifests.
+After the control plane upgrade completes, update the `MachineDeployment` to reference the new worker template and the target Kubernetes version.
 
 Typical changes include:
 
-- Updating `spec.template.spec.version` in `MachineDeployment`
-- Updating the referenced `VSphereMachineTemplate` if a new worker VM template is required
-- Updating the referenced `KubeadmConfigTemplate` if bootstrap settings must change
+- `spec.template.spec.version` — the target Kubernetes version
+- `spec.template.spec.infrastructureRef.name` — the new `VSphereMachineTemplate` name
+- `spec.template.spec.bootstrap.configRef.name` — the new `KubeadmConfigTemplate` name, if bootstrap settings must change (see [Updating Bootstrap Templates](../manage-nodes/vmware-vsphere.mdx#updating-bootstrap-templates))
 
-Apply the updated worker manifest:
+Apply the changes:
 
 ```bash
-kubectl apply -f 30-workers-md-0.yaml
+kubectl patch machinedeployment <cluster_name>-md-0 -n <namespace> \
+  --type='merge' -p='{
+    "spec": {
+      "template": {
+        "spec": {
+          "version": "<target_kubernetes_version>",
+          "infrastructureRef": {
+            "name": "<new-worker-template-name>"
+          }
+        }
+      }
+    }
+  }'
 ```
 
 Monitor the worker rollout:
@@ -92,6 +152,13 @@ kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get nodes -o wide
 ```
 
 </Steps>
+
+## Rolling Back a Failed Upgrade
+
+If the rolling update fails (for example, new VMs fail to boot or nodes do not become `Ready`), revert the template references back to the previous template names. The old templates still exist and Cluster API will roll back to the previous configuration.
+
+- For control plane: patch `KubeadmControlPlane` to restore the previous `spec.machineTemplate.infrastructureRef.name` and `spec.version`.
+- For workers: patch `MachineDeployment` to restore the previous `spec.template.spec.infrastructureRef.name` and `spec.template.spec.version`.
 
 ## Verification
 
