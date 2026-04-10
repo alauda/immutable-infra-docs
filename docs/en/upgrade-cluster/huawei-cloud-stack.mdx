@@ -61,6 +61,8 @@ Upgrading the underlying machine images for control plane nodes provides securit
 
    Modify the new template:
    - Set `metadata.name` to `<new-template-name>`
+   - Remove server-generated metadata and status fields from the copied manifest.
+   - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`. The HCS provider assigns these values when it creates instances.
    - Update as needed:
      - `spec.template.spec.imageName`
      - `spec.template.spec.flavorName`
