@@ -546,6 +546,7 @@ spec:
       sizeGiB: <cp_var_lib_etcd_size_gib>
       mountPath: /var/lib/etcd
       fsFormat: ext4
+      wipeFilesystem: true
   - hostname: "<cp_node_name_2>"
     datacenter: "<master_02_datacenter>"
     network:
@@ -568,6 +569,7 @@ spec:
       sizeGiB: <cp_var_lib_etcd_size_gib>
       mountPath: /var/lib/etcd
       fsFormat: ext4
+      wipeFilesystem: true
   - hostname: "<cp_node_name_3>"
     datacenter: "<master_03_datacenter>"
     network:
@@ -590,6 +592,7 @@ spec:
       sizeGiB: <cp_var_lib_etcd_size_gib>
       mountPath: /var/lib/etcd
       fsFormat: ext4
+      wipeFilesystem: true
 ```
 
 Create the worker static allocation pool.
@@ -727,7 +730,9 @@ spec:
           "apiVersion": "kubelet.config.k8s.io/v1beta1",
           "kind": "KubeletConfiguration",
           "protectKernelDefaults": true,
-          "streamingConnectionIdleTimeout": "5m"
+          "streamingConnectionIdleTimeout": "5m",
+          "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+          "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key"
         }
     # Generate the encryption key with: head -c 32 /dev/urandom | base64
     - path: /etc/kubernetes/encryption-provider.conf
@@ -917,6 +922,7 @@ spec:
         kubeletExtraArgs:
           cloud-provider: external
           node-labels: kube-ovn/role=master
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
         name: '{{ local_hostname }}'
       patches:
         directory: /etc/kubernetes/patches
@@ -967,12 +973,29 @@ metadata:
 spec:
   template:
     spec:
+      files:
+      - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+        owner: "root:root"
+        permissions: "0644"
+        content: |
+          {
+            "apiVersion": "kubelet.config.k8s.io/v1beta1",
+            "kind": "KubeletConfiguration",
+            "protectKernelDefaults": true,
+            "staticPodPath": null,
+            "streamingConnectionIdleTimeout": "5m",
+            "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+            "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key"
+          }
       joinConfiguration:
         nodeRegistration:
           criSocket: /var/run/containerd/containerd.sock
           kubeletExtraArgs:
             cloud-provider: external
+            volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           name: '{{ local_hostname }}'
+        patches:
+          directory: /etc/kubernetes/patches
       preKubeadmCommands:
       - hostnamectl set-hostname "{{ ds.meta_data.hostname }}"
       - echo "::1         ipv6-localhost ipv6-loopback localhost6 localhost6.localdomain6" >/etc/hosts

@@ -233,22 +233,33 @@ The template should also meet the following requirements:
 
 ### Standard data disks
 
-Each node role requires a set of dedicated data disks. The disks listed below are the minimum required set. You can append additional disks to the `persistentDisks` list if your workload requires them. Only the size of the required disks is configurable; the name, mount path, and file system format are fixed.
+Each node role requires a set of dedicated data disks. The disks listed below are the minimum required disks. You can append additional disks to the `persistentDisks` list if your workload requires them.
+
+#### Persistent disk fields
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | Yes | — | Unique disk name within the slot. |
+| `sizeGiB` | Yes | — | Disk size in GiB. |
+| `mountPath` | No | (empty) | Mount path inside the guest OS. If empty, the disk is attached as a raw device with a symlink at `/dev/disk/by-capv/<name>` but is not formatted or mounted. This is useful when an external process manages the disk at runtime. |
+| `fsFormat` | No | `ext4` (when `mountPath` is set) | Filesystem format. Ignored when `mountPath` is empty. |
+| `wipeFilesystem` | No | `false` | When `true`, disk content is wiped on the first boot of a new VM. Reboots and manual service restarts are not affected. Use for etcd disks to prevent stale data from blocking `kubeadm join` during rolling updates. |
+| `datastore` | No | (pool default) | Override the datastore for this disk. |
 
 #### Control plane nodes (3 disks per node)
 
-| Disk Name | Mount Path | Purpose | Recommended Minimum Size | Placeholder |
-|-----------|------------|---------|--------------------------|-------------|
-| `var-cpaas` | `/var/cpaas` | Stores logs, audit data, and other platform data | 100 GiB | `<cp_var_cpaas_size_gib>` |
-| `var-lib-containerd` | `/var/lib/containerd` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<cp_var_lib_containerd_size_gib>` |
-| `var-lib-etcd` | `/var/lib/etcd` | Stores etcd data | 100 GiB | `<cp_var_lib_etcd_size_gib>` |
+| Disk Name | Mount Path | `wipeFilesystem` | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|-------------------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | `false` | Stores logs, audit data, and other platform data | 100 GiB | `<cp_var_cpaas_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | `false` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<cp_var_lib_containerd_size_gib>` |
+| `var-lib-etcd` | `/var/lib/etcd` | **`true`** | Stores etcd data. Must set `wipeFilesystem: true` to allow `kubeadm join` during rolling updates. | 100 GiB | `<cp_var_lib_etcd_size_gib>` |
 
 #### Worker nodes (2 disks per node)
 
-| Disk Name | Mount Path | Purpose | Recommended Minimum Size | Placeholder |
-|-----------|------------|---------|--------------------------|-------------|
-| `var-cpaas` | `/var/cpaas` | Stores logs, audit data, and other platform data | 100 GiB | `<worker_var_cpaas_size_gib>` |
-| `var-lib-containerd` | `/var/lib/containerd` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<worker_var_lib_containerd_size_gib>` |
+| Disk Name | Mount Path | `wipeFilesystem` | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|-------------------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | `false` | Stores logs, audit data, and other platform data | 100 GiB | `<worker_var_cpaas_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | `false` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<worker_var_lib_containerd_size_gib>` |
 
 #### Size parameters
 
