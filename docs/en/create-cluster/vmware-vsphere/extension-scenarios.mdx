@@ -281,10 +281,13 @@ Before you enable multiple datacenters, also confirm the following prerequisites
 
 The baseline deployment includes the following required data disks:
 
-- **Control plane nodes**: `var-cpaas`, `var-lib-containerd`, and `var-lib-etcd` (3 disks per node). Do not remove any of these disks.
+- **Control plane nodes**: `var-cpaas`, `var-lib-containerd`, and `var-lib-etcd` (3 disks per node). Do not remove any of these disks. The `var-lib-etcd` disk must set `wipeFilesystem: true` to allow `kubeadm join` during rolling updates.
 - **Worker nodes**: `var-cpaas` and `var-lib-containerd` (2 disks per node). Do not remove any of these disks.
 
-If a node needs additional data disks beyond the required set, append more entries to the same `persistentDisks` list in the corresponding `VSphereResourcePool` node slot.
+If a node needs additional data disks beyond the required set, append more entries to the same `persistentDisks` list in the corresponding `VSphereResourcePool` node slot. The following optional fields are especially relevant here:
+
+- **`mountPath`**: If set, the disk is formatted and mounted at the specified path. If omitted, the disk is attached as a raw device with a symlink at `/dev/disk/by-capv/<name>`, allowing an external process to manage it at runtime.
+- **`wipeFilesystem`**: When `true`, disk content is wiped on the first boot of a new VM. Normal reboots and manual service restarts are not affected. Defaults to `false`.
 
 ## Scale out worker nodes
 
@@ -322,6 +325,17 @@ The following example adds a new worker slot:
     mountPath: /var/lib/containerd
     fsFormat: ext4
 ```
+
+To attach a raw disk without formatting or mounting (for example, when an application manages the disk itself), omit `mountPath` and `fsFormat`:
+
+```yaml
+  persistentDisks:
+  # ...required disks...
+  - name: app-data
+    sizeGiB: 50
+```
+
+The disk is accessible inside the guest OS at `/dev/disk/by-capv/app-data`. On rolling updates, the same VMDK is re-attached to the new VM and the symlink is recreated. The disk is never formatted or mounted automatically — the application is responsible for managing it at runtime.
 
 Then update the worker replicas:
 
