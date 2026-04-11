@@ -866,7 +866,7 @@ spec:
     - echo "127.0.0.1   {{ ds.meta_data.hostname }} {{ local_hostname }} localhost localhost.localdomain localhost4 localhost4.localdomain4" >>/etc/hosts
     - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
     - mkdir -p /run/cluster-api && (command -v restorecon >/dev/null 2>&1 && restorecon -Rv /run/cluster-api || true)
-    - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
+    - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && sed -i 's|sandbox = .*|sandbox = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
     postKubeadmCommands:
     - chmod 600 /var/lib/kubelet/config.yaml
     clusterConfiguration:
@@ -910,6 +910,8 @@ spec:
     initConfiguration:
       nodeRegistration:
         criSocket: /var/run/containerd/containerd.sock
+        ignorePreflightErrors:
+        - ImagePull
         kubeletExtraArgs:
           cloud-provider: external
           node-labels: kube-ovn/role=master
@@ -919,6 +921,8 @@ spec:
     joinConfiguration:
       nodeRegistration:
         criSocket: /var/run/containerd/containerd.sock
+        ignorePreflightErrors:
+        - ImagePull
         kubeletExtraArgs:
           cloud-provider: external
           node-labels: kube-ovn/role=master
@@ -990,6 +994,8 @@ spec:
       joinConfiguration:
         nodeRegistration:
           criSocket: /var/run/containerd/containerd.sock
+          ignorePreflightErrors:
+          - ImagePull
           kubeletExtraArgs:
             cloud-provider: external
             volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
@@ -1002,7 +1008,7 @@ spec:
       - echo "127.0.0.1   {{ ds.meta_data.hostname }} {{ local_hostname }} localhost localhost.localdomain localhost4 localhost4.localdomain4" >>/etc/hosts
       - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
       - mkdir -p /run/cluster-api && (command -v restorecon >/dev/null 2>&1 && restorecon -Rv /run/cluster-api || true)
-      - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
+      - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && sed -i 's|sandbox = .*|sandbox = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
       postKubeadmCommands:
       - chmod 600 /var/lib/kubelet/config.yaml
       users:
