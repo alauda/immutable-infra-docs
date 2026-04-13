@@ -36,7 +36,7 @@ For initial deployment, see the [Create Cluster](../create-cluster/huawei-cloud-
 :::warning
 **Data Loss During Upgrades**
 
-Upgrades rely on Cluster API's rolling update mechanism. During a rolling update on HCS, data disks are detached from old VMs and reattached to new VMs. Ensure that no cluster functionality or workloads depend on data stored on the system disk.
+Upgrades rely on Cluster API's rolling replacement mechanism. The current HCS provider does not preserve or reattach data disks during node replacement. When a node is replaced, the old VM and its attached volumes may be deleted together. Do not treat node-local data on HCS data disks as preserved state. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
 :::
 
 ## Control Plane Upgrades

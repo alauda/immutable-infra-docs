@@ -83,7 +83,7 @@ spec:
 
 The `HCSMachineTemplate` defines the VM specifications for worker nodes.
 
-Configure worker nodes with a system volume and data volumes for `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/cpaas`. You may add more data volumes, but preserve these paths so node bootstrap and platform components can use stable storage.
+Configure worker nodes with a system volume and data volumes for `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/cpaas`. You may add more data volumes, but preserve these paths so node bootstrap and platform components can use the expected runtime directories. These paths do not imply that data volumes will be preserved when nodes are replaced.
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -313,6 +313,8 @@ Scaling down removes nodes and their associated disks. Ensure:
 ### Upgrading Machine Infrastructure
 
 To upgrade worker machine specifications (CPU, memory, disk, VM image), follow these steps:
+
+**Note:** Worker infrastructure upgrades rely on Cluster API rolling replacement. The current HCS provider does not preserve or reattach data disks during node replacement. When a worker node is replaced, the old VM and its attached volumes may be deleted together. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
 
 1. **Create New Machine Template**
 
