@@ -11,14 +11,14 @@ queries:
 
 # Managing Nodes on VMware vSphere
 
-This document explains how to manage worker nodes on VMware vSphere after the baseline cluster is running. Node lifecycle operations are managed through `VSphereResourcePool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` resources.
+This document explains how to manage worker nodes on VMware vSphere after the baseline cluster is running. Node lifecycle operations are managed through `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` resources.
 
 ## Prerequisites
 
 Before you begin, ensure the following conditions are met:
 
 - The workload cluster was created successfully. See [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere/).
-- The worker CAPV static allocation pool has enough available slots.
+- The worker machine config pool has enough available slots.
 - The control plane is healthy and reachable.
 - You know which manifest files currently define the worker nodes.
 
@@ -27,20 +27,20 @@ Before you begin, ensure the following conditions are met:
 <Steps>
 ### Scale out worker nodes
 
-When you add more worker nodes, update the worker static allocation pool before you increase the replica count.
+When you add more worker nodes, update the worker machine config pool before you increase the replica count.
 
-1. Add one or more new node slots to `03-vsphereresourcepool-worker.yaml`.
+1. Add one or more new node slots to `03-vspheremachineconfigpool-worker.yaml`.
 2. Update `replicas` in `30-workers-md-0.yaml`.
 3. Apply the updated manifests.
 
 Use the following order:
 
 ```bash
-kubectl apply -f 03-vsphereresourcepool-worker.yaml
+kubectl apply -f 03-vspheremachineconfigpool-worker.yaml
 kubectl apply -f 30-workers-md-0.yaml
 ```
 
-**Note:** If `MachineDeployment.spec.replicas` is greater than the number of available slots in `VSphereResourcePool.spec.resources[]`, the new worker nodes cannot be assigned correctly.
+**Note:** If `MachineDeployment.spec.replicas` is greater than the number of available slots in `VSphereMachineConfigPool.spec.configs[]`, the new worker nodes cannot be assigned correctly.
 
 ### Roll out updated worker node configuration \{#roll-out-updated-worker-node-configuration}
 
@@ -178,10 +178,10 @@ Confirm the following results:
 
 Use the following checks first when worker node management fails:
 
-- Check `VSphereMachine` conditions for `ResourcePoolReady`. If `False`, the reason indicates why slot allocation failed:
+- Check `VSphereMachine` conditions for `MachineConfigPoolReady`. If `False`, the reason indicates why slot allocation failed:
   - `PoolBoundToOtherConsumer`: the pool is already bound to a different `KubeadmControlPlane` or `MachineDeployment`.
   - `NoAvailableSlots`: no slots match the required datacenter or failure domain.
-- Verify that the worker CAPV static allocation pool still has free slots.
+- Verify that the worker machine config pool still has free slots.
 - Verify that the worker IP addresses, gateway, and DNS settings are correct.
 - Verify that the worker VM template still matches the required Kubernetes version and guest-tools requirements.
 - Check `VSphereVM.status.addresses` when a node is waiting for IP allocation.
