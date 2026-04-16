@@ -1,0 +1,696 @@
+---
+weight: 10
+title: Creating Clusters on Huawei DCS
+author: dev@alauda.io
+category: howto
+queries:
+  - create dcs cluster
+  - deploy kubernetes on huawei dcs
+  - dcs cluster creation guide
+---
+
+# Creating Clusters on Huawei DCS
+
+This document provides instructions for creating Kubernetes clusters on the Huawei DCS platform. YAML-based cluster creation is available through manifests. If Fleet Essentials is installed and Alauda Container Platform DCS Infrastructure Provider is `1.0.13` or later, you can also create clusters through the web UI.
+
+:::info
+The web UI provides a guided workflow with validation, while YAML offers more automation flexibility.
+:::
+
+## Prerequisites
+
+Before creating clusters, ensure all of the following prerequisites are met:
+
+### 1. Infrastructure Resources
+
+Configure the following infrastructure resources before creating a cluster:
+
+- **[Cloud Credential](../infrastructure/huawei-dcs.mdx#cloud-credentials)** - DCS platform access information
+- **[IP Pool](../infrastructure/huawei-dcs.mdx#ip-pools)** - Network configuration for cluster nodes
+- **[Machine Template](../infrastructure/huawei-dcs.mdx#machine-templates)** - VM specifications for control plane and worker nodes
+
+See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for detailed configuration instructions.
+
+### 2. Required Plugin Installation
+
+Install the following plugins on the `global` cluster:
+- **Alauda Container Platform Kubeadm Provider**
+- **Alauda Container Platform DCS Infrastructure Provider**
+
+For detailed installation instructions, refer to the [Installation Guide](../install/huawei-dcs.mdx).
+
+### 3. Virtual Machine Template Preparation
+
+For Kubernetes installation, you must:
+- Upload the MicroOS image to the DCS platform
+- Create a virtual machine template based on this image
+- Ensure the template includes all necessary Kubernetes components
+
+For details on the Kubernetes components included in each VM image, see [OS Support Matrix](../overview/os-support-matrix.mdx).
+
+### 4. Network Connectivity
+
+Ensure that all nodes in the `global` cluster can access the DCS platform on:
+- **Port 7443** (DCS API)
+- **Port 8443** (DCS Web Console)
+
+**Requirement**: Connectivity to both ports is mandatory for cluster creation and management.
+
+### 5. LoadBalancer Configuration
+
+Configure a LoadBalancer for the Kubernetes API Server before creating the cluster. The LoadBalancer distributes API server traffic across control plane nodes to ensure high availability.
+
+### 6. Public Registry Configuration
+
+Configure the public registry credentials. This includes:
+- Registry repository address configuration
+- Proper authentication credentials setup
+
+---
+
+## Using the Web UI
+
+**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests.
+
+### Creation Workflow
+
+The cluster creation follows a 5-step wizard:
+
+```
+Step 1: Basic Info
+  ↓
+Step 2: Control Plane Node Pool
+  ↓
+Step 3: Worker Node Pools
+  ↓
+Step 4: Networking
+  ↓
+Step 5: Review
+```
+
+**Navigation**: Clusters → Clusters → Create Cluster → Select Huawei DCS
+
+### Step 1: Basic Info
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Infrastructure Credential | dropdown | Yes | Select an existing Cloud Credential |
+| Name | text | Yes | Unique cluster identifier (lowercase letters, numbers, hyphens) |
+| Display Name | text | No | Custom description for easy identification |
+| Distribution Version | readonly | - | ACP version (matches global cluster) |
+| Kubernetes Version | readonly | - | Determined by Distribution Version |
+| Cluster API Address | text | Yes | Format: `https://<load-balancer-address>:6443` |
+
+**Prerequisites Check**:
+
+Before creating a cluster, ensure:
+- DCS VM Templates exist in the DCS platform, and the MicroOS version matches the Kubernetes version
+- A LoadBalancer for the Kubernetes API Server has been set up
+
+**Version Constraint**: Only the latest Kubernetes version supported by the platform can be created.
+
+### Step 2: Control Plane Node Pool
+
+The control plane node pool is fixed at 3 replicas for high availability.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Machine Template | dropdown | Yes | Filter templates by Type: Control Plane and compatible Kubernetes version |
+| Replicas | readonly | - | Fixed at 3 |
+| SSH Authorized Keys | text | No | Add multiple SSH public keys for node access |
+
+**Validation**: The associated IP Pool must have sufficient available IP addresses (≥ 3).
+
+### Step 3: Worker Node Pools
+
+You can add multiple worker node pools. Each pool has the following configuration:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Pool Name | text | Yes | Unique identifier for this node pool |
+| Machine Template | dropdown | Yes | Filter templates by Type: Worker Node and compatible Kubernetes version |
+| Replicas | number | Yes | Default: 3 |
+| Max Surge | number | No | Default: 0, must be ≥ 0 |
+| Max Unavailable | number | No | Default: 1, must be ≥ 0. When maxSurge = 0, maxUnavailable must be > 0 and ≤ Replicas |
+| SSH Authorized Keys | text | No | Add multiple SSH public keys |
+
+**Validation Rules**:
+- Pool names must be unique within the cluster
+- IP Pool must have sufficient available IP addresses (≥ Replicas)
+- maxSurge and maxUnavailable must satisfy the constraint: if maxSurge = 0, then maxUnavailable > 0
+
+**Tip**: Prefix the pool name with the cluster name followed by a hyphen (e.g., `mycluster-worker-1`) to avoid naming conflicts across different clusters.
+
+### Step 4: Networking
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Pods CIDR | CIDR | Yes | Pod network address range |
+| Services CIDR | CIDR | Yes | Service network address range |
+| Join CIDR | CIDR | Yes | Kube-OVN join CIDR parameter |
+
+**Validation**: Pods CIDR and Services CIDR must not overlap.
+
+### Step 5: Review
+
+Review all configuration settings before creating the cluster:
+
+**Basic Info**:
+- Name, Display Name, Infrastructure Credential
+- Distribution Version, Kubernetes Version
+- Cluster API Address
+
+**Control Plane Node Pool**:
+- Machine Template with VM Template Name, OS Version, Kubernetes Version
+- CPU, Memory, Replicas, SSH Keys
+
+**Worker Node Pools** (list view):
+- Pool Name, Machine Template, Replicas
+- Max Surge, Max Unavailable, SSH Keys
+
+**Networking**:
+- Pods CIDR, Services CIDR, Join CIDR
+
+Click **Create** to start the cluster creation process.
+
+---
+
+## Using YAML
+
+### Cluster Creation Workflow
+
+When using YAML, you create Cluster API resources in the `global` cluster to provision infrastructure and bootstrap a functional Kubernetes cluster.
+
+:::warning
+**Important Namespace Requirement**
+
+To ensure proper integration as business clusters, all resources must be deployed in the `cpaas-system` namespace. Deploying resources in other namespaces may result in integration issues.
+:::
+
+### Configuration Workflow
+
+Follow these steps in order:
+
+1. Configure KubeadmControlPlane
+2. Configure DCSCluster
+3. Create the Cluster resource
+
+**Note**: Infrastructure resources (Secret, DCSIpHostnamePool, DCSMachineTemplate) should be configured separately. See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for instructions.
+
+### Network Planning and Load Balancer
+
+Before creating control plane resources, plan the network architecture and deploy a load balancer for high availability.
+
+**Requirements**:
+- **Network segmentation**: Plan IP address ranges for control plane nodes
+- **Load balancer**: Deploy and configure access to the API server
+- **API server address**: Prepare a stable VIP or load balancer address for the Kubernetes API Server
+- **Connectivity**: Ensure network connectivity between all components
+
+### Configure KubeadmControlPlane
+
+The KubeadmControlPlane resource defines the control plane configuration including Kubernetes version, node specifications, and bootstrap settings.
+
+:::tip
+**Full Configuration Reference**
+
+The example below truncates long configuration files for readability. For the complete configuration (including default audit policies, admission controls, and file contents), refer to the [Complete KubeadmControlPlane Configuration](#complete-kubeadmcontrolplane-configuration) in the Appendix.
+:::
+
+```yaml title="kubeadmcontrolplane.yaml"
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: <cluster-name>
+  namespace: cpaas-system
+  annotations:
+    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
+spec:
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+  kubeadmConfigSpec:
+    users:
+    - name: boot
+      sshAuthorizedKeys:
+      - "<ssh-authorized-keys>"
+    format: ignition
+    files:
+    - path: /etc/kubernetes/admission/psa-config.yaml
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        # ... (Admission Configuration Content) ...
+    - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        {
+          "apiVersion": "kubelet.config.k8s.io/v1beta1",
+          "kind": "KubeletConfiguration",
+          "_comment": "... (Kubelet Configuration Content) ..."
+        }
+    # ... (other files) ...
+    clusterConfiguration:
+      imageRepository: cloud.alauda.io/alauda
+      dns:
+        imageTag: <dns-image-tag>
+      etcd:
+        local:
+          imageTag: <etcd-image-tag>
+      # ... (apiServer, controllerManager, scheduler) ...
+    initConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+    joinConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: DCSMachineTemplate
+      name: <cp-dcs-machine-template-name>
+  replicas: 3
+  version: <control-plane-kubernetes-version>
+```
+
+**Parameter Descriptions**:
+
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----------|
+| `.spec.kubeadmConfigSpec` | object | kubeadm bootstrap provider startup parameters | Yes |
+| `.spec.machineTemplate.infrastructureRef` | object | DCSMachineTemplate reference | Yes |
+| `.spec.replicas` | int | Control plane replica count (≤ IP Pool size) | Yes |
+| `.spec.version` | string | Kubernetes version (must match VM template) | Yes |
+
+For component versions (e.g., `<dns-image-tag>`, `<etcd-image-tag>`), refer to [OS Support Matrix](../overview/os-support-matrix.mdx).
+
+### Configure DCSCluster
+
+DCSCluster is the infrastructure cluster declaration that references the load balancer and DCS platform credentials.
+
+```yaml title="dcscluster.yaml"
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSCluster
+metadata:
+  name: "<cluster-name>"
+  namespace: cpaas-system
+spec:
+  controlPlaneLoadBalancer:
+    host: <load-balancer-ip-or-domain-name>
+    port: 6443
+    type: external
+  credentialSecretRef:
+    name: <auth-secret-name>
+  controlPlaneEndpoint:
+    host: <load-balancer-ip-or-domain-name>
+    port: 6443
+  networkType: kube-ovn
+  site: <site>
+```
+
+**Parameter Descriptions**:
+
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----------|
+| `.spec.controlPlaneLoadBalancer` | object | Control plane API server exposure method | Yes |
+| `.spec.controlPlaneLoadBalancer.type` | string | Currently only supports "external" | Yes |
+| `.spec.controlPlaneLoadBalancer.host` | string | Load balancer IP or domain name | Yes |
+| `.spec.credentialSecretRef.name` | string | DCS authentication Secret name | Yes |
+| `.spec.networkType` | string | Currently only supports "kube-ovn" | Yes |
+| `.spec.site` | string | DCS platform site ID | Yes |
+
+### Configure Cluster
+
+The Cluster resource declares the cluster and references the control plane and infrastructure resources.
+
+```yaml title="cluster.yaml"
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  annotations:
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: DCSCluster
+    cpaas.io/kube-ovn-version: <kube-ovn-version>
+    cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>
+  labels:
+    cluster-type: DCS
+  name: <cluster-name>
+  namespace: cpaas-system
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+      - <pods-cidr>
+    services:
+      cidrBlocks:
+      - <services-cidr>
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: <cluster-name>
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: DCSCluster
+    name: <cluster-name>
+```
+
+**Parameter Descriptions**:
+
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----------|
+| `.spec.clusterNetwork.pods.cidrBlocks` | []string | Pod CIDR | No |
+| `.spec.clusterNetwork.services.cidrBlocks` | []string | Service network CIDR | No |
+| `.spec.controlPlaneRef` | object | Control plane reference | Yes |
+| `.spec.infrastructureRef` | object | Infrastructure cluster reference | Yes |
+
+### Deploying Nodes
+
+Refer to [Managing Nodes on Huawei DCS](../manage-nodes/huawei-dcs.mdx) for instructions on deploying worker nodes.
+
+---
+
+## Cluster Verification
+
+After deploying all cluster resources, verify that the cluster has been created successfully and is operational.
+
+### Using the Console
+
+1. Navigate to **Clusters** → **Clusters**
+2. Locate your newly created cluster in the cluster list
+3. Verify that the cluster status shows as **Running**
+4. Check that all control plane and worker nodes are **Ready**
+
+### Using kubectl
+
+Alternatively, verify the cluster using kubectl commands:
+
+```bash
+# Check cluster status
+kubectl get cluster -n cpaas-system <cluster-name>
+
+# Verify control plane
+kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>
+
+# Check machine status
+kubectl get machines -n cpaas-system
+
+# Verify cluster deployment
+kubectl get clustermodule <cluster-name> -o jsonpath='{.status.base.deployStatus}'
+```
+
+### Expected Results
+
+A successfully created cluster should show:
+- Cluster status: **Running** or **Provisioned**
+- All control plane machines: **Running**
+- All worker nodes (if deployed): **Running**
+- Kubernetes nodes: **Ready**
+- Cluster Module Status: **Completed**
+
+---
+
+## Appendix
+
+### Complete KubeadmControlPlane Configuration \{#complete-kubeadmcontrolplane-configuration}
+
+Below is the complete `KubeadmControlPlane` configuration, including all default audit policies, admission controls, and file contents.
+
+```yaml
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: <cluster-name>
+  namespace: cpaas-system
+  annotations:
+    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
+spec:
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+  kubeadmConfigSpec:
+    users:
+    - name: boot
+      sshAuthorizedKeys:
+      - "<ssh-authorized-keys>"
+    format: ignition
+    files:
+    - path: /etc/kubernetes/admission/psa-config.yaml
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: AdmissionConfiguration
+        plugins:
+        - name: PodSecurity
+          configuration:
+            apiVersion: pod-security.admission.config.k8s.io/v1
+            kind: PodSecurityConfiguration
+            defaults:
+              enforce: "privileged"
+              enforce-version: "latest"
+              audit: "baseline"
+              audit-version: "latest"
+              warn: "baseline"
+              warn-version: "latest"
+            exemptions:
+              usernames: []
+              runtimeClasses: []
+              namespaces:
+              - kube-system
+              - cpaas-system
+    - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+      owner: "root:root"
+      permissions: "0644"
+      content: |
+        {
+          "apiVersion": "kubelet.config.k8s.io/v1beta1",
+          "kind": "KubeletConfiguration",
+          "protectKernelDefaults": true,
+          "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+          "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key",
+          "streamingConnectionIdleTimeout": "5m",
+          "clientCAFile": "/etc/kubernetes/pki/ca.crt"
+        }
+    - path: /etc/kubernetes/encryption-provider.conf
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1
+        kind: EncryptionConfiguration
+        resources:
+        - resources:
+          - secrets
+          providers:
+          - aescbc:
+              keys:
+              - name: key1
+                secret: <base64-encoded-secret>
+    - path: /etc/kubernetes/audit/policy.yaml
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        apiVersion: audit.k8s.io/v1
+        kind: Policy
+        omitStages:
+        - "RequestReceived"
+        rules:
+        - level: None
+          users:
+          - system:kube-controller-manager
+          - system:kube-scheduler
+          - system:serviceaccount:kube-system:endpoint-controller
+          verbs: ["get", "update"]
+          namespaces: ["kube-system"]
+          resources:
+          - group: ""
+            resources: ["endpoints"]
+        - level: None
+          nonResourceURLs:
+          - /healthz*
+          - /version
+          - /swagger*
+        - level: None
+          resources:
+          - group: ""
+            resources: ["events"]
+        - level: None
+          resources:
+          - group: "devops.alauda.io"
+        - level: None
+          verbs: ["get", "list", "watch"]
+        - level: None
+          resources:
+          - group: "coordination.k8s.io"
+            resources: ["leases"]
+        - level: None
+          resources:
+          - group: "authorization.k8s.io"
+            resources: ["subjectaccessreviews", "selfsubjectaccessreviews"]
+          - group: "authentication.k8s.io"
+            resources: ["tokenreviews"]
+        - level: None
+          resources:
+          - group: "app.alauda.io"
+            resources: ["imagewhitelists"]
+          - group: "k8s.io"
+            resources: ["namespaceoverviews"]
+        - level: Metadata
+          resources:
+          - group: ""
+            resources: ["secrets", "configmaps"]
+        - level: Metadata
+          resources:
+          - group: "operator.connectors.alauda.io"
+            resources: ["installmanifests"]
+          - group: "operators.katanomi.dev"
+            resources: ["katanomis"]
+        - level: RequestResponse
+          resources:
+          - group: ""
+          - group: "aiops.alauda.io"
+          - group: "apps"
+          - group: "app.k8s.io"
+          - group: "authentication.istio.io"
+          - group: "auth.alauda.io"
+          - group: "autoscaling"
+          - group: "asm.alauda.io"
+          - group: "clusterregistry.k8s.io"
+          - group: "crd.alauda.io"
+          - group: "infrastructure.alauda.io"
+          - group: "monitoring.coreos.com"
+          - group: "operators.coreos.com"
+          - group: "networking.istio.io"
+          - group: "extensions.istio.io"
+          - group: "install.istio.io"
+          - group: "security.istio.io"
+          - group: "telemetry.istio.io"
+          - group: "opentelemetry.io"
+          - group: "networking.k8s.io"
+          - group: "portal.alauda.io"
+          - group: "rbac.authorization.k8s.io"
+          - group: "storage.k8s.io"
+          - group: "tke.cloud.tencent.com"
+          - group: "devopsx.alauda.io"
+          - group: "core.katanomi.dev"
+          - group: "deliveries.katanomi.dev"
+          - group: "integrations.katanomi.dev"
+          - group: "artifacts.katanomi.dev"
+          - group: "builds.katanomi.dev"
+          - group: "versioning.katanomi.dev"
+          - group: "sources.katanomi.dev"
+          - group: "tekton.dev"
+          - group: "operator.tekton.dev"
+          - group: "eventing.knative.dev"
+          - group: "flows.knative.dev"
+          - group: "messaging.knative.dev"
+          - group: "operator.knative.dev"
+          - group: "sources.knative.dev"
+          - group: "operator.devops.alauda.io"
+          - group: "flagger.app"
+          - group: "jaegertracing.io"
+          - group: "velero.io"
+            resources: ["deletebackuprequests"]
+          - group: "connectors.alauda.io"
+          - group: "operator.connectors.alauda.io"
+            resources: ["connectorscores", "connectorsgits", "connectorsocis"]
+        - level: Metadata
+    preKubeadmCommands:
+    - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
+    - mkdir -p /run/cluster-api && restorecon -Rv /run/cluster-api
+    - if [ -f /etc/disk-setup.sh ]; then bash /etc/disk-setup.sh; fi
+    postKubeadmCommands:
+    - chmod 600 /var/lib/kubelet/config.yaml
+    clusterConfiguration:
+      imageRepository: cloud.alauda.io/alauda
+      dns:
+        imageTag: <dns-image-tag>
+      etcd:
+        local:
+          imageTag: <etcd-image-tag>
+      apiServer:
+        extraArgs:
+          audit-log-format: json
+          audit-log-maxage: "30"
+          audit-log-maxbackup: "10"
+          audit-log-maxsize: "200"
+          profiling: "false"
+          audit-log-mode: batch
+          audit-log-path: /etc/kubernetes/audit/audit.log
+          audit-policy-file: /etc/kubernetes/audit/policy.yaml
+          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+          encryption-provider-config: /etc/kubernetes/encryption-provider.conf
+          admission-control-config-file: /etc/kubernetes/admission/psa-config.yaml
+          tls-min-version: VersionTLS12
+          kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
+        extraVolumes:
+        - name: vol-dir-0
+          hostPath: /etc/kubernetes
+          mountPath: /etc/kubernetes
+          pathType: Directory
+      controllerManager:
+        extraArgs:
+          bind-address: "::"
+          profiling: "false"
+          tls-min-version: VersionTLS12
+          flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+      scheduler:
+        extraArgs:
+          bind-address: "::"
+          tls-min-version: VersionTLS12
+          profiling: "false"
+    initConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+    joinConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: DCSMachineTemplate
+      name: <cp-dcs-machine-template-name>
+  replicas: 3
+  version: <control-plane-kubernetes-version>
+```
+
+---
+
+## Next Steps
+
+After creating a cluster:
+
+- [Manage Nodes](../manage-nodes/huawei-dcs.mdx)
+- [Upgrade Cluster](../upgrade-cluster/huawei-dcs.mdx)

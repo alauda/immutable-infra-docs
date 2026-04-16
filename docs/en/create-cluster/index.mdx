@@ -1,0 +1,41 @@
+---
+weight: 40
+title: Creating Clusters
+author: dev@alauda.io
+category: index
+queries:
+  - create kubernetes cluster
+  - deploy cluster on infrastructure
+  - cluster setup guide
+---
+
+# Creating Clusters
+
+<Overview />
+
+This section provides instructions for creating Kubernetes clusters on different infrastructure platforms.
+
+## Before Creating Clusters
+
+Before creating a cluster, configure the required infrastructure resources:
+
+- **[Infrastructure Resources](../infrastructure/)** - Configure cloud credentials, IP pools, and machine templates
+- **CPU Baseline** - For x86_64 cluster nodes that use ACP-provided MicroOS images, the underlying CPUs must support the `x86-64-v2` ISA baseline. For details, see [OS Support Matrix](../overview/os-support-matrix.mdx).
+
+## Platform-Specific Instructions
+
+Select your platform for detailed cluster creation instructions:
+
+| Provider | Description | Status |
+|----------|-------------|--------|
+| [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
+| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
+| [VMware vSphere](./vmware-vsphere/) | VMware vSphere virtualization platform | ✅ Available |
+| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | 📋 Planned |
+
+## Next Steps
+
+After creating a cluster, you can:
+
+- [Manage Nodes](../manage-nodes/)
+- [Upgrade the Cluster](../upgrade-cluster/)

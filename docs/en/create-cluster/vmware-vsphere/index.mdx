@@ -1,0 +1,36 @@
+---
+weight: 30
+title: Creating Clusters on VMware vSphere
+author: dev@alauda.io
+category: index
+queries:
+  - create vmware vsphere cluster
+  - deploy kubernetes cluster on vsphere
+  - vmware cluster creation guide
+---
+
+# Creating Clusters on VMware vSphere
+
+<Overview />
+
+This section explains how to create a VMware vSphere workload cluster from the `global` cluster. The documented workflow assumes the standard CAPV deployment mode, in which the platform connects directly to vCenter and provisions virtual machines.
+
+## Recommended Reading Order
+
+Use the documents in the following order:
+
+1. [Parameter Checklist](./parameter-checklist.mdx) to collect the required values and validate external prerequisites.
+2. [Create a Cluster in the `global` Cluster](./create-cluster-in-global.mdx) to complete the baseline single-datacenter workflow.
+3. [Extension Scenarios](./extension-scenarios.mdx) to add a second NIC, multiple datacenters, failure domains, extra data disks, or more worker replicas.
+
+## Scope
+
+The baseline workflow in this section is intentionally limited to a minimum supported topology:
+
+- One datacenter
+- One NIC per node
+- Three control plane nodes
+- One worker node
+- Static IP allocation through `VSphereMachineConfigPool`
+
+When you need a larger or more complex topology, first complete the baseline deployment and then apply the changes described in [Extension Scenarios](./extension-scenarios.mdx).
