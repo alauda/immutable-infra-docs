@@ -36,12 +36,14 @@ For initial deployment, see the [Create Cluster](../create-cluster/huawei-cloud-
 :::warning
 **Data Loss During Upgrades**
 
-Upgrades rely on Cluster API's rolling update mechanism. During a rolling update on HCS, data disks are detached from old VMs and reattached to new VMs. Ensure that no cluster functionality or workloads depend on data stored on the system disk.
+Upgrades rely on Cluster API's rolling replacement mechanism. The current HCS provider does not preserve or reattach data disks during node replacement. When a node is replaced, the old VM and its attached volumes may be deleted together. Do not treat node-local data on HCS data disks as preserved state. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
 :::
 
 ## Control Plane Upgrades
 
 Control plane upgrades update the Kubernetes API server, etcd, scheduler, and controller manager, along with the underlying VM infrastructure.
+
+For HCS control planes backed by a fixed-size `HCSMachineConfigPool`, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` during upgrades. This default scale-down-then-scale-up path usually does not require additional control plane IPs. Only prepare extra hostname and static IP entries in the control plane pool if you plan to increase control plane replicas or intentionally set `maxSurge` greater than `0`.
 
 ### Infrastructure Image Updates
 
@@ -61,6 +63,8 @@ Upgrading the underlying machine images for control plane nodes provides securit
 
    Modify the new template:
    - Set `metadata.name` to `<new-template-name>`
+   - Remove server-generated metadata and status fields from the copied manifest.
+   - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`. The HCS provider assigns these values when it creates instances.
    - Update as needed:
      - `spec.template.spec.imageName`
      - `spec.template.spec.flavorName`
@@ -110,7 +114,7 @@ Upgrading the Kubernetes version involves updating both the control plane softwa
 
 2. **Update Control Plane Version**
 
-   Modify the `spec.version` field in the `KubeadmControlPlane` resource (required). Optionally adjust related fields as needed (for example, rollout strategy, drain/deletion timeouts, or the referenced infrastructure template) to align with the new version and upgrade policy
+   Modify the `spec.version` field in the `KubeadmControlPlane` resource (required). Keep `spec.rolloutStrategy.rollingUpdate.maxSurge: 0` for the default static IP control plane path. Only adjust rollout settings beyond this after you extend the control plane `HCSMachineConfigPool` with extra hostname and IP slots.
 
 3. **Verify Upgrade Progress**
 

@@ -21,13 +21,7 @@ This document explains how to manage worker nodes using Cluster API `Machine` re
 - Ensure you have proper access to the HCS platform and required permissions.
 :::
 
-:::info
-**Configuration Guidelines**
-When working with the configurations in this document:
-- Only modify values enclosed in `<>` brackets
-- Replace placeholder values with your environment-specific settings
-- Preserve all other default configurations unless explicitly required
-:::
+When using the YAML examples in this document, replace only values enclosed in `<>` with environment-specific values. Preserve the remaining fields unless your cluster policy requires a different value.
 
 ## Overview
 
@@ -49,6 +43,8 @@ The `HCSMachineConfigPool` defines the network configuration for worker node VMs
 
 The pool must include at least as many entries as the number of worker nodes you plan to deploy. Insufficient entries will prevent node deployment.
 :::
+
+Use one subnet selector per `networks[]` entry. For new manifests, set either `subnetName` or `subnetId`, but not both. Existing manifests may keep the deprecated `subenetName` field; if you also add `subnetName` while updating that manifest, its value must exactly match `subenetName`. Do not supply conflicting values across `subenetName`, `subnetName`, and `subnetId`.
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -74,25 +70,22 @@ spec:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `.spec.configs[].hostname` | string | Yes | VM hostname |
-| `.spec.configs[].networks[].subnetName` | string | Yes | Subnet name in HCS |
-| `.spec.configs[].networks[].ipAddress` | string | Yes | Static IP address |
+| `.spec.configs[]` | array | Yes | Non-empty list of worker node configurations |
+| `.spec.configs[].hostname` | string | Yes | VM hostname. Use lowercase letters, numbers, hyphens (`-`), or dots (`.`); the value must start and end with a lowercase letter or number and must not exceed 253 characters |
+| `.spec.configs[].networks[]` | array | Yes | Non-empty list of network configurations for the VM |
+| `.spec.configs[].networks[].subnetName` | string | No* | Recommended subnet name field for new manifests |
+| `.spec.configs[].networks[].subnetId` | string | No* | Subnet ID. Use this field instead of `subnetName` when the subnet name is ambiguous |
+| `.spec.configs[].networks[].ipAddress` | string | Yes | Static IP address for the worker VM |
+
+*For new manifests, set either `subnetName` or `subnetId`. Existing manifests may continue to use `subenetName`, and may add `subnetName` only if both fields use the same value. Do not provide conflicting subnet selector values.
+
+**Note:** The CRD schema lists `subnetName`, `subenetName`, and `subnetId` as optional fields and does not express their allowed combinations. Follow the provider-level rules above when writing manifests.
 
 ### Step 2: Configure Machine Template
 
 The `HCSMachineTemplate` defines the VM specifications for worker nodes.
 
-:::warning
-**Required Disk Configurations**
-
-The following disk mount points are recommended for worker nodes:
-- System volume (`systemVolume: true`)
-- `/var/lib/kubelet` - Kubelet data directory
-- `/var/lib/containerd` - Container runtime data
-- `/var/cpaas` - Platform-specific data
-
-You may add additional disks, but these essential configurations must be preserved.
-:::
+Configure worker nodes with a system volume and data volumes for `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/cpaas`. You may add more data volumes, but preserve these paths so node bootstrap and platform components can use the expected runtime directories. These paths do not imply that data volumes will be preserved when nodes are replaced.
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -112,15 +105,15 @@ spec:
       configPoolRef:
         name: <worker-pool-name>
       dataVolumes:
-        - size: 100
+        - size: 20
           type: SSD
           mountPath: /var/lib/kubelet
           format: xfs
-        - size: 100
+        - size: 20
           type: SSD
           mountPath: /var/lib/containerd
           format: xfs
-        - size: 100
+        - size: 10
           type: SSD
           mountPath: /var/cpaas
           format: xfs
@@ -142,6 +135,8 @@ spec:
 
 *Required when dataVolumes is specified.
 
+**Note:** Do not set runtime identity fields such as `providerID` or `serverId` in `HCSMachineTemplate` manifests. The provider assigns these values when it creates HCS instances.
+
 ### Step 3: Configure Bootstrap Template
 
 The `KubeadmConfigTemplate` defines the bootstrap configuration for worker nodes.
@@ -155,11 +150,32 @@ metadata:
 spec:
   template:
     spec:
+      files:
+        - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+          owner: root:root
+          permissions: "0644"
+          content: |
+            {
+              "apiVersion": "kubelet.config.k8s.io/v1beta1",
+              "kind": "KubeletConfiguration",
+              "protectKernelDefaults": true,
+              "staticPodPath": null,
+              "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+              "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key",
+              "streamingConnectionIdleTimeout": "5m",
+              "clientCAFile": "/etc/kubernetes/pki/ca.crt"
+            }
+      postKubeadmCommands:
+        - chmod 600 /var/lib/kubelet/config.yaml
       joinConfiguration:
+        patches:
+          directory: /etc/kubernetes/patches
         nodeRegistration:
           kubeletExtraArgs:
             volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
 ```
+
+The HCS controller injects `/etc/kubernetes/pki/kubelet.crt` and `/etc/kubernetes/pki/kubelet.key` while resolving worker cloud-init data. The kubelet patch above configures kubelet to use those controller-provided certificate files.
 
 ### Step 4: Configure Machine Deployment
 
@@ -300,6 +316,8 @@ Scaling down removes nodes and their associated disks. Ensure:
 
 To upgrade worker machine specifications (CPU, memory, disk, VM image), follow these steps:
 
+**Note:** Worker infrastructure upgrades rely on Cluster API rolling replacement. The current HCS provider does not preserve or reattach data disks during node replacement. When a worker node is replaced, the old VM and its attached volumes may be deleted together. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
+
 1. **Create New Machine Template**
 
    Copy the existing `HCSMachineTemplate` and modify the required values:
@@ -314,6 +332,7 @@ To upgrade worker machine specifications (CPU, memory, disk, VM image), follow t
 
    Then edit `new-template.yaml` before applying:
    - Change `metadata.name` to `<new-template>`
+   - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`
    - Remove server-generated fields such as:
      - `metadata.resourceVersion`
      - `metadata.uid`
@@ -346,11 +365,7 @@ To upgrade worker machine specifications (CPU, memory, disk, VM image), follow t
 
 Kubernetes version upgrades require coordinated updates to both the `MachineDeployment` and the underlying VM template.
 
-:::warning
-**Version Compatibility**
-
-Ensure the VM template's Kubernetes version matches the version specified in the `MachineDeployment`. Mismatched versions will cause node join failures.
-:::
+**Note:** Ensure the VM template's Kubernetes version matches the version specified in the `MachineDeployment`. Mismatched versions will cause node join failures.
 
 **Procedure**:
 

@@ -69,6 +69,8 @@ spec:
                   properties:
                     hostname:
                       description: Hostname is the hostname to assign to the machine.
+                      maxLength: 253
+                      pattern: ^[a-z0-9]([-.a-z0-9]*[a-z0-9])?$
                       type: string
                     networks:
                       description: Networks is the list of network configurations
@@ -81,15 +83,27 @@ spec:
                             description: IpAddress is the static IP address to assign
                               to the machine.
                             type: string
-                          subnetName:
-                            description: SubnetName is the name of the subnet to use.
+                          subenetName:
+                            description: |-
+                              SubenetName is the deprecated legacy key kept for backward compatibility.
+                              Use subnetName instead.
                             type: string
                           subnetId:
                             description: SubnetId is the ID of the subnet to use.
                             type: string
+                          subnetName:
+                            description: SubnetName is the name of the subnet to use.
+                            type: string
+                        required:
+                        - ipAddress
                         type: object
+                      minItems: 1
                       type: array
+                  required:
+                  - hostname
+                  - networks
                   type: object
+                minItems: 1
                 type: array
             type: object
           status:
