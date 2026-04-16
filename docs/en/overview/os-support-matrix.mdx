@@ -7,6 +7,12 @@ title: OS Support Matrix
 
 This document lists the versions of Kubernetes components included in different MicroOS images.
 
+## CPU Baseline
+
+ACP-provided MicroOS images on x86_64 require CPUs that meet the `x86-64-v2` ISA baseline. x86_64 hardware that does not support `x86-64-v2` is outside the supported baseline for these images.
+
+This requirement applies when you create or upgrade cluster nodes with ACP-provided MicroOS images.
+
 ## Version Mapping
 
 | ACP Version | MicroOS Image Version | Kubernetes Version | coredns | etcd | pause |

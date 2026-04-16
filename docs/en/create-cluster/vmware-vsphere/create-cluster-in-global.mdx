@@ -11,7 +11,7 @@ queries:
 
 # Creating a VMware vSphere Cluster in the global Cluster
 
-This document explains how to create a VMware vSphere workload cluster from the `global` cluster by using the standard CAPV mode that connects directly to vCenter. The procedure covers a minimum supported topology with one datacenter, one NIC per node, and static IP allocation through `VSphereResourcePool`.
+This document explains how to create a VMware vSphere workload cluster from the `global` cluster by using the standard CAPV mode that connects directly to vCenter. The procedure covers a minimum supported topology with one datacenter, one NIC per node, and static IP allocation through `VSphereMachineConfigPool`.
 
 ## Scenarios
 
@@ -24,14 +24,14 @@ Use this document in the following scenarios:
 This document applies to the following deployment model:
 
 - CAPV connects directly to vCenter.
-- Control plane and worker nodes both use `VSphereResourcePool` for static IP allocation and data disks.
+- Control plane and worker nodes both use `VSphereMachineConfigPool` for static IP allocation and data disks.
 - `ClusterResourceSet` delivers the vSphere CPI component automatically.
 - The first validation uses one datacenter and one NIC per node.
 
 This document does not apply to the following scenarios:
 
 - A deployment that depends on vSphere Supervisor or `vm-operator`.
-- A deployment that does not use `VSphereResourcePool`.
+- A deployment that does not use `VSphereMachineConfigPool`.
 - A first-time deployment that enables multiple datacenters, multiple NICs, and complex disk extensions at the same time.
 
 This document is written for the current platform environment. The `kube-ovn` delivery path depends on platform controllers that consume annotations on the `Cluster` resource, so this workflow is not intended to be a generic standalone CAPV deployment guide outside the platform context.
@@ -61,12 +61,12 @@ In this workflow, `ClusterResourceSet` is used to deliver the vSphere CPI resour
 
 The vSphere CPI component is delivered to the workload cluster through `ClusterResourceSet`. It connects workload nodes to the vSphere infrastructure so the cluster can report infrastructure identities and complete cloud-provider initialization.
 
-### CAPV static allocation pool
+### machine config pool
 
-The CAPV static allocation pool is the `VSphereResourcePool` custom resource. In the baseline workflow:
+The machine config pool is the `VSphereMachineConfigPool` custom resource. In the baseline workflow:
 
-- One CAPV static allocation pool is used for control plane nodes.
-- One CAPV static allocation pool is used for worker nodes.
+- One machine config pool is used for control plane nodes.
+- One machine config pool is used for worker nodes.
 
 Each node slot includes the hostname, datacenter, static IP assignment, and optional data disk definitions.
 
@@ -84,8 +84,8 @@ Also distinguish the following value formats:
 
 In the baseline workflow:
 
-- One `VSphereResourcePool` is used for control plane nodes.
-- One `VSphereResourcePool` is used for worker nodes.
+- One `VSphereMachineConfigPool` is used for control plane nodes.
+- One `VSphereMachineConfigPool` is used for worker nodes.
 
 ### VM template requirements
 
@@ -96,6 +96,8 @@ The VM template used by this workflow should meet the following minimum requirem
 3. It includes VMware Tools or `open-vm-tools`.
 4. It includes `containerd`.
 5. It includes the baseline components required by kubeadm bootstrap.
+6. It includes pre-exported container image tar files under `/root/images/`. These files are imported into containerd by `capv-load-local-images.sh` before kubeadm runs, so that node bootstrap does not depend on pulling images from a remote registry.
+7. The `/root/images/*.tar` files **must** include the sandbox (pause) image whose reference exactly matches the `sandbox_image` value (containerd v1) or `sandbox` value (containerd v2) configured in `/etc/containerd/config.toml`. For example, if containerd is configured with `sandbox_image = "registry.example.com/tkestack/pause:3.10"`, one of the tar files must contain that exact image reference. A mismatch causes containerd to pull the sandbox image from the network, which defeats the purpose of local preloading and fails in air-gapped environments.
 
 Static IP configuration, hostname injection, and other initialization settings depend on `cloud-init`. Node IP reporting depends on guest tools.
 
@@ -107,8 +109,8 @@ Create a local working directory and store the manifests with the following layo
 capv-cluster/
 ├── 00-namespace.yaml
 ├── 01-vsphere-credentials-secret.yaml
-├── 02-vsphereresourcepool-control-plane.yaml
-├── 03-vsphereresourcepool-worker.yaml
+├── 02-vspheremachineconfigpool-control-plane.yaml
+├── 03-vspheremachineconfigpool-worker.yaml
 ├── 10-cluster.yaml
 ├── 15-vsphere-cpi-clusterresourceset.yaml
 ├── 20-control-plane.yaml
@@ -502,17 +504,21 @@ Apply the manifest:
 kubectl apply -f 15-vsphere-cpi-clusterresourceset.yaml
 ```
 
-### Create the static allocation pools
+### Create the machine config pools
 
-Create the control plane static allocation pool.
+Create the control plane machine config pool.
+
+<Directive type="info">
+Each node slot declares its NIC layout under `network.primary` (required) and `network.additional` (optional list). The primary NIC's `networkName` is required, and the provider derives the Kubernetes node name, the kubelet serving certificate DNS SAN, and the kubelet `node-ip` from `hostname` and the resolved primary NIC addresses. The `hostname` must be a valid DNS-1123 subdomain.
+</Directive>
 
 <Directive type="info">
 `deviceName` is optional. If you do not need to force the guest NIC name, remove the `deviceName` line from every node slot. The provider assigns NIC names such as `eth0`, `eth1` by NIC order.
 </Directive>
 
-```yaml title="02-vsphereresourcepool-control-plane.yaml"
+```yaml title="02-vspheremachineconfigpool-control-plane.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-kind: VSphereResourcePool
+kind: VSphereMachineConfigPool
 metadata:
   name: <cp_pool_name>
   namespace: <namespace>
@@ -523,16 +529,17 @@ spec:
     name: <cluster_name>
   datacenter: "<default_datacenter>"
   releaseDelayHours: <release_delay_hours>
-  resources:
+  configs:
   - hostname: "<cp_node_name_1>"
     datacenter: "<master_01_datacenter>"
     network:
-    - networkName: "<nic1_network_name>"
-      deviceName: "<nic1_device_name>"
-      ip: "<master_01_nic1_ip>/<nic1_prefix>"
-      gateway: "<nic1_gateway>"
-      dns:
-      - "<nic1_dns_1>"
+      primary:
+        networkName: "<nic1_network_name>"
+        deviceName: "<nic1_device_name>"
+        ip: "<master_01_nic1_ip>/<nic1_prefix>"
+        gateway: "<nic1_gateway>"
+        dns:
+        - "<nic1_dns_1>"
     persistentDisks:
     - name: var-cpaas
       sizeGiB: <cp_var_cpaas_size_gib>
@@ -546,15 +553,17 @@ spec:
       sizeGiB: <cp_var_lib_etcd_size_gib>
       mountPath: /var/lib/etcd
       fsFormat: ext4
+      wipeFilesystem: true
   - hostname: "<cp_node_name_2>"
     datacenter: "<master_02_datacenter>"
     network:
-    - networkName: "<nic1_network_name>"
-      deviceName: "<nic1_device_name>"
-      ip: "<master_02_nic1_ip>/<nic1_prefix>"
-      gateway: "<nic1_gateway>"
-      dns:
-      - "<nic1_dns_1>"
+      primary:
+        networkName: "<nic1_network_name>"
+        deviceName: "<nic1_device_name>"
+        ip: "<master_02_nic1_ip>/<nic1_prefix>"
+        gateway: "<nic1_gateway>"
+        dns:
+        - "<nic1_dns_1>"
     persistentDisks:
     - name: var-cpaas
       sizeGiB: <cp_var_cpaas_size_gib>
@@ -568,15 +577,17 @@ spec:
       sizeGiB: <cp_var_lib_etcd_size_gib>
       mountPath: /var/lib/etcd
       fsFormat: ext4
+      wipeFilesystem: true
   - hostname: "<cp_node_name_3>"
     datacenter: "<master_03_datacenter>"
     network:
-    - networkName: "<nic1_network_name>"
-      deviceName: "<nic1_device_name>"
-      ip: "<master_03_nic1_ip>/<nic1_prefix>"
-      gateway: "<nic1_gateway>"
-      dns:
-      - "<nic1_dns_1>"
+      primary:
+        networkName: "<nic1_network_name>"
+        deviceName: "<nic1_device_name>"
+        ip: "<master_03_nic1_ip>/<nic1_prefix>"
+        gateway: "<nic1_gateway>"
+        dns:
+        - "<nic1_dns_1>"
     persistentDisks:
     - name: var-cpaas
       sizeGiB: <cp_var_cpaas_size_gib>
@@ -590,13 +601,14 @@ spec:
       sizeGiB: <cp_var_lib_etcd_size_gib>
       mountPath: /var/lib/etcd
       fsFormat: ext4
+      wipeFilesystem: true
 ```
 
-Create the worker static allocation pool.
+Create the worker machine config pool.
 
-```yaml title="03-vsphereresourcepool-worker.yaml"
+```yaml title="03-vspheremachineconfigpool-worker.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-kind: VSphereResourcePool
+kind: VSphereMachineConfigPool
 metadata:
   name: <worker_pool_name>
   namespace: <namespace>
@@ -607,16 +619,17 @@ spec:
     name: <cluster_name>
   datacenter: "<default_datacenter>"
   releaseDelayHours: <release_delay_hours>
-  resources:
+  configs:
   - hostname: "<worker_node_name_1>"
     datacenter: "<worker_01_datacenter>"
     network:
-    - networkName: "<nic1_network_name>"
-      deviceName: "<nic1_device_name>"
-      ip: "<worker_01_nic1_ip>/<nic1_prefix>"
-      gateway: "<nic1_gateway>"
-      dns:
-      - "<nic1_dns_1>"
+      primary:
+        networkName: "<nic1_network_name>"
+        deviceName: "<nic1_device_name>"
+        ip: "<worker_01_nic1_ip>/<nic1_prefix>"
+        gateway: "<nic1_gateway>"
+        dns:
+        - "<nic1_dns_1>"
     persistentDisks:
     - name: var-cpaas
       sizeGiB: <worker_var_cpaas_size_gib>
@@ -631,8 +644,8 @@ spec:
 Apply both manifests:
 
 ```bash
-kubectl apply -f 02-vsphereresourcepool-control-plane.yaml
-kubectl apply -f 03-vsphereresourcepool-worker.yaml
+kubectl apply -f 02-vspheremachineconfigpool-control-plane.yaml
+kubectl apply -f 03-vspheremachineconfigpool-worker.yaml
 ```
 
 ### Create the control plane objects
@@ -660,9 +673,9 @@ spec:
       network:
         devices:
         - networkName: "<nic1_network_name>"
-      resourcePoolRef:
+      machineConfigPoolRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-        kind: VSphereResourcePool
+        kind: VSphereMachineConfigPool
         name: <cp_pool_name>
         namespace: <namespace>
 ---
@@ -727,7 +740,9 @@ spec:
           "apiVersion": "kubelet.config.k8s.io/v1beta1",
           "kind": "KubeletConfiguration",
           "protectKernelDefaults": true,
-          "streamingConnectionIdleTimeout": "5m"
+          "streamingConnectionIdleTimeout": "5m",
+          "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+          "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key"
         }
     # Generate the encryption key with: head -c 32 /dev/urandom | base64
     - path: /etc/kubernetes/encryption-provider.conf
@@ -855,13 +870,44 @@ spec:
           - group: "operator.connectors.alauda.io"
             resources: ["connectorscores", "connectorsgits", "connectorsocis"]
         - level: Metadata
+    - path: /usr/local/bin/capv-load-local-images.sh
+      owner: "root:root"
+      permissions: "0755"
+      content: |
+        #!/bin/bash
+        set -euo pipefail
+        until mountpoint -q /var/lib/containerd; do
+          echo "waiting for /var/lib/containerd mount"
+          sleep 1
+        done
+        systemctl restart containerd
+        until systemctl is-active --quiet containerd; do
+          echo "waiting for containerd"
+          sleep 1
+        done
+        if [ ! -d "/root/images" ]; then
+          echo "ERROR: /root/images directory not found" >&2
+          exit 1
+        fi
+        image_count=0
+        for image_file in /root/images/*.tar; do
+          if [ -f "$image_file" ]; then
+            echo "importing image: $image_file"
+            ctr -n k8s.io images import "$image_file"
+            image_count=$((image_count + 1))
+          fi
+        done
+        if [ "$image_count" -eq 0 ]; then
+          echo "ERROR: no tar files found in /root/images" >&2
+          exit 1
+        fi
+        echo "imported $image_count images"
     preKubeadmCommands:
     - hostnamectl set-hostname "{{ ds.meta_data.hostname }}"
     - echo "::1         ipv6-localhost ipv6-loopback localhost6 localhost6.localdomain6" >/etc/hosts
     - echo "127.0.0.1   {{ ds.meta_data.hostname }} {{ local_hostname }} localhost localhost.localdomain localhost4 localhost4.localdomain4" >>/etc/hosts
     - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
-    - mkdir -p /run/cluster-api && (command -v restorecon >/dev/null 2>&1 && restorecon -Rv /run/cluster-api || true)
-    - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
+    - /usr/local/bin/capv-load-local-images.sh
     postKubeadmCommands:
     - chmod 600 /var/lib/kubelet/config.yaml
     clusterConfiguration:
@@ -905,6 +951,8 @@ spec:
     initConfiguration:
       nodeRegistration:
         criSocket: /var/run/containerd/containerd.sock
+        ignorePreflightErrors:
+        - ImagePull
         kubeletExtraArgs:
           cloud-provider: external
           node-labels: kube-ovn/role=master
@@ -914,9 +962,12 @@ spec:
     joinConfiguration:
       nodeRegistration:
         criSocket: /var/run/containerd/containerd.sock
+        ignorePreflightErrors:
+        - ImagePull
         kubeletExtraArgs:
           cloud-provider: external
           node-labels: kube-ovn/role=master
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
         name: '{{ local_hostname }}'
       patches:
         directory: /etc/kubernetes/patches
@@ -953,9 +1004,9 @@ spec:
       network:
         devices:
         - networkName: "<nic1_network_name>"
-      resourcePoolRef:
+      machineConfigPoolRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-        kind: VSphereResourcePool
+        kind: VSphereMachineConfigPool
         name: <worker_pool_name>
         namespace: <namespace>
 ---
@@ -967,19 +1018,69 @@ metadata:
 spec:
   template:
     spec:
+      files:
+      - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+        owner: "root:root"
+        permissions: "0644"
+        content: |
+          {
+            "apiVersion": "kubelet.config.k8s.io/v1beta1",
+            "kind": "KubeletConfiguration",
+            "protectKernelDefaults": true,
+            "staticPodPath": null,
+            "streamingConnectionIdleTimeout": "5m",
+            "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+            "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key"
+          }
+      - path: /usr/local/bin/capv-load-local-images.sh
+        owner: "root:root"
+        permissions: "0755"
+        content: |
+          #!/bin/bash
+          set -euo pipefail
+          until mountpoint -q /var/lib/containerd; do
+            echo "waiting for /var/lib/containerd mount"
+            sleep 1
+          done
+          systemctl restart containerd
+          until systemctl is-active --quiet containerd; do
+            echo "waiting for containerd"
+            sleep 1
+          done
+          if [ ! -d "/root/images" ]; then
+            echo "ERROR: /root/images directory not found" >&2
+            exit 1
+          fi
+          image_count=0
+          for image_file in /root/images/*.tar; do
+            if [ -f "$image_file" ]; then
+              echo "importing image: $image_file"
+              ctr -n k8s.io images import "$image_file"
+              image_count=$((image_count + 1))
+            fi
+          done
+          if [ "$image_count" -eq 0 ]; then
+            echo "ERROR: no tar files found in /root/images" >&2
+            exit 1
+          fi
+          echo "imported $image_count images"
       joinConfiguration:
         nodeRegistration:
           criSocket: /var/run/containerd/containerd.sock
+          ignorePreflightErrors:
+          - ImagePull
           kubeletExtraArgs:
             cloud-provider: external
+            volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           name: '{{ local_hostname }}'
+        patches:
+          directory: /etc/kubernetes/patches
       preKubeadmCommands:
       - hostnamectl set-hostname "{{ ds.meta_data.hostname }}"
       - echo "::1         ipv6-localhost ipv6-loopback localhost6 localhost6.localdomain6" >/etc/hosts
       - echo "127.0.0.1   {{ ds.meta_data.hostname }} {{ local_hostname }} localhost localhost.localdomain localhost4 localhost4.localdomain4" >>/etc/hosts
       - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
-      - mkdir -p /run/cluster-api && (command -v restorecon >/dev/null 2>&1 && restorecon -Rv /run/cluster-api || true)
-      - sed -i 's|sandbox_image = .*|sandbox_image = "<image_registry>/tkestack/pause:<pause_image_tag>"|' /etc/containerd/config.toml && systemctl restart containerd
+      - /usr/local/bin/capv-load-local-images.sh
       postKubeadmCommands:
       - chmod 600 /var/lib/kubelet/config.yaml
       users:
@@ -1097,7 +1198,7 @@ Prioritize the following checks:
 - If `ClusterResourceSet` exists but no `ClusterResourceSetBinding` is created, check whether the controller has the required delete permission on the referenced `ConfigMap` and `Secret` resources.
 - If the network plugin is not installed, verify that the required cluster annotations are present and that the platform controllers processed them.
 - If the `cpaas.io/registry-address` annotation is missing, verify the public registry credential and the platform controller that injects the annotation.
-- If a machine is stuck in `Provisioning`, check `VSphereMachine` conditions for `ResourcePoolReady` — it shows whether slot allocation failed due to pool binding or datacenter mismatch.
+- If a machine is stuck in `Provisioning`, check `VSphereMachine` conditions for `MachineConfigPoolReady` — it shows whether slot allocation failed due to pool binding or datacenter mismatch.
 - If a VM is waiting for IP allocation, verify VMware Tools, the static IP settings, and `VSphereVM.status.addresses`.
 - If datastore space is exhausted, verify whether old VM directories or `.vmdk` files remain in the target datastore.
 - If the template system disk size does not match the manifest values, verify that `diskGiB` is not smaller than the template disk size.

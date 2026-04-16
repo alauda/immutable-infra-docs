@@ -34,46 +34,52 @@ Before you begin, ensure the following conditions are met:
 
 When nodes require an additional management, storage, or service network, extend the manifests in the following resources:
 
-- `02-vsphereresourcepool-control-plane.yaml`
-- `03-vsphereresourcepool-worker.yaml`
+- `02-vspheremachineconfigpool-control-plane.yaml`
+- `03-vspheremachineconfigpool-worker.yaml`
 - `20-control-plane.yaml`
 - `30-workers-md-0.yaml`
 - `04-failure-domains.yaml` if failure domains are enabled
 
-Add the second NIC to each node slot in the static allocation pools:
+Each node slot declares its NIC layout under `network.primary` and `network.additional`. The primary NIC is used to derive the kubelet `node-ip` and remains the node's primary identity; additional NICs are merged after it in the order listed.
+
+Add the second NIC to each control plane node slot in the machine config pools:
 
 ```yaml
 network:
-- networkName: "<nic1_network_name>"
-  deviceName: "<nic1_device_name>"
-  ip: "<master_01_nic1_ip>/<nic1_prefix>"
-  gateway: "<nic1_gateway>"
-  dns:
-  - "<nic1_dns_1>"
-- networkName: "<nic2_network_name>"
-  deviceName: "<nic2_device_name>"
-  ip: "<master_01_nic2_ip>/<nic2_prefix>"
-  gateway: "<nic2_gateway>"
-  dns:
-  - "<nic2_dns_1>"
+  primary:
+    networkName: "<nic1_network_name>"
+    deviceName: "<nic1_device_name>"
+    ip: "<master_01_nic1_ip>/<nic1_prefix>"
+    gateway: "<nic1_gateway>"
+    dns:
+    - "<nic1_dns_1>"
+  additional:
+  - networkName: "<nic2_network_name>"
+    deviceName: "<nic2_device_name>"
+    ip: "<master_01_nic2_ip>/<nic2_prefix>"
+    gateway: "<nic2_gateway>"
+    dns:
+    - "<nic2_dns_1>"
 ```
 
 Apply the same pattern to the worker node slots:
 
 ```yaml
 network:
-- networkName: "<nic1_network_name>"
-  deviceName: "<nic1_device_name>"
-  ip: "<worker_01_nic1_ip>/<nic1_prefix>"
-  gateway: "<nic1_gateway>"
-  dns:
-  - "<nic1_dns_1>"
-- networkName: "<nic2_network_name>"
-  deviceName: "<nic2_device_name>"
-  ip: "<worker_01_nic2_ip>/<nic2_prefix>"
-  gateway: "<nic2_gateway>"
-  dns:
-  - "<nic2_dns_1>"
+  primary:
+    networkName: "<nic1_network_name>"
+    deviceName: "<nic1_device_name>"
+    ip: "<worker_01_nic1_ip>/<nic1_prefix>"
+    gateway: "<nic1_gateway>"
+    dns:
+    - "<nic1_dns_1>"
+  additional:
+  - networkName: "<nic2_network_name>"
+    deviceName: "<nic2_device_name>"
+    ip: "<worker_01_nic2_ip>/<nic2_prefix>"
+    gateway: "<nic2_gateway>"
+    dns:
+    - "<nic2_dns_1>"
 ```
 
 Add the second NIC to the machine templates:
@@ -108,7 +114,7 @@ When you move between one NIC and two NICs, apply the following rules:
 
 Update all of the following fields together:
 
-1. `VSphereResourcePool.spec.resources[].network`
+1. `VSphereMachineConfigPool.spec.configs[].network.additional` (append the second NIC entry; keep `network.primary` unchanged)
 2. `VSphereMachineTemplate.spec.template.spec.network.devices`
 3. `VSphereFailureDomain.spec.topology.networks` when failure domains are enabled
 
@@ -116,7 +122,7 @@ Update all of the following fields together:
 
 Remove the second NIC block from all of the following fields:
 
-1. The second NIC entry in `VSphereResourcePool.spec.resources[].network`
+1. The second NIC entry in `VSphereMachineConfigPool.spec.configs[].network.additional` (leave the list empty or remove the `additional` key entirely)
 2. The second device entry in `VSphereMachineTemplate.spec.template.spec.network.devices`
 3. The second network name in `VSphereFailureDomain.spec.topology.networks`
 
@@ -281,14 +287,17 @@ Before you enable multiple datacenters, also confirm the following prerequisites
 
 The baseline deployment includes the following required data disks:
 
-- **Control plane nodes**: `var-cpaas`, `var-lib-containerd`, and `var-lib-etcd` (3 disks per node). Do not remove any of these disks.
+- **Control plane nodes**: `var-cpaas`, `var-lib-containerd`, and `var-lib-etcd` (3 disks per node). Do not remove any of these disks. The `var-lib-etcd` disk must set `wipeFilesystem: true` to allow `kubeadm join` during rolling updates.
 - **Worker nodes**: `var-cpaas` and `var-lib-containerd` (2 disks per node). Do not remove any of these disks.
 
-If a node needs additional data disks beyond the required set, append more entries to the same `persistentDisks` list in the corresponding `VSphereResourcePool` node slot.
+If a node needs additional data disks beyond the required set, append more entries to the same `persistentDisks` list in the corresponding `VSphereMachineConfigPool` node slot. The following optional fields are especially relevant here:
+
+- **`mountPath`**: If set, the disk is formatted and mounted at the specified path. If omitted, the disk is attached as a raw device with a symlink at `/dev/disk/by-capv/<name>`, allowing an external process to manage it at runtime.
+- **`wipeFilesystem`**: When `true`, disk content is wiped on the first boot of a new VM. Normal reboots and manual service restarts are not affected. Defaults to `false`.
 
 ## Scale out worker nodes
 
-Worker scale-out depends on the relationship between `MachineDeployment.spec.replicas` and the available node slots in the worker CAPV static allocation pool, `VSphereResourcePool.spec.resources[]`.
+Worker scale-out depends on the relationship between `MachineDeployment.spec.replicas` and the available node slots in the worker machine config pool, `VSphereMachineConfigPool.spec.configs[]`.
 
 Apply the following rules:
 
@@ -298,7 +307,7 @@ Apply the following rules:
 
 Use the following order when you scale out workers:
 
-1. Add new worker node slots to `03-vsphereresourcepool-worker.yaml`.
+1. Add new worker node slots to `03-vspheremachineconfigpool-worker.yaml`.
 2. Increase `MachineDeployment.spec.replicas` in `30-workers-md-0.yaml`.
 
 The following example adds a new worker slot:
@@ -307,11 +316,12 @@ The following example adds a new worker slot:
 - hostname: "<worker_node_name_2>"
   datacenter: "<worker_02_datacenter>"
   network:
-  - networkName: "<nic1_network_name>"
-    ip: "<worker_02_nic1_ip>/<nic1_prefix>"
-    gateway: "<nic1_gateway>"
-    dns:
-    - "<nic1_dns_1>"
+    primary:
+      networkName: "<nic1_network_name>"
+      ip: "<worker_02_nic1_ip>/<nic1_prefix>"
+      gateway: "<nic1_gateway>"
+      dns:
+      - "<nic1_dns_1>"
   persistentDisks:
   - name: var-cpaas
     sizeGiB: <worker_var_cpaas_size_gib>
@@ -322,6 +332,17 @@ The following example adds a new worker slot:
     mountPath: /var/lib/containerd
     fsFormat: ext4
 ```
+
+To attach a raw disk without formatting or mounting (for example, when an application manages the disk itself), omit `mountPath` and `fsFormat`:
+
+```yaml
+  persistentDisks:
+  # ...required disks...
+  - name: app-data
+    sizeGiB: 50
+```
+
+The disk is accessible inside the guest OS at `/dev/disk/by-capv/app-data`. On rolling updates, the same VMDK is re-attached to the new VM and the symlink is recreated. The disk is never formatted or mounted automatically — the application is responsible for managing it at runtime.
 
 Then update the worker replicas:
 

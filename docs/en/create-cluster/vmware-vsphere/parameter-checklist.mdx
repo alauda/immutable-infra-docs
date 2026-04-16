@@ -43,9 +43,9 @@ Use this checklist in the following order:
 
 The following terms are used consistently throughout the VMware vSphere cluster-creation documents.
 
-### CAPV static allocation pool
+### machine config pool
 
-A CAPV static allocation pool is the `VSphereResourcePool` custom resource. It predefines node slots. Each slot can include:
+A machine config pool is the `VSphereMachineConfigPool` custom resource. It predefines node slots. Each slot can include:
 
 - A node hostname
 - A target datacenter
@@ -53,16 +53,23 @@ A CAPV static allocation pool is the `VSphereResourcePool` custom resource. It p
 - Persistent disk definitions
 
 :::warning
-Each `VSphereResourcePool` can only be referenced by a single `KubeadmControlPlane` or a single `MachineDeployment`. Do not share one `VSphereResourcePool` across multiple control plane or worker groups. If a pool is already bound to another consumer, the `VSphereMachine` will report a `ResourcePoolReady=False` condition with reason `PoolBoundToOtherConsumer`.
+Each `VSphereMachineConfigPool` can only be referenced by a single `KubeadmControlPlane` or a single `MachineDeployment`. Do not share one `VSphereMachineConfigPool` across multiple control plane or worker groups. If a pool is already bound to another consumer, the `VSphereMachine` will report a `MachineConfigPoolReady=False` condition with reason `PoolBoundToOtherConsumer`.
 :::
 
 ### Node slot
 
-A node slot is an entry under `VSphereResourcePool.spec.resources[]`. A single slot usually maps to one node, such as `cp-01` or `worker-01`.
+A node slot is an entry under `VSphereMachineConfigPool.spec.configs[]`. A single slot usually maps to one node, such as `cp-01` or `worker-01`. The slot `hostname` drives the Kubernetes node name, the kubelet serving certificate DNS SAN, and (combined with the resolved primary NIC addresses) the kubelet `node-ip`; it must be a valid DNS-1123 subdomain.
+
+### Slot network layout
+
+Each slot declares its NIC layout under `network.primary` and `network.additional`:
+
+- `network.primary` is required. Its `networkName` must be set and is used as the node-ip source for the kubelet.
+- `network.additional` is an optional list of extra NICs merged after the primary NIC in the order listed.
 
 ### `deviceName`
 
-`deviceName` is an optional field in the `VSphereResourcePool` network configuration. It is used to control the NIC name seen inside the guest operating system, such as `eth0` or `eth1`.
+`deviceName` is an optional field in the `VSphereMachineConfigPool` network configuration. It is used to control the NIC name seen inside the guest operating system, such as `eth0` or `eth1`.
 
 Use the following distinctions when you fill the values:
 
@@ -78,7 +85,7 @@ A vCenter resource pool is the native vCenter inventory object, for example:
 /Datacenter1/host/cluster1/Resources
 ```
 
-This value is different from CAPV's `VSphereResourcePool`. In the extension scenarios, this path is used by `VSphereDeploymentZone.spec.placementConstraint.resourcePool`.
+In the extension scenarios, this path is used by `VSphereDeploymentZone.spec.placementConstraint.resourcePool`.
 
 ### Compute cluster
 
@@ -144,6 +151,8 @@ The template should also meet the following requirements:
 - It includes VMware Tools or `open-vm-tools`.
 - It includes `containerd`.
 - It includes the baseline components required by kubeadm bootstrap.
+- It includes pre-exported container image tar files under `/root/images/`. These files are imported into containerd by `capv-load-local-images.sh` before kubeadm runs, so that node bootstrap does not depend on pulling images from a remote registry.
+- The `/root/images/*.tar` files **must** include the sandbox (pause) image whose reference exactly matches the `sandbox_image` value (containerd v1) or `sandbox` value (containerd v2) configured in `/etc/containerd/config.toml`. For example, if containerd is configured with `sandbox_image = "registry.example.com/tkestack/pause:3.10"`, one of the tar files must contain that exact image reference. A mismatch causes containerd to pull the sandbox image from the network, which defeats the purpose of local preloading and fails in air-gapped environments.
 
 ## Load Balancer Prerequisites
 
@@ -165,7 +174,6 @@ The template should also meet the following requirements:
 | Pod CIDR | `<pod_cidr>` | Yes | Must not overlap with existing networks. | `10.244.0.0/16` | - |
 | Service CIDR | `<service_cidr>` | Yes | Must not overlap with existing networks. | `10.96.0.0/12` | - |
 | Image registry | `<image_registry>` | Yes | Private registry address. kubeadm `imageRepository` is set to `<image_registry>/tkestack`. | `registry.example.local` | - |
-| Sandbox (pause) image tag | `<pause_image_tag>` | Yes | Tag for the pause image used by containerd as the pod sandbox. The full reference is `<image_registry>/tkestack/pause:<pause_image_tag>`. | `3.10` | - |
 | `kube-ovn` version | `<kube_ovn_version>` | Yes | Must match the platform network plugin requirements. | `v4.2.26` | - |
 | `kube-ovn-join-cidr` | `<kube_ovn_join_cidr>` | Yes | Must not overlap with other networks. | `100.64.0.0/16` | - |
 | CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `1.12.4` | - |
@@ -190,27 +198,27 @@ The template should also meet the following requirements:
 | Prefix length | `<nic1_prefix>` | Yes | Used with each node IP address. | `24` | - |
 | DNS server 1 | `<nic1_dns_1>` | Yes | DNS server for the primary NIC. | `10.10.0.10` | - |
 
-### Control plane static allocation pool
+### Control plane machine config pool
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| Control plane pool name | `<cp_pool_name>` | Yes | CAPV static allocation pool name for control plane nodes. | `demo-cluster-control-plane-pool` | - |
-| Control plane node 1 hostname | `<cp_node_name_1>` | Yes | Recommended hostname for the first control plane node. | `cp-01` | - |
+| Control plane pool name | `<cp_pool_name>` | Yes | machine config pool name for control plane nodes. | `demo-cluster-control-plane-pool` | - |
+| Control plane node 1 hostname | `<cp_node_name_1>` | Yes | Node name and kubelet serving cert SAN for the first control plane node. Must be a valid DNS-1123 subdomain. | `cp-01` | - |
 | Control plane node 1 datacenter | `<master_01_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
 | Control plane node 1 IP address | `<master_01_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.11` | - |
-| Control plane node 2 hostname | `<cp_node_name_2>` | Yes | Recommended hostname for the second control plane node. | `cp-02` | - |
+| Control plane node 2 hostname | `<cp_node_name_2>` | Yes | Node name and kubelet serving cert SAN for the second control plane node. Must be a valid DNS-1123 subdomain. | `cp-02` | - |
 | Control plane node 2 datacenter | `<master_02_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
 | Control plane node 2 IP address | `<master_02_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.12` | - |
-| Control plane node 3 hostname | `<cp_node_name_3>` | Yes | Recommended hostname for the third control plane node. | `cp-03` | - |
+| Control plane node 3 hostname | `<cp_node_name_3>` | Yes | Node name and kubelet serving cert SAN for the third control plane node. Must be a valid DNS-1123 subdomain. | `cp-03` | - |
 | Control plane node 3 datacenter | `<master_03_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
 | Control plane node 3 IP address | `<master_03_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.13` | - |
 
-### Worker static allocation pool
+### Worker machine config pool
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| Worker pool name | `<worker_pool_name>` | Yes | CAPV static allocation pool name for worker nodes. | `demo-cluster-worker-pool` | - |
-| Worker node 1 hostname | `<worker_node_name_1>` | Yes | Recommended hostname for the first worker node. | `worker-01` | - |
+| Worker pool name | `<worker_pool_name>` | Yes | machine config pool name for worker nodes. | `demo-cluster-worker-pool` | - |
+| Worker node 1 hostname | `<worker_node_name_1>` | Yes | Node name and kubelet serving cert SAN for the first worker node. Must be a valid DNS-1123 subdomain. | `worker-01` | - |
 | Worker node 1 datacenter | `<worker_01_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
 | Worker node 1 IP address | `<worker_01_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.21` | - |
 | Worker node 2 hostname | `<worker_node_name_2>` | No | Used when you scale out the worker pool. | `worker-02` | - |
@@ -233,22 +241,33 @@ The template should also meet the following requirements:
 
 ### Standard data disks
 
-Each node role requires a set of dedicated data disks. The disks listed below are the minimum required set. You can append additional disks to the `persistentDisks` list if your workload requires them. Only the size of the required disks is configurable; the name, mount path, and file system format are fixed.
+Each node role requires a set of dedicated data disks. The disks listed below are the minimum required disks. You can append additional disks to the `persistentDisks` list if your workload requires them.
+
+#### Persistent disk fields
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | Yes | — | Unique disk name within the slot. |
+| `sizeGiB` | Yes | — | Disk size in GiB. |
+| `mountPath` | No | (empty) | Mount path inside the guest OS. If empty, the disk is attached as a raw device with a symlink at `/dev/disk/by-capv/<name>` but is not formatted or mounted. This is useful when an external process manages the disk at runtime. |
+| `fsFormat` | No | `ext4` (when `mountPath` is set) | Filesystem format. Ignored when `mountPath` is empty. |
+| `wipeFilesystem` | No | `false` | When `true`, disk content is wiped on the first boot of a new VM. Reboots and manual service restarts are not affected. Use for etcd disks to prevent stale data from blocking `kubeadm join` during rolling updates. |
+| `datastore` | No | (pool default) | Override the datastore for this disk. |
 
 #### Control plane nodes (3 disks per node)
 
-| Disk Name | Mount Path | Purpose | Recommended Minimum Size | Placeholder |
-|-----------|------------|---------|--------------------------|-------------|
-| `var-cpaas` | `/var/cpaas` | Stores logs, audit data, and other platform data | 100 GiB | `<cp_var_cpaas_size_gib>` |
-| `var-lib-containerd` | `/var/lib/containerd` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<cp_var_lib_containerd_size_gib>` |
-| `var-lib-etcd` | `/var/lib/etcd` | Stores etcd data | 100 GiB | `<cp_var_lib_etcd_size_gib>` |
+| Disk Name | Mount Path | `wipeFilesystem` | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|-------------------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | `false` | Stores logs, audit data, and other platform data | 100 GiB | `<cp_var_cpaas_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | `false` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<cp_var_lib_containerd_size_gib>` |
+| `var-lib-etcd` | `/var/lib/etcd` | **`true`** | Stores etcd data. Must set `wipeFilesystem: true` to allow `kubeadm join` during rolling updates. | 100 GiB | `<cp_var_lib_etcd_size_gib>` |
 
 #### Worker nodes (2 disks per node)
 
-| Disk Name | Mount Path | Purpose | Recommended Minimum Size | Placeholder |
-|-----------|------------|---------|--------------------------|-------------|
-| `var-cpaas` | `/var/cpaas` | Stores logs, audit data, and other platform data | 100 GiB | `<worker_var_cpaas_size_gib>` |
-| `var-lib-containerd` | `/var/lib/containerd` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<worker_var_lib_containerd_size_gib>` |
+| Disk Name | Mount Path | `wipeFilesystem` | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|-------------------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | `false` | Stores logs, audit data, and other platform data | 100 GiB | `<worker_var_cpaas_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | `false` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<worker_var_lib_containerd_size_gib>` |
 
 #### Size parameters
 
@@ -320,7 +339,7 @@ Before you start the deployment, confirm all of the following items:
 6. The Pod CIDR, Service CIDR, and `kube-ovn-join-cidr` do not overlap with existing networks.
 7. The VM template is available in every required datacenter.
 8. The required datastores and vCenter resource pool paths are confirmed.
-9. The static allocation pool values for the minimum single-datacenter topology are complete.
+9. The machine config pool values for the minimum single-datacenter topology are complete.
 10. The baseline system disk and data disk sizing is confirmed.
 11. Every required parameter has a real value.
 
