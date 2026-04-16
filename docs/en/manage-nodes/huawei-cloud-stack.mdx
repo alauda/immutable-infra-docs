@@ -44,7 +44,7 @@ The `HCSMachineConfigPool` defines the network configuration for worker node VMs
 The pool must include at least as many entries as the number of worker nodes you plan to deploy. Insufficient entries will prevent node deployment.
 :::
 
-Use `subnetName` in new manifests. The provider still accepts the deprecated `subenetName` field for existing manifests, but do not use both fields with different values.
+Use one subnet selector per `networks[]` entry. For new manifests, set either `subnetName` or `subnetId`, but not both. Existing manifests may keep the deprecated `subenetName` field; if you also add `subnetName` while updating that manifest, its value must exactly match `subenetName`. Do not supply conflicting values across `subenetName`, `subnetName`, and `subnetId`.
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -77,7 +77,9 @@ spec:
 | `.spec.configs[].networks[].subnetId` | string | No* | Subnet ID. Use this field instead of `subnetName` when the subnet name is ambiguous |
 | `.spec.configs[].networks[].ipAddress` | string | Yes | Static IP address for the worker VM |
 
-*Set either `subnetName` or `subnetId`. For new manifests, use `subnetName`.
+*For new manifests, set either `subnetName` or `subnetId`. Existing manifests may continue to use `subenetName`, and may add `subnetName` only if both fields use the same value. Do not provide conflicting subnet selector values.
+
+**Note:** The CRD schema lists `subnetName`, `subenetName`, and `subnetId` as optional fields and does not express their allowed combinations. Follow the provider-level rules above when writing manifests.
 
 ### Step 2: Configure Machine Template
 
