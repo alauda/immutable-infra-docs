@@ -1,0 +1,145 @@
+---
+weight: 20
+title: Upgrading Clusters on Huawei Cloud Stack
+author: chaozhou@alauda.io
+category: howto
+queries:
+  - upgrade hcs cluster
+  - hcs kubernetes upgrade
+  - hcs cluster version update
+---
+
+# Upgrading Clusters on Huawei Cloud Stack
+
+This guide explains how to upgrade Kubernetes clusters on Huawei Cloud Stack with minimal downtime, while preserving stability and data integrity.
+
+## Overview
+
+Cluster upgrades on HCS encompass multiple components and follow a structured approach to ensure system reliability:
+
+- **Control Plane Upgrades**: Update Kubernetes control plane components and underlying infrastructure
+- **Worker Node Upgrades**: Upgrade worker nodes with new machine images and Kubernetes versions
+- **Infrastructure Updates**: Modify virtual machine specifications, storage, and network configurations
+
+Cluster API orchestrates declarative rolling updates with built-in safety mechanisms.
+
+:::info
+**Prerequisites**
+
+Before you start, ensure:
+- The control plane is reachable
+- All nodes are healthy (Ready)
+
+For initial deployment, see the [Create Cluster](../create-cluster/huawei-cloud-stack.mdx) guide.
+:::
+
+:::warning
+**Data Loss During Upgrades**
+
+Upgrades rely on Cluster API's rolling replacement mechanism. The current HCS provider does not preserve or reattach data disks during node replacement. When a node is replaced, the old VM and its attached volumes may be deleted together. Do not treat node-local data on HCS data disks as preserved state. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
+:::
+
+## Control Plane Upgrades
+
+Control plane upgrades update the Kubernetes API server, etcd, scheduler, and controller manager, along with the underlying VM infrastructure.
+
+For HCS control planes backed by a fixed-size `HCSMachineConfigPool`, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` during upgrades. This default scale-down-then-scale-up path usually does not require additional control plane IPs. Only prepare extra hostname and static IP entries in the control plane pool if you plan to increase control plane replicas or intentionally set `maxSurge` greater than `0`.
+
+### Infrastructure Image Updates
+
+Upgrading the underlying machine images for control plane nodes provides security patches, performance improvements, and updated system components.
+
+#### Procedure
+
+1. **Create Updated Machine Template**
+
+   Copy the existing `HCSMachineTemplate` referenced by `KubeadmControlPlane` and modify the required specifications:
+
+   ```bash
+   kubectl get hcsmachinetemplate <current-template-name> -n cpaas-system -o yaml > new-cp-template.yaml
+   ```
+
+2. **Modify Template Specifications**
+
+   Modify the new template:
+   - Set `metadata.name` to `<new-template-name>`
+   - Remove server-generated metadata and status fields from the copied manifest.
+   - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`. The HCS provider assigns these values when it creates instances.
+   - Update as needed:
+     - `spec.template.spec.imageName`
+     - `spec.template.spec.flavorName`
+     - `spec.template.spec.rootVolume.size`
+     - `spec.template.spec.dataVolumes`
+
+3. **Deploy Updated Template**
+
+   Apply the new machine template:
+
+   ```bash
+   kubectl apply -f new-cp-template.yaml -n cpaas-system
+   ```
+
+4. **Update Control Plane Reference**
+
+   Modify the `KubeadmControlPlane` resource to reference the new template:
+
+   ```bash
+   kubectl patch kubeadmcontrolplane <kcp-name> -n cpaas-system --type='merge' -p='{"spec":{"machineTemplate":{"infrastructureRef":{"name":"<new-template-name>"}}}}'
+   ```
+
+5. **Monitor Rolling Update**
+
+   The control plane will automatically perform a rolling update:
+
+   ```bash
+   kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system -w
+   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/control-plane
+   ```
+
+### Kubernetes Version Upgrades
+
+Upgrading the Kubernetes version involves updating both the control plane software and the supporting virtual machine images.
+
+#### Prerequisites
+
+- Verify compatibility between the target Kubernetes version and existing workloads
+- Ensure the VM template supports the target Kubernetes version. See [OS Support Matrix](../overview/os-support-matrix.mdx) for version mapping.
+- Review the Kubernetes upgrade path and version skew policy
+
+#### Procedure
+
+1. **Update VM Template Reference**
+
+   Update `spec.template.spec.imageName` in the referenced `HCSMachineTemplate`. The new VM template must match the target Kubernetes version.
+
+2. **Update Control Plane Version**
+
+   Modify the `spec.version` field in the `KubeadmControlPlane` resource (required). Keep `spec.rolloutStrategy.rollingUpdate.maxSurge: 0` for the default static IP control plane path. Only adjust rollout settings beyond this after you extend the control plane `HCSMachineConfigPool` with extra hostname and IP slots.
+
+3. **Verify Upgrade Progress**
+
+   Monitor the rolling upgrade process:
+
+   ```bash
+   # Check control plane status
+   kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system
+
+   # Monitor individual machines
+   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/control-plane
+
+   # Verify cluster health
+   kubectl get nodes
+   ```
+
+## Worker Node Upgrades
+
+Worker node upgrades are managed via `MachineDeployment` resources.
+
+:::info
+For detailed worker node procedures, see the [Managing Nodes](../manage-nodes/huawei-cloud-stack.mdx#upgrading-kubernetes-version) section.
+:::
+
+## Additional Resources
+
+- [Cluster API Upgrade Documentation](https://cluster-api.sigs.k8s.io/tasks/upgrading-clusters)
+- [Kubernetes Version Skew Policy](https://kubernetes.io/docs/setup/release/version-skew-policy/)

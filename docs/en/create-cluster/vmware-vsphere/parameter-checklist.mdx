@@ -1,0 +1,348 @@
+---
+weight: 10
+title: Preparing Parameters for a VMware vSphere Cluster
+author: dev@alauda.io
+category: howto
+queries:
+  - vmware vsphere cluster parameter checklist
+  - prepare values for capv cluster
+  - vsphere cluster prerequisites
+---
+
+# Preparing Parameters for a VMware vSphere Cluster
+
+This document helps you collect the values required to create a VMware vSphere workload cluster from the `global` cluster. Complete this checklist before you apply the manifests in [Create a Cluster in the `global` Cluster](./create-cluster-in-global.mdx).
+
+## Scenarios
+
+Use this checklist in the following scenarios:
+
+- You are preparing a new VMware vSphere cluster deployment.
+- You want to validate external dependencies before you start the deployment.
+- You plan to enable extension scenarios such as multiple datacenters, multiple NICs, or extra worker nodes.
+
+## Prerequisites
+
+Before you begin, ensure the following conditions are met:
+
+- You can access the `global` cluster with `kubectl`.
+- You know which namespace will store the workload cluster objects.
+- You have access to the target vCenter inventory, networks, datastores, and templates.
+
+## How to Use This Checklist
+
+Use this checklist in the following order:
+
+1. Collect the deployment parameters listed in this document.
+2. Replace every placeholder in the manifest templates with the actual values collected here.
+3. Reuse the same value everywhere a placeholder appears in multiple manifests.
+4. If an optional feature is not enabled, remove the corresponding YAML block exactly as described in the extension document.
+5. If an optional field (such as `deviceName`) is not needed, remove the entire line from the YAML manifest.
+
+## Terminology
+
+The following terms are used consistently throughout the VMware vSphere cluster-creation documents.
+
+### machine config pool
+
+A machine config pool is the `VSphereMachineConfigPool` custom resource. It predefines node slots. Each slot can include:
+
+- A node hostname
+- A target datacenter
+- Static IP configuration for each NIC
+- Persistent disk definitions
+
+:::warning
+Each `VSphereMachineConfigPool` can only be referenced by a single `KubeadmControlPlane` or a single `MachineDeployment`. Do not share one `VSphereMachineConfigPool` across multiple control plane or worker groups. If a pool is already bound to another consumer, the `VSphereMachine` will report a `MachineConfigPoolReady=False` condition with reason `PoolBoundToOtherConsumer`.
+:::
+
+### Node slot
+
+A node slot is an entry under `VSphereMachineConfigPool.spec.configs[]`. A single slot usually maps to one node, such as `cp-01` or `worker-01`. The slot `hostname` drives the Kubernetes node name, the kubelet serving certificate DNS SAN, and (combined with the resolved primary NIC addresses) the kubelet `node-ip`; it must be a valid DNS-1123 subdomain.
+
+### Slot network layout
+
+Each slot declares its NIC layout under `network.primary` and `network.additional`:
+
+- `network.primary` is required. Its `networkName` must be set and is used as the node-ip source for the kubelet.
+- `network.additional` is an optional list of extra NICs merged after the primary NIC in the order listed.
+
+### `deviceName`
+
+`deviceName` is an optional field in the `VSphereMachineConfigPool` network configuration. It is used to control the NIC name seen inside the guest operating system, such as `eth0` or `eth1`.
+
+Use the following distinctions when you fill the values:
+
+- `networkName` is the vCenter network or port group name.
+- `deviceName` is the NIC name inside the guest operating system.
+- If `deviceName` is omitted, CAPV typically assigns names such as `eth0`, `eth1`, and `eth2` by NIC order.
+
+### vCenter resource pool
+
+A vCenter resource pool is the native vCenter inventory object, for example:
+
+```text
+/Datacenter1/host/cluster1/Resources
+```
+
+In the extension scenarios, this path is used by `VSphereDeploymentZone.spec.placementConstraint.resourcePool`.
+
+### Compute cluster
+
+The compute cluster is the target vCenter compute-cluster name. In these documents, it is primarily used when a `VSphereFailureDomain` is mapped to a specific deployment target.
+
+### Datastore
+
+The datastore is the vSphere storage location that stores VM disks. Both system disks and data disks must be placed on concrete datastores.
+
+### VM template
+
+The VM template is the source template used to create node virtual machines. When you enable multiple datacenters, the same template must already exist in every target datacenter and must be resolvable by the same template name.
+
+### Thumbprint
+
+The thumbprint is the SHA-1 fingerprint of the vCenter server certificate. CAPV uses it to validate the target vCenter server.
+
+Use the following command to retrieve it:
+
+```bash
+openssl s_client -connect <vsphere_server>:443 -servername <vsphere_server> </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha1
+```
+
+## Management Cluster Prerequisites
+
+Use the following table to record the required values and validation results.
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| `global` cluster kubeconfig path | - | Yes | `kubectl get ns` succeeds with this kubeconfig. | `/path/to/kubeconfig` | - |
+| Workload object namespace | `<namespace>` | Yes | The namespace that stores workload cluster objects. | `cpaas-system` | - |
+| `cluster-api-provider-vsphere` is installed | - | Yes | `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere` returns a result. | `Yes` | - |
+| `cluster-api-provider-kubeadm` is installed | - | Yes | `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-kubeadm` returns a result. | `Yes` | - |
+| `ClusterResourceSet=true` is enabled | - | Yes | The `capi-controller-manager` arguments include `ClusterResourceSet=true`. | `Yes` | - |
+
+## vCenter and Template Prerequisites
+
+### vCenter connection information
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| vCenter server | `<vsphere_server>` | Yes | Use the vCenter IP address or FQDN. | `vc.example.local` | - |
+| vCenter username | `<vsphere_username>` | Yes | Used by CAPV to authenticate to vCenter. | `svc-capv@example.local` | - |
+| vCenter password | `<vsphere_password>` | Yes | Used by CAPV to authenticate to vCenter. | `******` | - |
+| Thumbprint | `<thumbprint>` | Yes | Retrieve it with the `openssl` command shown earlier. | `AA:BB:CC:...` | - |
+
+**Note:** These documents assume the default vCenter HTTPS port `443`.
+
+### VM template requirements
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| VM template name | `<template_name>` | Yes | Used to clone control plane and worker nodes. | `microos-k8s-template` | - |
+| vCenter credential secret name | `<credentials_secret_name>` | Yes | Use a stable name such as `<cluster_name>-vsphere-credentials`. | `demo-cluster-vsphere-credentials` | - |
+| Clone mode | `<clone_mode>` | Yes | `linkedClone` is recommended when your environment supports it. | `linkedClone` | - |
+| Power-off mode | `<power_off_mode>` | Yes | Use the value expected by your CAPV environment. | `trySoft` | - |
+| SSH public key | `<ssh_public_key>` | Yes | Injected into control plane and worker nodes. | `ssh-rsa AAAA...` | - |
+
+The template should also meet the following requirements:
+
+- It uses an operating system supported by your platform image policy.
+- It includes `cloud-init`.
+- It includes VMware Tools or `open-vm-tools`.
+- It includes `containerd`.
+- It includes the baseline components required by kubeadm bootstrap.
+- It includes pre-exported container image tar files under `/root/images/`. These files are imported into containerd by `capv-load-local-images.sh` before kubeadm runs, so that node bootstrap does not depend on pulling images from a remote registry.
+- The `/root/images/*.tar` files **must** include the sandbox (pause) image whose reference exactly matches the `sandbox_image` value (containerd v1) or `sandbox` value (containerd v2) configured in `/etc/containerd/config.toml`. For example, if containerd is configured with `sandbox_image = "registry.example.com/tkestack/pause:3.10"`, one of the tar files must contain that exact image reference. A mismatch causes containerd to pull the sandbox image from the network, which defeats the purpose of local preloading and fails in air-gapped environments.
+
+## Load Balancer Prerequisites
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| Control plane VIP | `<vip>` | Yes | The VIP is already allocated. | `10.10.10.10` | - |
+| API server port | `<api_server_port>` | Yes | The default port is `6443`. | `6443` | - |
+| VIP connectivity | - | Yes | The execution environment can reach `VIP:6443`. | `Yes` | - |
+| Real server maintenance ownership | - | Yes | Define who maintains the backend targets if the load balancer does not update them automatically. | `Platform team` | - |
+
+## Cluster Baseline Parameters
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| Cluster name | `<cluster_name>` | Yes | Use the same value in all manifests. | `demo-cluster` | - |
+| Kubernetes version | `<k8s_version>` | Yes | Use the version required by the target platform release. | `v1.33.7-2` | - |
+| Control plane replicas | `<cp_replicas>` | Yes | The baseline topology uses `3`. | `3` | - |
+| Worker replicas | `<worker_replicas>` | Yes | The baseline topology uses `1`. | `1` | - |
+| Pod CIDR | `<pod_cidr>` | Yes | Must not overlap with existing networks. | `10.244.0.0/16` | - |
+| Service CIDR | `<service_cidr>` | Yes | Must not overlap with existing networks. | `10.96.0.0/12` | - |
+| Image registry | `<image_registry>` | Yes | Private registry address. kubeadm `imageRepository` is set to `<image_registry>/tkestack`. | `registry.example.local` | - |
+| `kube-ovn` version | `<kube_ovn_version>` | Yes | Must match the platform network plugin requirements. | `v4.2.26` | - |
+| `kube-ovn-join-cidr` | `<kube_ovn_join_cidr>` | Yes | Must not overlap with other networks. | `100.64.0.0/16` | - |
+| CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `1.12.4` | - |
+| etcd image tag | `<etcd_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `v3.5.0` | - |
+| Encryption provider secret | `<encryption_provider_secret>` | Yes | Base64-encoded AES key for secret encryption at rest. Generate with `head -c 32 /dev/urandom \| base64`. Do not reuse example values. | *(generated)* | - |
+
+## Minimum Single-Datacenter Parameters
+
+### Datacenter and resource placement
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| Default datacenter | `<default_datacenter>` | Yes | Used by the baseline topology. | `dc-a` | - |
+
+### Primary NIC parameters
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| vCenter network name | `<nic1_network_name>` | Yes | The first network or port group name in vCenter. | `pg-business` | - |
+| Guest NIC name | `<nic1_device_name>` | No | Set it only when you need to force the guest NIC name. If not needed, remove the `deviceName` line from the YAML manifests. | `eth0` | - |
+| Gateway | `<nic1_gateway>` | Yes | Default gateway for the primary NIC. | `10.10.10.1` | - |
+| Prefix length | `<nic1_prefix>` | Yes | Used with each node IP address. | `24` | - |
+| DNS server 1 | `<nic1_dns_1>` | Yes | DNS server for the primary NIC. | `10.10.0.10` | - |
+
+### Control plane machine config pool
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| Control plane pool name | `<cp_pool_name>` | Yes | machine config pool name for control plane nodes. | `demo-cluster-control-plane-pool` | - |
+| Control plane node 1 hostname | `<cp_node_name_1>` | Yes | Node name and kubelet serving cert SAN for the first control plane node. Must be a valid DNS-1123 subdomain. | `cp-01` | - |
+| Control plane node 1 datacenter | `<master_01_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
+| Control plane node 1 IP address | `<master_01_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.11` | - |
+| Control plane node 2 hostname | `<cp_node_name_2>` | Yes | Node name and kubelet serving cert SAN for the second control plane node. Must be a valid DNS-1123 subdomain. | `cp-02` | - |
+| Control plane node 2 datacenter | `<master_02_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
+| Control plane node 2 IP address | `<master_02_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.12` | - |
+| Control plane node 3 hostname | `<cp_node_name_3>` | Yes | Node name and kubelet serving cert SAN for the third control plane node. Must be a valid DNS-1123 subdomain. | `cp-03` | - |
+| Control plane node 3 datacenter | `<master_03_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
+| Control plane node 3 IP address | `<master_03_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.13` | - |
+
+### Worker machine config pool
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| Worker pool name | `<worker_pool_name>` | Yes | machine config pool name for worker nodes. | `demo-cluster-worker-pool` | - |
+| Worker node 1 hostname | `<worker_node_name_1>` | Yes | Node name and kubelet serving cert SAN for the first worker node. Must be a valid DNS-1123 subdomain. | `worker-01` | - |
+| Worker node 1 datacenter | `<worker_01_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
+| Worker node 1 IP address | `<worker_01_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.21` | - |
+| Worker node 2 hostname | `<worker_node_name_2>` | No | Used when you scale out the worker pool. | `worker-02` | - |
+| Worker node 2 datacenter | `<worker_02_datacenter>` | No | Used when you scale out the worker pool. | `dc-b` | - |
+| Worker node 2 IP address | `<worker_02_nic1_ip>` | No | Used when you scale out the worker pool. | `10.10.10.22` | - |
+| `releaseDelayHours` | `<release_delay_hours>` | Yes | Delay before CAPV reuses a released slot. | `24` | - |
+
+### Compute sizing
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| Control plane CPU | `<cp_num_cpus>` | Yes | CPU count per control plane node. | `4` | - |
+| Control plane memory MiB | `<cp_memory_mib>` | Yes | Memory per control plane node. | `8192` | - |
+| Control plane system datastore | `<cp_system_datastore>` | Yes | Datastore for the control plane system disk. | `datastore-cp` | - |
+| Control plane system disk size GiB | `<cp_system_disk_gib>` | Yes | Baseline example value is `300`. | `300` | - |
+| Worker CPU | `<worker_num_cpus>` | Yes | CPU count per worker node. | `2` | - |
+| Worker memory MiB | `<worker_memory_mib>` | Yes | Memory per worker node. | `4096` | - |
+| Worker system datastore | `<worker_system_datastore>` | Yes | Datastore for the worker system disk. | `datastore-worker` | - |
+| Worker system disk size GiB | `<worker_system_disk_gib>` | Yes | Baseline example value is `300`. | `300` | - |
+
+### Standard data disks
+
+Each node role requires a set of dedicated data disks. The disks listed below are the minimum required disks. You can append additional disks to the `persistentDisks` list if your workload requires them.
+
+#### Persistent disk fields
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | Yes | — | Unique disk name within the slot. |
+| `sizeGiB` | Yes | — | Disk size in GiB. |
+| `mountPath` | No | (empty) | Mount path inside the guest OS. If empty, the disk is attached as a raw device with a symlink at `/dev/disk/by-capv/<name>` but is not formatted or mounted. This is useful when an external process manages the disk at runtime. |
+| `fsFormat` | No | `ext4` (when `mountPath` is set) | Filesystem format. Ignored when `mountPath` is empty. |
+| `wipeFilesystem` | No | `false` | When `true`, disk content is wiped on the first boot of a new VM. Reboots and manual service restarts are not affected. Use for etcd disks to prevent stale data from blocking `kubeadm join` during rolling updates. |
+| `datastore` | No | (pool default) | Override the datastore for this disk. |
+
+#### Control plane nodes (3 disks per node)
+
+| Disk Name | Mount Path | `wipeFilesystem` | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|-------------------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | `false` | Stores logs, audit data, and other platform data | 100 GiB | `<cp_var_cpaas_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | `false` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<cp_var_lib_containerd_size_gib>` |
+| `var-lib-etcd` | `/var/lib/etcd` | **`true`** | Stores etcd data. Must set `wipeFilesystem: true` to allow `kubeadm join` during rolling updates. | 100 GiB | `<cp_var_lib_etcd_size_gib>` |
+
+#### Worker nodes (2 disks per node)
+
+| Disk Name | Mount Path | `wipeFilesystem` | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|-------------------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | `false` | Stores logs, audit data, and other platform data | 100 GiB | `<worker_var_cpaas_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | `false` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<worker_var_lib_containerd_size_gib>` |
+
+#### Size parameters
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| CP `/var/cpaas` size GiB | `<cp_var_cpaas_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| CP `/var/lib/containerd` size GiB | `<cp_var_lib_containerd_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| CP `/var/lib/etcd` size GiB | `<cp_var_lib_etcd_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| Worker `/var/cpaas` size GiB | `<worker_var_cpaas_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| Worker `/var/lib/containerd` size GiB | `<worker_var_lib_containerd_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+
+### vSphere CPI parameters
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| CPI datacenter list | `<cpi_datacenters>` | Yes | Include every target datacenter when multiple datacenters are enabled. | `dc-a,dc-b` | - |
+| CPI image tag | `<cpi_image_tag>` | Yes | Tag for the vSphere CPI component. The full reference is `<image_registry>/ait/cloud-provider-vsphere:<cpi_image_tag>`. | `v1.33.1-alauda.1` | - |
+| CPI insecure flag | `<cpi_insecure_flag>` | Yes | The baseline example uses `1`. | `1` | - |
+
+## Optional Extension Parameters
+
+### Multiple datacenters and multiple failure domains
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| Datacenter 1 failure domain name | `<fd_name_1>` | No | Required only when you enable failure domains. | `fd-a` | - |
+| Datacenter 1 deployment zone name | `<dz_name_1>` | No | Required only when you enable failure domains. | `dz-a` | - |
+| Compute cluster name | `<compute_cluster_1>` | No | Required only when you enable failure domains. | `compute-a` | - |
+| Default datastore | `<default_datastore_1>` | No | Required only when you enable failure domains. | `datastore-a` | - |
+| vCenter resource pool path | `<resource_pool_path_1>` | No | Required only when you enable failure domains. Must exist in vCenter inventory. | `/dc-a/host/compute-a/Resources` | - |
+| Datacenter 2 name | `<dc_name_2>` | No | Used only for multiple datacenters or failure domains. | `dc-b` | - |
+| Datacenter 2 failure domain name | `<fd_name_2>` | No | Used only for multiple datacenters or failure domains. | `fd-b` | - |
+| Datacenter 2 deployment zone name | `<dz_name_2>` | No | Used only for multiple datacenters or failure domains. | `dz-b` | - |
+| Datacenter 2 compute cluster | `<compute_cluster_2>` | No | Used only for multiple datacenters or failure domains. | `compute-b` | - |
+| Datacenter 2 default datastore | `<default_datastore_2>` | No | Used only for multiple datacenters or failure domains. | `datastore-b` | - |
+| Datacenter 2 vCenter resource pool path | `<resource_pool_path_2>` | No | Used only for multiple datacenters or failure domains. | `/dc-b/host/compute-b/Resources` | - |
+| Worker deployment zone | `<worker_failure_domain>` | No | Use a `VSphereDeploymentZone` name, not a `VSphereFailureDomain` name. | `dz-a` | - |
+| Datacenter 3 name | `<dc_name_3>` | No | Used only for additional datacenter or failure-domain scenarios. | `dc-c` | - |
+| Datacenter 3 failure domain name | `<fd_name_3>` | No | Used only for additional datacenter or failure-domain scenarios. | `fd-c` | - |
+| Datacenter 3 deployment zone name | `<dz_name_3>` | No | Used only for additional datacenter or failure-domain scenarios. | `dz-c` | - |
+| Datacenter 3 compute cluster | `<compute_cluster_3>` | No | Used only for additional datacenter or failure-domain scenarios. | `compute-c` | - |
+| Datacenter 3 default datastore | `<default_datastore_3>` | No | Used only for additional datacenter or failure-domain scenarios. | `datastore-c` | - |
+| Datacenter 3 vCenter resource pool path | `<resource_pool_path_3>` | No | Used only for additional datacenter or failure-domain scenarios. | `/dc-c/host/compute-c/Resources` | - |
+
+### Second NIC parameters
+
+| Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
+|-----------|-------------|----------|---------------------|---------|--------------|
+| Secondary network name | `<nic2_network_name>` | No | Used only when nodes require a second NIC. | `pg-management` | - |
+| Secondary guest NIC name | `<nic2_device_name>` | No | Set it only when you need to force the guest NIC name. | `eth1` | - |
+| Secondary gateway | `<nic2_gateway>` | No | Used only when nodes require a second NIC. | `10.20.10.1` | - |
+| Secondary prefix length | `<nic2_prefix>` | No | Used with each secondary NIC IP address. | `24` | - |
+| Secondary DNS server 1 | `<nic2_dns_1>` | No | Used only when nodes require a second NIC. | `10.20.0.10` | - |
+| Control plane node 1 secondary IP | `<master_01_nic2_ip>` | No | Used only when nodes require a second NIC. | `10.20.10.11` | - |
+| Control plane node 2 secondary IP | `<master_02_nic2_ip>` | No | Used only when nodes require a second NIC. | `10.20.10.12` | - |
+| Control plane node 3 secondary IP | `<master_03_nic2_ip>` | No | Used only when nodes require a second NIC. | `10.20.10.13` | - |
+| Worker node 1 secondary IP | `<worker_01_nic2_ip>` | No | Used only when nodes require a second NIC. | `10.20.10.21` | - |
+| Worker node 2 secondary IP | `<worker_02_nic2_ip>` | No | Used when workers are expanded and require a second NIC. | `10.20.10.22` | - |
+
+## Final Readiness Check
+
+Before you start the deployment, confirm all of the following items:
+
+1. The `global` cluster is reachable.
+2. Ensure that the two cluster plugins are installed: Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider.
+3. `ClusterResourceSet=true` is enabled.
+4. The vCenter server, username, password, and thumbprint are collected.
+5. The control plane VIP, load balancer, and port `6443` are ready.
+6. The Pod CIDR, Service CIDR, and `kube-ovn-join-cidr` do not overlap with existing networks.
+7. The VM template is available in every required datacenter.
+8. The required datastores and vCenter resource pool paths are confirmed.
+9. The machine config pool values for the minimum single-datacenter topology are complete.
+10. The baseline system disk and data disk sizing is confirmed.
+11. Every required parameter has a real value.
+
+## Next Steps
+
+After you complete this checklist, continue with [Create a Cluster in the `global` Cluster](./create-cluster-in-global.mdx).

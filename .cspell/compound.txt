@@ -2,3 +2,7 @@ dcsclusters
 dcsiphostnamepools
 dcsmachines
 dcsmachinetemplates
+hcsclusters
+hcsmachines
+hcsmachineconfigpools
+hcsmachinetemplates

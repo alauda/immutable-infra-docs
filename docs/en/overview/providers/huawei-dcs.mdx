@@ -1,0 +1,96 @@
+---
+weight: 10
+title: Huawei DCS Provider
+author: dev@alauda.io
+category: introduction
+queries:
+  - huawei dcs provider
+  - dcs cluster management
+  - dcs infrastructure provider
+---
+
+# Huawei DCS Provider
+
+## Overview
+
+The Huawei DCS Infrastructure Provider enables Immutable Infrastructure on Huawei Datacenter Virtualization Solution (DCS) platform.
+
+DCS (Datacenter Virtualization Solution) is Huawei's virtualization platform that provides enterprise-grade virtualization capabilities. The DCS Provider integrates with DCS to manage virtual machines, networks, and storage resources for Kubernetes clusters.
+
+## Key Features
+
+- **Virtual Machine Management**: Provision and manage VMs on DCS platform
+- **Network Configuration**: Support for multi-NIC configurations with customizable network settings
+- **Storage Management**: Flexible disk configuration with support for multiple datastores
+- **High Availability**: Built-in support for highly available control plane deployments
+- **Rolling Updates**: Automated rolling updates for zero-downtime maintenance
+
+## Cluster Management Capabilities
+
+The DCS Provider always supports **YAML-based** cluster management through Cluster API manifests.
+It also supports **UI-based** cluster management when **Fleet Essentials** is installed and **Alauda Container Platform DCS Infrastructure Provider** is `1.0.13` or later.
+
+### UI-Based Management (Fleet Essentials)
+
+Fleet Essentials provides the UI extension anchors that allow Alauda Container Platform DCS Infrastructure Provider to add DCS-specific pages dynamically.
+When Fleet Essentials is installed and the provider version is `1.0.13` or later, you can manage DCS clusters through the web UI:
+
+**Infrastructure Resource Management**:
+- [Cloud Credentials](../../infrastructure/huawei-dcs.mdx#cloud-credentials) - Store DCS platform access credentials
+- [IP Pools](../../infrastructure/huawei-dcs.mdx#ip-pools) - Manage IP address allocations with multi-NIC support
+- [Machine Templates](../../infrastructure/huawei-dcs.mdx#machine-templates) - Define VM specifications for Control Plane and Worker Nodes
+
+**Cluster Lifecycle**:
+- [Create Clusters](../../create-cluster/huawei-dcs.mdx) - 5-step wizard workflow for guided cluster creation
+- View cluster details with Overview, Nodes, Node Pools, and Aligned Extensions tabs
+- [Upgrade Clusters](../../upgrade-cluster/huawei-dcs.mdx) - Two-phase upgrade: Distribution Version → Kubernetes
+- Destroy clusters with confirmation dialogs
+
+**Node Pool Management**:
+- View Control Plane and Worker Node Pools
+- Add Worker Node Pools with configurable replicas and rollout strategies
+- Delete Worker Node Pools
+- Upgrade Kubernetes version per Node Pool
+- View detailed Conditions for Control Plane Node Pool
+
+### YAML-Based Management
+
+For automation and GitOps workflows, you can manage DCS clusters using YAML manifests. This workflow does not depend on Fleet Essentials:
+
+- Define infrastructure resources (Secret, DCSIpHostnamePool, DCSMachineTemplate)
+- Create cluster resources (KubeadmControlPlane, DCSCluster, Cluster)
+- Manage worker nodes (MachineDeployment, KubeadmConfigTemplate)
+- Perform rolling updates and upgrades
+
+See [Creating Clusters on Huawei DCS](../../create-cluster/huawei-dcs.mdx) for YAML-based instructions.
+
+## Supported Kubernetes Versions
+
+The DCS Provider supports Kubernetes versions as defined in the [OS Support Matrix](../../overview/os-support-matrix.mdx). Each MicroOS release includes a specific Kubernetes version, and VM templates must be created using the corresponding MicroOS images.
+
+## Architecture
+
+The DCS Provider implements the Cluster API infrastructure provider specification:
+
+- **DCSCluster**: Represents the DCS infrastructure cluster
+- **DCSMachine**: Represents individual virtual machines
+- **DCSMachineTemplate**: Defines VM templates for machine creation
+- **DCSIpHostnamePool**: Manages IP and hostname allocations for machines
+
+## Requirements
+
+- DCS platform with API access
+- Interface interconnection user with administrator role
+- Virtual machine templates with MicroOS images
+- Shared storage with cross-host access capability
+
+## Documentation
+
+For detailed instructions on using the DCS Provider, see:
+
+- [Installation](../../install/huawei-dcs.mdx)
+- [Infrastructure Resources](../../infrastructure/huawei-dcs.mdx)
+- [Creating Clusters](../../create-cluster/huawei-dcs.mdx)
+- [Managing Nodes](../../manage-nodes/huawei-dcs.mdx)
+- [Upgrading Clusters](../../upgrade-cluster/huawei-dcs.mdx)
+- [API Reference](../../apis/providers/huawei-dcs/)

@@ -1,0 +1,191 @@
+---
+weight: 30
+title: Managing Nodes on VMware vSphere
+author: dev@alauda.io
+category: howto
+queries:
+  - manage vmware vsphere worker nodes
+  - scale worker nodes on vsphere cluster
+  - update worker node pool on vsphere
+---
+
+# Managing Nodes on VMware vSphere
+
+This document explains how to manage worker nodes on VMware vSphere after the baseline cluster is running. Node lifecycle operations are managed through `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` resources.
+
+## Prerequisites
+
+Before you begin, ensure the following conditions are met:
+
+- The workload cluster was created successfully. See [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere/).
+- The worker machine config pool has enough available slots.
+- The control plane is healthy and reachable.
+- You know which manifest files currently define the worker nodes.
+
+## Steps
+
+<Steps>
+### Scale out worker nodes
+
+When you add more worker nodes, update the worker machine config pool before you increase the replica count.
+
+1. Add one or more new node slots to `03-vspheremachineconfigpool-worker.yaml`.
+2. Update `replicas` in `30-workers-md-0.yaml`.
+3. Apply the updated manifests.
+
+Use the following order:
+
+```bash
+kubectl apply -f 03-vspheremachineconfigpool-worker.yaml
+kubectl apply -f 30-workers-md-0.yaml
+```
+
+**Note:** If `MachineDeployment.spec.replicas` is greater than the number of available slots in `VSphereMachineConfigPool.spec.configs[]`, the new worker nodes cannot be assigned correctly.
+
+### Roll out updated worker node configuration \{#roll-out-updated-worker-node-configuration}
+
+When you need to change worker VM specifications, create a new `VSphereMachineTemplate` and update the `MachineDeployment` to reference it. This triggers a rolling update that replaces worker nodes with the new configuration.
+
+:::warning
+**Templates are immutable**
+
+`VSphereMachineTemplate` resources cannot be modified in-place. You must create a new template with a new name and update the reference in `MachineDeployment`. For more information, refer to the [Cluster API documentation](https://cluster-api.sigs.k8s.io/tasks/updating-machine-templates#updating-machine-infrastructure-and-bootstrap-templates).
+:::
+
+Typical changes include:
+
+- VM template name (`spec.template.spec.template`)
+- CPU or memory sizing (`numCPUs`, `memoryMiB`)
+- System disk or data disk layout (`diskGiB`, `dataDisks`)
+
+1. **Export the existing template**
+
+   ```bash
+   kubectl get vspheremachinetemplate <cluster_name>-worker -n <namespace> -o yaml > new-worker-template.yaml
+   ```
+
+2. **Modify the template**
+
+   Edit `new-worker-template.yaml`:
+   - Set `metadata.name` to a new unique name (for example, `<cluster_name>-worker-v2`)
+   - Update the desired specification fields
+   - Remove server-generated fields: `metadata.resourceVersion`, `metadata.uid`, `metadata.generation`, `metadata.creationTimestamp`, `metadata.managedFields`, `metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]`, and `status`
+
+3. **Apply the new template**
+
+   ```bash
+   kubectl apply -f new-worker-template.yaml
+   ```
+
+4. **Update the MachineDeployment reference**
+
+   ```bash
+   kubectl patch machinedeployment <cluster_name>-md-0 -n <namespace> \
+     --type='merge' -p='{
+       "spec": {
+         "template": {
+           "spec": {
+             "infrastructureRef": {
+               "name": "<new-template-name>"
+             }
+           }
+         }
+       }
+     }'
+   ```
+
+   If you also need to change bootstrap settings, see [Updating Bootstrap Templates](#updating-bootstrap-templates) below.
+
+5. **Monitor the rolling update**
+
+   ```bash
+   kubectl -n <namespace> get machinedeployment <cluster_name>-md-0 -w
+   kubectl -n <namespace> get machine
+   ```
+
+:::tip
+**Rolling back a failed update**
+
+If the rolling update fails (for example, new VMs fail to boot), revert the `MachineDeployment` reference back to the previous template name. The old template still exists and Cluster API will roll back to it.
+:::
+
+### Verify worker node status
+
+Run the following commands to verify the management-cluster and workload-cluster status:
+
+```bash
+kubectl -n <namespace> get machinedeployment,machine,vspheremachine,vspherevm
+kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get nodes -o wide
+```
+
+Confirm the following results:
+
+- The target worker replica count is reached.
+- Every new worker node joins the cluster.
+- The nodes eventually become `Ready`.
+
+</Steps>
+
+## Updating Bootstrap Templates \{#updating-bootstrap-templates}
+
+`KubeadmConfigTemplate` resources are also immutable. Changes to an existing template do not trigger rollouts of existing machines. To update bootstrap configuration, create a new template and update the `MachineDeployment` reference.
+
+1. **Export the existing template**
+
+   ```bash
+   kubectl get kubeadmconfigtemplate <cluster_name>-worker-bootstrap -n <namespace> -o yaml > new-bootstrap-template.yaml
+   ```
+
+2. **Modify the template**
+
+   Edit `new-bootstrap-template.yaml`:
+   - Set `metadata.name` to a new unique name (for example, `<cluster_name>-worker-bootstrap-v2`)
+   - Update the desired bootstrap configuration fields
+   - Remove the same server-generated fields listed in [Roll out updated worker node configuration](#roll-out-updated-worker-node-configuration) step 2
+
+3. **Apply the new template**
+
+   ```bash
+   kubectl apply -f new-bootstrap-template.yaml
+   ```
+
+4. **Update the MachineDeployment reference**
+
+   ```bash
+   kubectl patch machinedeployment <cluster_name>-md-0 -n <namespace> \
+     --type='merge' -p='{
+       "spec": {
+         "template": {
+           "spec": {
+             "bootstrap": {
+               "configRef": {
+                 "name": "<new-bootstrap-template-name>"
+               }
+             }
+           }
+         }
+       }
+     }'
+   ```
+
+   The Cluster API controller triggers a rolling update. Existing machines continue using the old bootstrap configuration until they are replaced.
+
+:::info
+**Upgrading Kubernetes version?** See [Upgrading Clusters on VMware vSphere](../upgrade-cluster/vmware-vsphere.mdx) for the full control plane and worker upgrade workflow.
+:::
+
+## Troubleshooting
+
+Use the following checks first when worker node management fails:
+
+- Check `VSphereMachine` conditions for `MachineConfigPoolReady`. If `False`, the reason indicates why slot allocation failed:
+  - `PoolBoundToOtherConsumer`: the pool is already bound to a different `KubeadmControlPlane` or `MachineDeployment`.
+  - `NoAvailableSlots`: no slots match the required datacenter or failure domain.
+- Verify that the worker machine config pool still has free slots.
+- Verify that the worker IP addresses, gateway, and DNS settings are correct.
+- Verify that the worker VM template still matches the required Kubernetes version and guest-tools requirements.
+- Check `VSphereVM.status.addresses` when a node is waiting for IP allocation.
+
+## Next Steps
+
+If you need to change worker networking, placement, or disk topology, continue with [Extending a VMware vSphere Cluster Deployment](../create-cluster/vmware-vsphere/extension-scenarios.mdx).

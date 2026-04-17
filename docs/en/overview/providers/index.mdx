@@ -1,0 +1,57 @@
+---
+weight: 35
+title: Providers
+author: dev@alauda.io
+category: index
+queries:
+  - infrastructure providers
+  - cluster providers
+  - dcs hcs vsphere providers
+---
+
+# Infrastructure Providers
+
+<Overview />
+
+Immutable Infrastructure supports multiple infrastructure platforms through pluggable providers. Each provider integrates with a specific IaaS platform to deliver cluster lifecycle management capabilities.
+
+## Supported Providers
+
+| Provider | Description | Status |
+|----------|-------------|--------|
+| [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
+| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
+| [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | 🚧 In Development |
+| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | 📋 Planned |
+
+## Fleet Essentials Plugin
+
+Fleet Essentials is a core plugin that provides a shared web UI framework for cluster management. Infrastructure Providers can extend it through UI extension anchors to add platform-specific pages and workflows.
+
+When installed, Fleet Essentials enables:
+
+- **Unified Cluster Management**: Single interface for managing clusters across all platforms
+- **Infrastructure Resource Management**: Configure cloud credentials, IP pools, and machine templates
+- **Cluster Lifecycle Operations**: Create, view, upgrade, and destroy clusters through guided workflows
+- **Node Pool Management**: Declarative node pool management with scaling and upgrade capabilities
+
+Fleet Essentials works with Infrastructure Providers to deliver platform-specific cluster management. Providers that implement these Fleet Essentials extension anchors can add their own cluster creation workflows and management pages.
+
+**Provider Extensions**:
+- **DCS Provider**: Alauda Container Platform DCS Infrastructure Provider `1.0.13` and later adds DCS-specific UI pages and workflows on Huawei DCS
+- **HCS Provider**: Enables UI-based cluster creation and management on Huawei Cloud Stack (coming soon)
+- **vSphere Provider**: Will enable UI-based cluster creation and management on VMware vSphere (in development)
+
+## Provider Architecture
+
+Each Infrastructure Provider is an independent plugin that integrates with the Cluster API framework to manage infrastructure resources on the target platform.
+
+### Components
+
+- **Infrastructure Provider**: Manages IaaS-specific resources (VMs, networks, storage)
+- **Bootstrap Provider (Kubeadm)**: Handles Kubernetes node initialization and configuration
+- **Control Plane Provider (Kubeadm)**: Manages Kubernetes control plane components
+
+### Provider Independence
+
+Infrastructure Providers are versioned independently from the core platform. A single-provider version can be compatible with multiple platform versions, providing flexibility in deployment and upgrade scenarios.

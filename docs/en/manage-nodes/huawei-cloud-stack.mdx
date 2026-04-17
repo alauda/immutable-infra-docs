@@ -1,0 +1,434 @@
+---
+weight: 20
+title: Managing Nodes on Huawei Cloud Stack
+author: chaozhou@alauda.io
+category: howto
+queries:
+  - hcs worker nodes
+  - hcs node management
+  - hcs machine deployment
+---
+
+# Managing Nodes on Huawei Cloud Stack
+
+This document explains how to manage worker nodes using Cluster API `Machine` resources on the Huawei Cloud Stack platform.
+
+## Prerequisites
+
+:::warning
+**Important Prerequisites**
+- The control plane must be deployed before performing node operations. See [Create Cluster](../create-cluster/huawei-cloud-stack.mdx) for setup instructions.
+- Ensure you have proper access to the HCS platform and required permissions.
+:::
+
+When using the YAML examples in this document, replace only values enclosed in `<>` with environment-specific values. Preserve the remaining fields unless your cluster policy requires a different value.
+
+## Overview
+
+Worker nodes are managed through Cluster API `Machine` resources, providing declarative and automated node lifecycle management. The deployment process involves:
+
+1. **Machine Configuration Pool** - Network settings for worker nodes
+2. **Machine Template** - VM specifications
+3. **Bootstrap Configuration** - Node initialization settings
+4. **Machine Deployment** - Orchestration of node creation and management
+
+## Worker Node Deployment
+
+### Step 1: Configure Machine Configuration Pool
+
+The `HCSMachineConfigPool` defines the network configuration for worker node VMs. You must plan and configure the IP addresses, hostnames, and other network parameters before deployment.
+
+:::warning
+**Pool Size Requirement**
+
+The pool must include at least as many entries as the number of worker nodes you plan to deploy. Insufficient entries will prevent node deployment.
+:::
+
+Use one subnet selector per `networks[]` entry. For new manifests, set either `subnetName` or `subnetId`, but not both. Existing manifests may keep the deprecated `subenetName` field; if you also add `subnetName` while updating that manifest, its value must exactly match `subenetName`. Do not supply conflicting values across `subenetName`, `subnetName`, and `subnetId`.
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: HCSMachineConfigPool
+metadata:
+  name: <worker-pool-name>
+  namespace: cpaas-system
+spec:
+  configs:
+    - hostname: <worker-1-hostname>
+      networks:
+        - subnetName: <subnet-name>
+          ipAddress: <worker-1-ip>
+    - hostname: <worker-2-hostname>
+      networks:
+        - subnetName: <subnet-name>
+          ipAddress: <worker-2-ip>
+    - hostname: <worker-3-hostname>
+      networks:
+        - subnetName: <subnet-name>
+          ipAddress: <worker-3-ip>
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `.spec.configs[]` | array | Yes | Non-empty list of worker node configurations |
+| `.spec.configs[].hostname` | string | Yes | VM hostname. Use lowercase letters, numbers, hyphens (`-`), or dots (`.`); the value must start and end with a lowercase letter or number and must not exceed 253 characters |
+| `.spec.configs[].networks[]` | array | Yes | Non-empty list of network configurations for the VM |
+| `.spec.configs[].networks[].subnetName` | string | No* | Recommended subnet name field for new manifests |
+| `.spec.configs[].networks[].subnetId` | string | No* | Subnet ID. Use this field instead of `subnetName` when the subnet name is ambiguous |
+| `.spec.configs[].networks[].ipAddress` | string | Yes | Static IP address for the worker VM |
+
+*For new manifests, set either `subnetName` or `subnetId`. Existing manifests may continue to use `subenetName`, and may add `subnetName` only if both fields use the same value. Do not provide conflicting subnet selector values.
+
+**Note:** The CRD schema lists `subnetName`, `subenetName`, and `subnetId` as optional fields and does not express their allowed combinations. Follow the provider-level rules above when writing manifests.
+
+### Step 2: Configure Machine Template
+
+The `HCSMachineTemplate` defines the VM specifications for worker nodes.
+
+Configure worker nodes with a system volume and data volumes for `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/cpaas`. You may add more data volumes, but preserve these paths so node bootstrap and platform components can use the expected runtime directories. These paths do not imply that data volumes will be preserved when nodes are replaced.
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: HCSMachineTemplate
+metadata:
+  name: <worker-machine-template>
+  namespace: cpaas-system
+spec:
+  template:
+    spec:
+      imageName: <vm-image-name>
+      flavorName: <instance-flavor>
+      availabilityZone: <availability-zone>
+      rootVolume:
+        type: SSD
+        size: 100
+      configPoolRef:
+        name: <worker-pool-name>
+      dataVolumes:
+        - size: 20
+          type: SSD
+          mountPath: /var/lib/kubelet
+          format: xfs
+        - size: 20
+          type: SSD
+          mountPath: /var/lib/containerd
+          format: xfs
+        - size: 10
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `.spec.template.spec.imageName` | string | Yes | VM image name |
+| `.spec.template.spec.flavorName` | string | Yes | Instance flavor |
+| `.spec.template.spec.availabilityZone` | string | No | Availability zone |
+| `.spec.template.spec.rootVolume.type` | string | Yes | Volume type |
+| `.spec.template.spec.rootVolume.size` | int | Yes | System disk size in GB |
+| `.spec.template.spec.configPoolRef.name` | string | Yes | Referenced HCSMachineConfigPool name |
+| `.spec.template.spec.dataVolumes[]` | array | No | Data volume configurations |
+| `.spec.template.spec.dataVolumes[].size` | int | Yes* | Disk size in GB |
+| `.spec.template.spec.dataVolumes[].type` | string | Yes* | Volume type |
+| `.spec.template.spec.dataVolumes[].mountPath` | string | Yes* | Mount path |
+| `.spec.template.spec.dataVolumes[].format` | string | Yes* | File system format |
+
+*Required when dataVolumes is specified.
+
+**Note:** Do not set runtime identity fields such as `providerID` or `serverId` in `HCSMachineTemplate` manifests. The provider assigns these values when it creates HCS instances.
+
+### Step 3: Configure Bootstrap Template
+
+The `KubeadmConfigTemplate` defines the bootstrap configuration for worker nodes.
+
+```yaml
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+kind: KubeadmConfigTemplate
+metadata:
+  name: <worker-config-template>
+  namespace: cpaas-system
+spec:
+  template:
+    spec:
+      files:
+        - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+          owner: root:root
+          permissions: "0644"
+          content: |
+            {
+              "apiVersion": "kubelet.config.k8s.io/v1beta1",
+              "kind": "KubeletConfiguration",
+              "protectKernelDefaults": true,
+              "staticPodPath": null,
+              "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
+              "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key",
+              "streamingConnectionIdleTimeout": "5m",
+              "clientCAFile": "/etc/kubernetes/pki/ca.crt"
+            }
+      postKubeadmCommands:
+        - chmod 600 /var/lib/kubelet/config.yaml
+      joinConfiguration:
+        patches:
+          directory: /etc/kubernetes/patches
+        nodeRegistration:
+          kubeletExtraArgs:
+            volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+```
+
+The HCS controller injects `/etc/kubernetes/pki/kubelet.crt` and `/etc/kubernetes/pki/kubelet.key` while resolving worker cloud-init data. The kubelet patch above configures kubelet to use those controller-provided certificate files.
+
+### Step 4: Configure Machine Deployment
+
+The `MachineDeployment` orchestrates the creation and management of worker nodes.
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: <worker-machine-deployment>
+  namespace: cpaas-system
+spec:
+  clusterName: <cluster-name>
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    spec:
+      clusterName: <cluster-name>
+      version: <kubernetes-version>
+      nodeDrainTimeout: 1m
+      nodeDeletionTimeout: 5m
+      bootstrap:
+        configRef:
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          kind: KubeadmConfigTemplate
+          name: <worker-config-template>
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: HCSMachineTemplate
+        name: <worker-machine-template>
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `.spec.clusterName` | string | Yes | Target cluster name |
+| `.spec.replicas` | int | Yes | Number of worker nodes |
+| `.spec.template.spec.bootstrap.configRef` | object | Yes | Reference to KubeadmConfigTemplate |
+| `.spec.template.spec.infrastructureRef` | object | Yes | Reference to HCSMachineTemplate |
+| `.spec.template.spec.version` | string | Yes | Kubernetes version |
+| `.spec.strategy.rollingUpdate.maxSurge` | int | No | Maximum nodes above desired during update |
+| `.spec.strategy.rollingUpdate.maxUnavailable` | int | No | Maximum unavailable nodes during update |
+
+## Node Management Operations
+
+This section covers common operational tasks for managing worker nodes.
+
+### Scaling Worker Nodes
+
+Worker node scaling allows you to adjust cluster capacity based on workload demands.
+
+#### Adding Worker Nodes
+
+Increase the number of worker nodes to handle increased workload.
+
+**Procedure**:
+
+1. **Check Current Node Status**
+
+   ```bash
+   # List all machines in the cluster
+   kubectl get machines -n cpaas-system
+
+   # List machines for a specific MachineDeployment
+   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment>
+   ```
+
+2. **Extend Configuration Pool**
+
+   Add new IP configurations to the pool for the additional nodes.
+
+   ```bash
+   kubectl get hcsmachineconfigpool <worker-pool-name> -n cpaas-system -o yaml
+   ```
+
+   Modify the pool to include new IP entries, then apply:
+
+   ```bash
+   kubectl apply -f <updated-pool-config.yaml>
+   ```
+
+3. **Scale Up the MachineDeployment**
+
+   Update the `replicas` field to the desired number of nodes:
+
+   ```bash
+   kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
+     --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
+   ```
+
+4. **Monitor the Scaling Progress**
+
+   ```bash
+   # Watch machines being created
+   kubectl get machines -n cpaas-system -w
+
+   # Check MachineDeployment status
+   kubectl get machinedeployment <worker-machine-deployment> -n cpaas-system
+   ```
+
+#### Removing Worker Nodes
+
+Decrease the number of worker nodes to reduce cluster capacity.
+
+:::warning
+**Data Loss Warning**
+
+Scaling down removes nodes and their associated disks. Ensure:
+- Workloads can tolerate node loss through proper replication
+- No critical data is stored only on the nodes being removed
+- Applications are designed for horizontal scaling
+:::
+
+**Procedure**:
+
+1. **Scale Down the MachineDeployment**
+
+   ```bash
+   kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
+     --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
+   ```
+
+2. **Monitor the Removal Progress**
+
+   ```bash
+   kubectl get machines -n cpaas-system -w
+   ```
+
+   The Cluster API controller will:
+   - Drain the selected nodes (evict pods if possible)
+   - Delete the underlying VMs from the HCS platform
+   - Remove the machine resources
+
+### Upgrading Machine Infrastructure
+
+To upgrade worker machine specifications (CPU, memory, disk, VM image), follow these steps:
+
+**Note:** Worker infrastructure upgrades rely on Cluster API rolling replacement. The current HCS provider does not preserve or reattach data disks during node replacement. When a worker node is replaced, the old VM and its attached volumes may be deleted together. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
+
+1. **Create New Machine Template**
+
+   Copy the existing `HCSMachineTemplate` and modify the required values:
+   - `imageName` - VM image
+   - `flavorName` - Instance type
+   - `rootVolume.size` - System disk size
+   - `dataVolumes` - Data disk configurations
+
+     ```bash
+     kubectl get hcsmachinetemplate <current-template> -n cpaas-system -o yaml > new-template.yaml
+     ```
+
+   Then edit `new-template.yaml` before applying:
+   - Change `metadata.name` to `<new-template>`
+   - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`
+   - Remove server-generated fields such as:
+     - `metadata.resourceVersion`
+     - `metadata.uid`
+     - `metadata.creationTimestamp`
+     - `metadata.managedFields`
+     - `status`
+
+2. **Deploy New Template**
+
+   ```bash
+   kubectl apply -f new-template.yaml -n cpaas-system
+   ```
+
+3. **Update Machine Deployment**
+
+   Modify the `MachineDeployment` to reference the new template:
+
+   ```bash
+   kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
+     --type='merge' -p='{"spec":{"template":{"spec":{"infrastructureRef":{"name":"<new-template>"}}}}}'
+   ```
+
+4. **Monitor Rolling Update**
+
+   ```bash
+   kubectl get machines -n cpaas-system -w
+   ```
+
+### Upgrading Kubernetes Version \{#upgrading-kubernetes-version}
+
+Kubernetes version upgrades require coordinated updates to both the `MachineDeployment` and the underlying VM template.
+
+**Note:** Ensure the VM template's Kubernetes version matches the version specified in the `MachineDeployment`. Mismatched versions will cause node join failures.
+
+**Procedure**:
+
+1. **Update Machine Template**
+
+   Create a new `HCSMachineTemplate` with an updated `imageName` that supports the target Kubernetes version.
+
+2. **Update MachineDeployment**
+
+   Modify the following fields:
+   - `spec.template.spec.version` - Target Kubernetes version
+   - `spec.template.spec.infrastructureRef.name` - New machine template name
+
+     ```bash
+     kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
+       --type='merge' -p='{"spec":{"template":{"spec":{"version":"<kubernetes-version>","infrastructureRef":{"name":"<new-template>"}}}}}'
+     ```
+
+3. **Monitor Upgrade**
+
+   Verify that new nodes join the cluster with the correct Kubernetes version:
+
+   ```bash
+   kubectl get nodes
+   ```
+
+## Verification
+
+After deploying worker nodes, verify the deployment:
+
+```bash
+# Check machine status
+kubectl get machines -n cpaas-system
+
+# Verify nodes are Ready
+kubectl get nodes
+
+# Check MachineDeployment status
+kubectl get machinedeployment -n cpaas-system
+```
+
+## Troubleshooting
+
+### Viewing Controller Logs
+
+```bash
+# View HCS controller logs
+kubectl logs -n cpaas-system deployment/hcs-controller-manager
+
+# View machine details
+kubectl describe hcsmachine <machine-name> -n cpaas-system
+```
+
+### Common Issues
+
+**Node fails to join cluster**
+
+- Verify the VM template matches the Kubernetes version
+- Check network connectivity between nodes
+- Ensure the configuration pool has available entries
+
+**Machine stuck in provisioning**
+
+- Check HCS platform for resource availability
+- Verify credentials and permissions
+- Review controller logs for error messages
