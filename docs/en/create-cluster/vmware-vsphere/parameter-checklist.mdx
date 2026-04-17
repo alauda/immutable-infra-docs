@@ -26,7 +26,7 @@ Use this checklist in the following scenarios:
 Before you begin, ensure the following conditions are met:
 
 - You can access the `global` cluster with `kubectl`.
-- You know which namespace will store the workload cluster objects.
+- You know which namespace will store the workload cluster objects. Currently only `cpaas-system` is supported.
 - You have access to the target vCenter inventory, networks, datastores, and templates.
 
 ## How to Use This Checklist
@@ -116,7 +116,7 @@ Use the following table to record the required values and validation results.
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
 | `global` cluster kubeconfig path | - | Yes | `kubectl get ns` succeeds with this kubeconfig. | `/path/to/kubeconfig` | - |
-| Workload object namespace | `<namespace>` | Yes | The namespace that stores workload cluster objects. | `cpaas-system` | - |
+| Workload object namespace | `<namespace>` | Yes | The namespace that stores workload cluster objects. Currently only `cpaas-system` is supported; using any other value may cause cluster creation to fail. | `cpaas-system` | - |
 | `cluster-api-provider-vsphere` is installed | - | Yes | `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere` returns a result. | `Yes` | - |
 | `cluster-api-provider-kubeadm` is installed | - | Yes | `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-kubeadm` returns a result. | `Yes` | - |
 | `ClusterResourceSet=true` is enabled | - | Yes | The `capi-controller-manager` arguments include `ClusterResourceSet=true`. | `Yes` | - |
