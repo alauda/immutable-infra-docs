@@ -25,25 +25,23 @@ Install the following plugins on the <Term name="product" textCase="capitalize" 
 
 For detailed installation instructions, refer to the [Installation Guide](../install/huawei-cloud-stack.mdx).
 
-### 2. HCS Platform Preparation
+### 2. HCS Infrastructure Input Preparation
 
-Ensure the following HCS resources are configured:
-- **VPC**: Virtual Private Cloud for network isolation
-- **Subnet**: At least one subnet for VM deployment
-- **Security Group**: Proper security group rules for cluster communication
+Prepare all HCS-specific inputs before writing any YAML in this document:
 
-### 3. HCS Credentials
+- HCS credential Secret values
+- Provider-recognized compute values such as `imageName`, `flavorName`, and `availabilityZone`
+- Cluster network inventory, including the subnets and free IP ranges used by the cluster
+- Control plane ELB address planning, including `vipAddress`, `vipSubnetName`, and optional fixed L4 and L7 IPs
+- Static IP pool planning for control plane and worker nodes
 
-Prepare HCS access credentials with the following information:
-- **AccessKey**: HCS access key ID
-- **SecretKey**: HCS access key
-- **ProjectID**: HCS project ID
-- **Region**: HCS region (e.g., `cn-global-1`)
-- **ExternalGlobalDomain**: HCS domain name
+See [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx) for the complete checklist, source information, and constraints.
 
 ## Cluster Creation Overview
 
 At a high level, you'll create the following Cluster API resources in the <Term name="product" textCase="capitalize" />'s `global` cluster to provision infrastructure and bootstrap a functional Kubernetes cluster.
+
+Before you write any YAML in this page, complete the preparation checklist in [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx). This checklist covers the values that the provider expects, where to get them, and which values must be planned before you fill the manifests.
 
 :::warning
 **Important Namespace Requirement**
@@ -94,11 +92,11 @@ data:
 
 | Parameter | Description |
 |-----------|-------------|
-| `.data.accessKey` | HCS access key ID (base64-encoded) |
-| `.data.secretKey` | HCS access key (base64-encoded) |
-| `.data.projectID` | HCS project ID (base64-encoded) |
-| `.data.region` | HCS region such as `cn-global-1` (base64-encoded) |
-| `.data.externalGlobalDomain` | HCS domain name (base64-encoded) |
+| `.data.accessKey` | HCS access key ID from **My Settings** > **Access Keys** (base64-encoded) |
+| `.data.secretKey` | HCS secret access key from **My Settings** > **Access Keys** (base64-encoded) |
+| `.data.projectID` | Resource Space ID from **My Settings** > **Resource Spaces** (base64-encoded) |
+| `.data.region` | HCS region API value used by the provider (base64-encoded). Tenant administrators cannot retrieve this value from the HCS UI; get it from the HCS administrator |
+| `.data.externalGlobalDomain` | HCS platform access domain used by the provider (base64-encoded) |
 
 You can reuse an existing HCS credential Secret. Its name does not need to match the cluster name, but `HCSCluster.spec.identityRef.name` must reference this Secret.
 
@@ -113,6 +111,8 @@ The configuration pool must include at least as many entries as the number of co
 :::
 
 Use one subnet selector per `networks[]` entry. For new manifests, set either `subnetName` or `subnetId`, but not both. Existing manifests may keep the deprecated `subenetName` field; if you also add `subnetName` while updating that manifest, its value must exactly match `subenetName`. Do not supply conflicting values across `subenetName`, `subnetName`, and `subnetId`.
+
+If you use `subnetName` in the machine configuration pool, include the same subnet name in `HCSCluster.spec.network.subnets`.
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -201,9 +201,9 @@ spec:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `.spec.template.spec.imageName` | string | Yes | VM image name such as `microos-4.2.1-new` |
-| `.spec.template.spec.flavorName` | string | Yes | Instance flavor such as `c3.xlarge.2` |
-| `.spec.template.spec.availabilityZone` | string | No | Availability zone such as `az1`, `az2` |
+| `.spec.template.spec.imageName` | string | Yes | HCS image name such as `microos-4.2.1-new` |
+| `.spec.template.spec.flavorName` | string | Yes | Provider-recognized HCS API value matched against `Flavor.Name`. Do not use the tenant UI display name |
+| `.spec.template.spec.availabilityZone` | string | No | Provider-recognized HCS API value matched against `ZoneName`. Do not use the tenant UI display name |
 | `.spec.template.spec.rootVolume.type` | string | Yes | Volume type (`SSD` or `SATA`) |
 | `.spec.template.spec.rootVolume.size` | int | Yes | System disk size in GB |
 | `.spec.template.spec.configPoolRef.name` | string | Yes | Referenced HCSMachineConfigPool name |
@@ -216,6 +216,8 @@ spec:
 *Required when dataVolumes is specified.
 
 **Note:** Do not set runtime identity fields such as `providerID` or `serverId` in `HCSMachineTemplate` manifests. The provider assigns these values when it creates HCS instances.
+
+**Note:** Tenant administrators cannot retrieve the provider-recognized `flavorName` and `availabilityZone` values from the HCS UI. Get the exact values from the HCS administrator before you apply the manifest.
 
 ### Configure KubeadmControlPlane
 
@@ -371,7 +373,11 @@ The HCS provider creates an ELB on the HCS platform for the Kubernetes API serve
 
 If you want all ELB-related addresses to be fixed, provide `vipAddress`, `elbVirsubnetL4Ips`, and `elbVirsubnetL7Ips`. Each `elbVirsubnetL4Ips[].ips` and `elbVirsubnetL7Ips[].ips` entry must contain two IPs. If you omit the L4 or L7 virtual subnet IPs, HCS allocates them randomly.
 
-If you set `vipDomainName`, maintain DNS so that the domain resolves to `vipAddress`.
+If you set `vipDomainName`, configure HCS Cloud DNS Private Zones so that the domain resolves to `vipAddress`.
+
+List every cluster subnet in `spec.network.subnets` before you reference it anywhere else. `vipSubnetName`, `elbVirsubnetL4Ips[].subnetName`, `elbVirsubnetL7Ips[].subnetName`, and the `subnetName` values used by `HCSMachineConfigPool` must all exist in `spec.network.subnets`.
+
+Do not disable Hybrid Load Balancing on the provider-created ELB after the cluster is created. The cluster depends on that ELB mode so nodes can reach the API server through the ELB address.
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -410,18 +416,18 @@ spec:
 |-----------|------|----------|-------------|
 | `.spec.networkType` | string | Yes | Network type, currently supports `kube-ovn` |
 | `.spec.network.vpc.name` | string | Yes | VPC name |
-| `.spec.network.subnets[].name` | string | Yes | Subnet name list |
+| `.spec.network.subnets[].name` | string | Yes | Complete subnet inventory used by this cluster. Every subnet referenced elsewhere in the cluster manifests must appear in this list |
 | `.spec.network.securityGroup.name` | string | Yes | Security group name |
 | `.spec.identityRef.name` | string | Yes | Non-empty credential Secret name referenced by `HCSCluster`; this value does not need to match the cluster name |
-| `.spec.controlPlaneLoadBalancer` | object | Yes | ELB settings for exposing the control plane API server |
+| `.spec.controlPlaneLoadBalancer` | object | Yes | ELB settings for the provider-created control plane ELB |
 | `.spec.controlPlaneLoadBalancer.vipAddress` | string | Yes | Fixed VIP for the control plane ELB |
-| `.spec.controlPlaneLoadBalancer.vipSubnetName` | string | Yes | Subnet name that contains the ELB VIP |
-| `.spec.controlPlaneLoadBalancer.vipDomainName` | string | No | Domain name for the VIP; you must maintain DNS so it resolves to `vipAddress` |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[]` | array | No* | L4 virtual subnet IP groups used by mixed load balancing |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[].subnetName` | string | Yes* | Subnet name for the L4 virtual subnet IPs |
+| `.spec.controlPlaneLoadBalancer.vipSubnetName` | string | Yes | Subnet name that contains the ELB VIP. This subnet must also appear in `.spec.network.subnets` |
+| `.spec.controlPlaneLoadBalancer.vipDomainName` | string | No | Domain name for the VIP. Configure HCS Cloud DNS Private Zones so it resolves to `vipAddress` |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[]` | array | No* | L4 virtual subnet IP groups used by Hybrid Load Balancing |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[].subnetName` | string | Yes* | Subnet name for the L4 virtual subnet IPs. This subnet must also appear in `.spec.network.subnets` |
 | `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[].ips[]` | string | Yes* | Two fixed L4 virtual subnet IPs |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[]` | array | No* | L7 virtual subnet IP groups used by mixed load balancing |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[].subnetName` | string | Yes* | Subnet name for the L7 virtual subnet IPs |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[]` | array | No* | L7 virtual subnet IP groups used by Hybrid Load Balancing |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[].subnetName` | string | Yes* | Subnet name for the L7 virtual subnet IPs. This subnet must also appear in `.spec.network.subnets` |
 | `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[].ips[]` | string | Yes* | Two fixed L7 virtual subnet IPs |
 
 *Required when you want to fix all ELB-related addresses. If you omit the L4 or L7 virtual subnet IPs, HCS allocates them randomly.

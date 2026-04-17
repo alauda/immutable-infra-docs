@@ -34,6 +34,8 @@ Worker nodes are managed through Cluster API `Machine` resources, providing decl
 
 ## Worker Node Deployment
 
+Before you prepare worker YAML, complete the HCS input checklist in [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx). In particular, list every worker subnet in `HCSCluster.spec.network.subnets`, allocate worker IPs from planned free IP ranges, and collect the provider-recognized `flavorName` and `availabilityZone` API values.
+
 ### Step 1: Configure Machine Configuration Pool
 
 The `HCSMachineConfigPool` defines the network configuration for worker node VMs. You must plan and configure the IP addresses, hostnames, and other network parameters before deployment.
@@ -45,6 +47,8 @@ The pool must include at least as many entries as the number of worker nodes you
 :::
 
 Use one subnet selector per `networks[]` entry. For new manifests, set either `subnetName` or `subnetId`, but not both. Existing manifests may keep the deprecated `subenetName` field; if you also add `subnetName` while updating that manifest, its value must exactly match `subenetName`. Do not supply conflicting values across `subenetName`, `subnetName`, and `subnetId`.
+
+If you use `subnetName` for worker nodes, include the same subnet name in the parent `HCSCluster.spec.network.subnets` list before you create or scale the worker pool.
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -87,6 +91,8 @@ The `HCSMachineTemplate` defines the VM specifications for worker nodes.
 
 Configure worker nodes with a system volume and data volumes for `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/cpaas`. You may add more data volumes, but preserve these paths so node bootstrap and platform components can use the expected runtime directories. These paths do not imply that data volumes will be preserved when nodes are replaced.
 
+Use the provider-recognized `flavorName` and `availabilityZone` API values when you prepare the worker template. These values are not the tenant UI display names.
+
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: HCSMachineTemplate
@@ -122,8 +128,8 @@ spec:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `.spec.template.spec.imageName` | string | Yes | VM image name |
-| `.spec.template.spec.flavorName` | string | Yes | Instance flavor |
-| `.spec.template.spec.availabilityZone` | string | No | Availability zone |
+| `.spec.template.spec.flavorName` | string | Yes | Provider-recognized HCS API value matched against `Flavor.Name` |
+| `.spec.template.spec.availabilityZone` | string | No | Provider-recognized HCS API value matched against `ZoneName` |
 | `.spec.template.spec.rootVolume.type` | string | Yes | Volume type |
 | `.spec.template.spec.rootVolume.size` | int | Yes | System disk size in GB |
 | `.spec.template.spec.configPoolRef.name` | string | Yes | Referenced HCSMachineConfigPool name |
@@ -136,6 +142,8 @@ spec:
 *Required when dataVolumes is specified.
 
 **Note:** Do not set runtime identity fields such as `providerID` or `serverId` in `HCSMachineTemplate` manifests. The provider assigns these values when it creates HCS instances.
+
+**Note:** Tenant administrators cannot retrieve the provider-recognized `flavorName` and `availabilityZone` values from the HCS UI. Get the exact values from the HCS administrator before you apply the manifest.
 
 ### Step 3: Configure Bootstrap Template
 
