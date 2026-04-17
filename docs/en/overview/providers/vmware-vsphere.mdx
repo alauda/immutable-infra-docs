@@ -1,28 +1,49 @@
 ---
 weight: 30
+title: VMware vSphere Provider
+author: dev@alauda.io
+category: introduction
+queries:
+  - vmware vsphere provider
+  - capv cluster api
+  - vsphere infrastructure provider
 ---
 
 # VMware vSphere Provider
 
-The VMware vSphere Infrastructure Provider enables Immutable Infrastructure on VMware vSphere platform.
+<Overview />
+
+The VMware vSphere Infrastructure Provider enables Immutable Infrastructure on the VMware vSphere platform. This provider is built on top of Cluster API Provider vSphere (CAPV) and integrates with vCenter to provision and manage virtual machines, networks, and storage for Kubernetes clusters.
 
 ## Overview
 
-VMware vSphere is the industry-leading virtualization platform from VMware. The vSphere Provider integrates with vCenter to manage virtual machines, networks, and storage resources for Kubernetes clusters.
+VMware vSphere is the industry-leading virtualization platform from VMware. The vSphere Provider connects directly to vCenter to manage VM lifecycle, and extends CAPV with declarative node-slot allocation so that hostnames, static IP addresses, and persistent disks can be pre-defined before a cluster is provisioned.
 
-## Status
+## Key Features
 
-🚧 **In Development**
+- **vCenter Integration**: Direct vCenter connectivity to clone VM templates, manage VM lifecycle, and place workloads on target datacenters, compute clusters, and datastores
+- **Machine Configuration Pools**: `VSphereMachineConfigPool` defines per-node slots with fixed hostnames, static IPs, and persistent-disk layouts, enabling predictable VM provisioning and slot-based scale-out
+- **Static IP Allocation**: Static IP, gateway, and DNS configuration per node slot for enterprise network environments where DHCP is not available
+- **Multi-NIC Support**: Primary and additional NICs per node, where the primary NIC drives the kubelet `node-ip` and additional NICs are attached in declared order for management, storage, or service networks
+- **Multiple Datacenters and Failure Domains**: Distribute control plane and worker nodes across multiple vCenter datacenters or compute clusters through `VSphereFailureDomain` and `VSphereDeploymentZone` for high availability
+- **Flexible Persistent Disks**: Declarative data disks with optional format/mount, `wipeFilesystem` control for etcd rolling updates, and raw-device mode exposed at `/dev/disk/by-capv/<name>` for application-managed disks
+- **Immutable-Template Rolling Updates**: Control plane and worker updates go through new `VSphereMachineTemplate` and `KubeadmConfigTemplate` resources, giving Cluster API a clean rollback path on failed upgrades
 
-This provider is currently under active development.
+## Supported Resources
 
-## Key Features (Planned)
-
-- **vCenter Integration**: Manage VMs through vCenter APIs
-- **Network Support**: Support for vSphere standard and distributed switches
-- **Storage Management**: Integration with vSphere datastores
-- **Static IP**: Static IP configuration for enterprise environments
+| Resource | Description |
+|----------|-------------|
+| `VSphereCluster` | Represents vSphere infrastructure including vCenter endpoint, control plane endpoint, and failure-domain selector |
+| `VSphereMachine` | Represents a virtual machine instance in vSphere |
+| `VSphereMachineTemplate` | Immutable template for creating vSphere machines with VM, CPU, memory, network, and disk specifications |
+| `VSphereMachineConfigPool` | Pool of pre-defined node slots with hostnames, static IPs, and persistent-disk layouts |
+| `VSphereFailureDomain` | Describes a datacenter, compute cluster, datastore, and network topology used as a failure domain |
+| `VSphereDeploymentZone` | Binds a `VSphereFailureDomain` to a vCenter server and placement constraints such as resource pool |
 
 ## Documentation
 
-Documentation will be available when the provider is released.
+- [Installation Guide](../../install/vmware-vsphere.mdx)
+- [Creating Clusters](../../create-cluster/vmware-vsphere/)
+- [Managing Nodes](../../manage-nodes/vmware-vsphere.mdx)
+- [Upgrading Clusters](../../upgrade-cluster/vmware-vsphere.mdx)
+- [Provider APIs](../../apis/providers/vmware-vsphere/)
