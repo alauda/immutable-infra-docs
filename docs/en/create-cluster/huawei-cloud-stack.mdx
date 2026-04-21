@@ -32,7 +32,7 @@ Prepare all HCS-specific inputs before writing any YAML in this document:
 - HCS credential Secret values
 - Provider-recognized compute values such as `imageName`, `flavorName`, and `availabilityZone`
 - Cluster network inventory, including the subnets and free IP ranges used by the cluster
-- Control plane ELB address planning, including `vipAddress`, `vipSubnetName`, and optional fixed L4 and L7 IPs
+- Control plane ELB address planning, including `vipAddress`, `vipSubnetName`, and fixed L4 and L7 IPs
 - Static IP pool planning for control plane and worker nodes
 
 See [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx) for the complete checklist, source information, and constraints.
@@ -114,6 +114,8 @@ Use one subnet selector per `networks[]` entry. For new manifests, set either `s
 
 If you use `subnetName` in the machine configuration pool, include the same subnet name in `HCSCluster.spec.network.subnets`.
 
+For the initial cluster create flow, listing an existing subnet by name is enough because the controller resolves subnet metadata before the cluster becomes Ready. If you later add another subnet to an existing Ready `HCSCluster`, do not append only `name`. Patch the parent `HCSCluster.spec.network.subnets` entry with the full subnet object so later machine or ELB operations can reuse the resolved subnet metadata.
+
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: HCSMachineConfigPool
@@ -148,6 +150,8 @@ spec:
 *For new manifests, set either `subnetName` or `subnetId`. Existing manifests may continue to use `subenetName`, and may add `subnetName` only if both fields use the same value. Do not provide conflicting subnet selector values.
 
 **Note:** The CRD schema lists `subnetName`, `subenetName`, and `subnetId` as optional fields and does not express their allowed combinations. Follow the provider-level rules above when writing manifests.
+
+**Note:** To attach multiple NICs to one node, add multiple `networks[]` entries. The provider only uses these entries to attach NICs and assign subnet selectors plus static IPs. It does not support declaring per-NIC roles, default gateways, static routes, or per-NIC DNS settings.
 
 ### Configure Machine Template
 
@@ -361,21 +365,25 @@ The HCS controller also injects files while resolving cloud-init data. It writes
 
 **Note:** Configure `apiServer.extraArgs` and `apiServer.extraVolumes` together. If the volume is not mounted, `kube-apiserver` cannot read the files written under `/etc/kubernetes`.
 
-**Note:** For HCS control planes that use a fixed-size static IP pool, keep `rolloutStrategy.rollingUpdate.maxSurge: 0` so replacements happen in a scale-down-then-scale-up order. This default upgrade path usually does not require additional control plane IPs. If you plan to increase control plane replicas or set `maxSurge` greater than `0`, first extend the referenced `HCSMachineConfigPool` with additional hostname and static IP entries.
+**Note:** The `rolloutStrategy.rollingUpdate.maxSurge: 0` example above is for highly available static-IP control planes. Keep this setting for fixed-size control plane pools with at least three replicas so replacements happen in a scale-down-then-scale-up order. If you create a single-control-plane HCS cluster (`spec.replicas: 1`), do not copy the `rolloutStrategy` block into the create manifest. `KubeadmControlPlane` validation rejects that scale-in style rollout configuration for a single replica.
 
-For component versions (DNS image tag, etcd image tag), refer to the [OS Support Matrix](../overview/os-support-matrix.mdx).
+**Note:** HCS also supports creating a single-control-plane cluster by setting `spec.replicas: 1` and preparing one control plane config entry in the referenced `HCSMachineConfigPool`. Treat this as a creation-only topology, and leave the rollout strategy unset in that create manifest. The upgrade flow in this documentation does not support single-control-plane HCS clusters.
+
+Use the [OS Support Matrix](../overview/os-support-matrix.mdx) only for the component versions it explicitly lists, such as coredns and etcd image tags for supported MicroOS images. It is not a complete source for all HCS manifest values. Before you apply this YAML, also use the approved release baseline for values such as `imageRepository`, DNS image repository, Kube-OVN version, Kube-OVN join CIDR, Pod CIDR, and Service CIDR.
 
 ### Configure HCSCluster
 
 The `HCSCluster` resource defines the HCS infrastructure configuration.
 
-The HCS provider creates an ELB on the HCS platform for the Kubernetes API server. This ELB must use mixed load balancing so cluster nodes can also reach the API server through the ELB address.
+The HCS provider creates an Elastic Load Balance (ELB) on the HCS platform for the Kubernetes API server. This ELB must keep Hybrid Load Balancing enabled so cluster nodes can also reach the API server through the ELB address.
 
-If you want all ELB-related addresses to be fixed, provide `vipAddress`, `elbVirsubnetL4Ips`, and `elbVirsubnetL7Ips`. Each `elbVirsubnetL4Ips[].ips` and `elbVirsubnetL7Ips[].ips` entry must contain two IPs. If you omit the L4 or L7 virtual subnet IPs, HCS allocates them randomly.
+For the documented HCS workflow, provide `vipAddress`, `elbVirsubnetL4Ips`, and `elbVirsubnetL7Ips`. Each `elbVirsubnetL4Ips[].ips` and `elbVirsubnetL7Ips[].ips` entry must contain two IPs.
 
 If you set `vipDomainName`, configure HCS Cloud DNS Private Zones so that the domain resolves to `vipAddress`.
 
 List every cluster subnet in `spec.network.subnets` before you reference it anywhere else. `vipSubnetName`, `elbVirsubnetL4Ips[].subnetName`, `elbVirsubnetL7Ips[].subnetName`, and the `subnetName` values used by `HCSMachineConfigPool` must all exist in `spec.network.subnets`.
+
+For the initial cluster create flow, the controller can resolve existing subnet metadata from `name`. For an existing Ready cluster, append a full subnet object instead of only `name`. Include `id`, and include `neutronSubnetId` for any subnet that the control plane ELB will use. Keep `cidr`, `gatewayIp`, `primaryDNS`, and `secondaryDNS` in the subnet inventory as well.
 
 Do not disable Hybrid Load Balancing on the provider-created ELB after the cluster is created. The cluster depends on that ELB mode so nodes can reach the API server through the ELB address.
 
@@ -416,21 +424,25 @@ spec:
 |-----------|------|----------|-------------|
 | `.spec.networkType` | string | Yes | Network type, currently supports `kube-ovn` |
 | `.spec.network.vpc.name` | string | Yes | VPC name |
-| `.spec.network.subnets[].name` | string | Yes | Complete subnet inventory used by this cluster. Every subnet referenced elsewhere in the cluster manifests must appear in this list |
+| `.spec.network.subnets[].name` | string | Yes | Subnet name in the cluster subnet inventory. Every subnet referenced elsewhere in the cluster manifests must appear in this list |
+| `.spec.network.subnets[].id` | string | Recommended | Subnet ID. For an existing Ready cluster, include this value when you append a subnet later so machine creation can reuse the subnet inventory safely |
+| `.spec.network.subnets[].neutronSubnetId` | string | Recommended for ELB subnets | Neutron subnet ID. Include this value for any subnet that the control plane ELB uses |
+| `.spec.network.subnets[].cidr` | string | Recommended | Subnet CIDR kept in the cluster subnet inventory |
+| `.spec.network.subnets[].gatewayIp` | string | Recommended | Subnet gateway kept in the cluster subnet inventory |
+| `.spec.network.subnets[].primaryDNS` | string | Recommended | Primary DNS kept in the cluster subnet inventory |
+| `.spec.network.subnets[].secondaryDNS` | string | Recommended | Secondary DNS kept in the cluster subnet inventory |
 | `.spec.network.securityGroup.name` | string | Yes | Security group name |
 | `.spec.identityRef.name` | string | Yes | Non-empty credential Secret name referenced by `HCSCluster`; this value does not need to match the cluster name |
 | `.spec.controlPlaneLoadBalancer` | object | Yes | ELB settings for the provider-created control plane ELB |
 | `.spec.controlPlaneLoadBalancer.vipAddress` | string | Yes | Fixed VIP for the control plane ELB |
 | `.spec.controlPlaneLoadBalancer.vipSubnetName` | string | Yes | Subnet name that contains the ELB VIP. This subnet must also appear in `.spec.network.subnets` |
 | `.spec.controlPlaneLoadBalancer.vipDomainName` | string | No | Domain name for the VIP. Configure HCS Cloud DNS Private Zones so it resolves to `vipAddress` |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[]` | array | No* | L4 virtual subnet IP groups used by Hybrid Load Balancing |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[].subnetName` | string | Yes* | Subnet name for the L4 virtual subnet IPs. This subnet must also appear in `.spec.network.subnets` |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[].ips[]` | string | Yes* | Two fixed L4 virtual subnet IPs |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[]` | array | No* | L7 virtual subnet IP groups used by Hybrid Load Balancing |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[].subnetName` | string | Yes* | Subnet name for the L7 virtual subnet IPs. This subnet must also appear in `.spec.network.subnets` |
-| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[].ips[]` | string | Yes* | Two fixed L7 virtual subnet IPs |
-
-*Required when you want to fix all ELB-related addresses. If you omit the L4 or L7 virtual subnet IPs, HCS allocates them randomly.
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[]` | array | Yes | L4 virtual subnet IP groups used by Hybrid Load Balancing |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[].subnetName` | string | Yes | Subnet name for the L4 virtual subnet IPs. This subnet must also appear in `.spec.network.subnets` |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[].ips[]` | string | Yes | Two fixed L4 virtual subnet IPs |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[]` | array | Yes | L7 virtual subnet IP groups used by Hybrid Load Balancing |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[].subnetName` | string | Yes | Subnet name for the L7 virtual subnet IPs. This subnet must also appear in `.spec.network.subnets` |
+| `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[].ips[]` | string | Yes | Two fixed L7 virtual subnet IPs |
 
 Do not include `spec.controlPlaneEndpoint` in the create manifest. In the HCS create flow, the controller derives and populates this field from `spec.controlPlaneLoadBalancer` after the `HCSCluster` is created. Do not set `controlPlaneEndpoint` manually, and do not add an empty `controlPlaneEndpoint` object. If `controlPlaneEndpoint` is explicitly present in the manifest, it must include both `host` and `port`.
 
