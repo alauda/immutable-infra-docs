@@ -34,6 +34,12 @@ For initial deployment, see the [Create Cluster](../create-cluster/huawei-cloud-
 :::
 
 :::warning
+**Single-Control-Plane Clusters**
+
+The upgrade workflow in this document applies to HCS clusters with a highly available control plane. Single-control-plane HCS clusters are supported for creation, but they are not supported for upgrade through this workflow.
+:::
+
+:::warning
 **Data Loss During Upgrades**
 
 Upgrades rely on Cluster API's rolling replacement mechanism. The current HCS provider does not preserve or reattach data disks during node replacement. When a node is replaced, the old VM and its attached volumes may be deleted together. Do not treat node-local data on HCS data disks as preserved state. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.

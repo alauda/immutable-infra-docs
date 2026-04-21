@@ -34,7 +34,7 @@ Worker nodes are managed through Cluster API `Machine` resources, providing decl
 
 ## Worker Node Deployment
 
-Before you prepare worker YAML, complete the HCS input checklist in [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx). In particular, list every worker subnet in `HCSCluster.spec.network.subnets`, allocate worker IPs from planned free IP ranges, and collect the provider-recognized `flavorName` and `availabilityZone` API values.
+Before you prepare worker YAML, complete the HCS input checklist in [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx). In particular, list every worker subnet in `HCSCluster.spec.network.subnets`, allocate worker IPs from planned free IP ranges, and collect the provider-recognized `flavorName` and `availabilityZone` API values. If you add a new worker subnet to an existing Ready cluster, patch `HCSCluster.spec.network.subnets` with the full subnet object instead of adding only the subnet name.
 
 ### Step 1: Configure Machine Configuration Pool
 
@@ -48,7 +48,7 @@ The pool must include at least as many entries as the number of worker nodes you
 
 Use one subnet selector per `networks[]` entry. For new manifests, set either `subnetName` or `subnetId`, but not both. Existing manifests may keep the deprecated `subenetName` field; if you also add `subnetName` while updating that manifest, its value must exactly match `subenetName`. Do not supply conflicting values across `subenetName`, `subnetName`, and `subnetId`.
 
-If you use `subnetName` for worker nodes, include the same subnet name in the parent `HCSCluster.spec.network.subnets` list before you create or scale the worker pool.
+If you use `subnetName` for worker nodes, include the same subnet name in the parent `HCSCluster.spec.network.subnets` list before you create or scale the worker pool. For an existing Ready cluster, append the full subnet object, including the subnet ID, instead of adding only the subnet name.
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -84,6 +84,8 @@ spec:
 *For new manifests, set either `subnetName` or `subnetId`. Existing manifests may continue to use `subenetName`, and may add `subnetName` only if both fields use the same value. Do not provide conflicting subnet selector values.
 
 **Note:** The CRD schema lists `subnetName`, `subenetName`, and `subnetId` as optional fields and does not express their allowed combinations. Follow the provider-level rules above when writing manifests.
+
+**Note:** `networks[]` can contain more than one entry when a worker node needs multiple NICs. The current provider only uses each entry to attach a NIC with a subnet selector and static IP. It does not support per-NIC role declarations, default gateway selection, static routes, route metrics, or per-NIC DNS settings.
 
 ### Step 2: Configure Machine Template
 

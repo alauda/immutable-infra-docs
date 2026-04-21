@@ -30,7 +30,7 @@ Prepare the following inputs before you create or edit any cluster manifests:
 | Input | Used by | Source | Required before YAML | Notes |
 |-------|---------|--------|----------------------|-------|
 | Cluster name | `Cluster`, `KubeadmControlPlane`, `HCSCluster`, templates, pools | Your cluster naming plan | Yes | Use the same cluster name consistently across all related resources |
-| Kubernetes version and component baseline | `Cluster`, `KubeadmControlPlane` | Approved release baseline and [OS Support Matrix](../overview/os-support-matrix.mdx) | Yes | Prepare the validated Kubernetes version, image repository, DNS image repository and tag, etcd image tag, Kube-OVN version, Pod CIDR, Service CIDR, and Kube-OVN join CIDR |
+| Kubernetes version and component baseline | `Cluster`, `KubeadmControlPlane` | Approved release baseline; [OS Support Matrix](../overview/os-support-matrix.mdx) only for the component versions it lists | Yes | Prepare the validated Kubernetes version, image repository, DNS image repository and tag, etcd image tag, Kube-OVN version, Pod CIDR, Service CIDR, and Kube-OVN join CIDR |
 | `accessKey` and `secretKey` | HCS credential `Secret` | HCS **My Settings** > **Access Keys** | Yes | Base64-encode these values before applying the Secret |
 | `projectID` | HCS credential `Secret` | HCS **My Settings** > **Resource Spaces** | Yes | Use the Resource Space ID, not the display name |
 | `externalGlobalDomain` | HCS credential `Secret` | HCS platform access domain | Yes | Use the HCS platform domain that the provider should call |
@@ -40,10 +40,10 @@ Prepare the following inputs before you create or edit any cluster manifests:
 | `availabilityZone` | `HCSMachineTemplate` | HCS administrator | Yes | Use the provider-recognized HCS API value matched against `ZoneName`, not the tenant UI display name |
 | Root and data volume layout | `HCSMachineTemplate` | Cluster storage plan | Yes | Plan disk sizes and mount points before you write the template. Include `/var/lib/etcd`, `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/cpaas` where required |
 | VPC name and security group name | `HCSCluster` | HCS network inventory | Yes | Confirm that the referenced VPC and security group already exist and are usable |
-| Cluster subnet inventory | `HCSCluster`, `HCSMachineConfigPool`, control plane ELB | HCS network inventory | Yes | Prepare every subnet name, CIDR, and planned free IP range that the cluster will use |
+| Cluster subnet inventory | `HCSCluster`, `HCSMachineConfigPool`, control plane ELB | HCS network inventory | Yes | Prepare the subnet name, subnet ID, ELB-related subnet metadata, CIDR, gateway, DNS values, and planned free IP range for every subnet that the cluster will use |
 | Control plane and worker hostnames and static IPs | `HCSMachineConfigPool` | HCS subnet planning | Yes for static IP workflows | Prepare at least one entry per planned replica |
-| `vipAddress` and `vipSubnetName` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS ELB address plan | Yes when you want fixed ELB addresses | `vipAddress` must belong to `vipSubnetName` |
-| `elbVirsubnetL4Ips` and `elbVirsubnetL7Ips` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS ELB address plan | Yes when you want fixed ELB addresses | Each L4 or L7 entry must include exactly two IPs |
+| `vipAddress` and `vipSubnetName` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS ELB address plan | Yes | `vipAddress` must belong to `vipSubnetName` |
+| `elbVirsubnetL4Ips` and `elbVirsubnetL7Ips` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS ELB address plan | Yes | Each L4 or L7 entry must include exactly two IPs |
 | `vipDomainName` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS Cloud DNS Private Zones | Recommended | Configure the domain so it already resolves to `vipAddress` |
 | `controlPlaneEndpoint` | `Cluster.status` / derived cluster endpoint | Controller-managed | No | Do not prepare or write this field in create manifests; the controller fills it after the ELB is ready |
 
@@ -74,6 +74,12 @@ Prepare the VM image, flavor, availability zone, and disk layout before you writ
 
 **Note:** Tenant administrators cannot retrieve the provider-recognized `flavorName` and `availabilityZone` values from the HCS UI. Get the exact API values from the HCS administrator before you write the manifest.
 
+## Version and Component Baseline
+
+Use the [OS Support Matrix](../overview/os-support-matrix.mdx) only for the component versions it explicitly lists, such as Kubernetes, coredns, etcd, and pause versions for supported MicroOS images.
+
+The OS Support Matrix is not a complete source for all HCS manifest values. Before writing YAML, also get the approved release baseline for values such as the container image repository, DNS image repository, Kube-OVN version, Kube-OVN join CIDR, Pod CIDR, and Service CIDR. If your release does not publish a complete baseline source yet, use values validated for your environment by the platform or release owner.
+
 ## Network Inventory
 
 Prepare the complete cluster network inventory before you write `HCSCluster` or `HCSMachineConfigPool` resources.
@@ -83,20 +89,35 @@ Your network plan must include:
 - The target VPC name
 - The target security group name
 - Every subnet name the cluster will use
+- The subnet ID and ELB-related subnet metadata for each subnet
 - The CIDR of each subnet
+- The gateway and DNS values of each subnet
 - The planned free IP ranges for control plane nodes, worker nodes, the ELB VIP, and ELB L4/L7 virtual subnet IPs
 
 If a single cluster uses multiple subnets, those subnets must belong to the same VPC and must allow cluster nodes to reach each other.
 
 **Important:** `HCSCluster.spec.network.subnets` is the cluster subnet inventory. Every `subnetName` referenced by `HCSMachineConfigPool`, `vipSubnetName`, `elbVirsubnetL4Ips[].subnetName`, and `elbVirsubnetL7Ips[].subnetName` must already exist in that list.
 
+For the initial cluster create flow, the controller can resolve existing subnets by name before the cluster becomes Ready. For an existing Ready cluster, do not append only a subnet name. Add the full subnet object, including at least `name`, `id`, and, when the subnet is used by the control plane ELB, `neutronSubnetId`. Keep `cidr`, `gatewayIp`, `primaryDNS`, and `secondaryDNS` in the inventory as well so the cluster subnet list remains complete.
+
+### Multi-NIC Constraints
+
+Multiple NICs are declared in `HCSMachineConfigPool.spec.configs[].networks[]`. Each `networks[]` entry only selects a subnet and a static IP for one NIC.
+
+The current provider does not let you declare:
+
+- The role or purpose of each NIC, such as management, service, or storage traffic
+- The default gateway for a specific NIC
+- Static routes or route metrics
+- Per-NIC DNS settings
+
+Treat the current multi-NIC capability as NIC attachment plus subnet and static IP selection.
+
 ## Control Plane ELB Address Plan
 
-The HCS provider creates the control plane ELB automatically. Plan the ELB inputs before you write `HCSCluster`.
+The HCS provider creates the control plane Elastic Load Balance (ELB) automatically. Plan the ELB inputs before you write `HCSCluster`.
 
-### Fixed-address planning
-
-When you want to fix all ELB-related addresses, prepare:
+This documentation uses the fixed-address ELB workflow. Prepare all ELB-related addresses before you write `HCSCluster`:
 
 - `vipSubnetName`
 - `vipAddress`
@@ -122,7 +143,7 @@ Prepare the following before you create `HCSMachineConfigPool` resources:
 - Worker hostnames and static IPs, if workers are created
 - Enough entries to cover the initial replica count
 
-For static IP control planes, the recommended upgrade path uses `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0`. This scale-down-then-scale-up approach usually does not require extra control plane IPs. Prepare additional hostname and IP slots only when you plan to increase control plane replicas or set `maxSurge` greater than `0`.
+For static IP control planes with at least three replicas, the recommended upgrade path uses `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0`. This scale-down-then-scale-up approach usually does not require extra control plane IPs. If you plan a single-control-plane create-only topology (`replicas: 1`), do not copy that rollout setting into the create manifest. Prepare additional hostname and IP slots only when you plan to increase control plane replicas or set `maxSurge` greater than `0`.
 
 ## Value-to-YAML Mapping
 
