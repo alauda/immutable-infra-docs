@@ -4,10 +4,10 @@ title: Infrastructure Resources
 author: dev@alauda.io
 category: index
 queries:
-  - dcs infrastructure configuration
+  - provider infrastructure configuration
   - cloud credential setup
-  - ip pool management
-  - machine template configuration
+  - ip pool and machine template configuration
+  - hcs and dcs infrastructure preparation
 ---
 
 # Infrastructure Resources
@@ -23,6 +23,7 @@ Before creating clusters, you must configure the following infrastructure resour
 - **Cloud Credentials**: Store IaaS platform access information
 - **IP Pools**: Define network configurations for cluster nodes
 - **Machine Templates**: Specify virtual machine specifications
+- **Network Inventory and Load Balancer Plans**: Prepare subnet inventories and API server access addresses when the provider requires them
 
 ## Platform-Specific Instructions
 
@@ -31,6 +32,7 @@ Select your platform for detailed infrastructure resource configuration:
 | Provider | Description | Status |
 |----------|-------------|--------|
 | [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
+| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
 
 ## Next Steps
 
