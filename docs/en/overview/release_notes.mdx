@@ -4,6 +4,21 @@ weight: 50
 
 # Release Notes
 
+## TODO: Fill in release date
+
+### Component Version
+- Alauda Container Platform DCS Infrastructure Provider: TODO
+
+### Logs and References
+- TODO: add the release note link, changelog entry, and issue reference for the persistent disk feature.
+
+### Changes
+- Added support for pool-managed persistent disks on Huawei DCS.
+- Declared persistent disks can now be detached from old VMs and reattached to replacement VMs during rolling upgrades, reducing the risk of data loss on preserved node-local disks.
+- `DCSIpHostnamePool` now carries persistent disk specifications and runtime tracking through `persistentDisk` and `persistentDiskStatus`.
+- The platform-required `/var/cpaas` disk is now documented as a persistent disk configured on the IP slot instead of in `DCSMachineTemplate`.
+- Existing clusters can migrate to the new model by following [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx).
+
 ## 2026-01-15
 
 ### Component Version

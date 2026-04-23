@@ -26,8 +26,8 @@ Before creating clusters, ensure all of the following prerequisites are met:
 Configure the following infrastructure resources before creating a cluster:
 
 - **[Cloud Credential](../infrastructure/huawei-dcs.mdx#cloud-credentials)** - DCS platform access information
-- **[IP Pool](../infrastructure/huawei-dcs.mdx#ip-pools)** - Network configuration for cluster nodes
-- **[Machine Template](../infrastructure/huawei-dcs.mdx#machine-templates)** - VM specifications for control plane and worker nodes
+- **[IP Pool](../infrastructure/huawei-dcs.mdx#ip-pools)** - Network configuration for cluster nodes and any IP-slot persistent disks such as `/var/cpaas`
+- **[Machine Template](../infrastructure/huawei-dcs.mdx#machine-templates)** - VM specifications for control plane and worker nodes, excluding pool-managed persistent disks
 
 See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for detailed configuration instructions.
 
@@ -45,6 +45,8 @@ For Kubernetes installation, you must:
 - Upload the MicroOS image to the DCS platform
 - Create a virtual machine template based on this image
 - Ensure the template includes all necessary Kubernetes components
+- Use DCS VM templates `4.2.1` or later if you plan to use persistent disks, because safe shutdown and disk detach depend on guest tools
+- Use one-by-one replacement for any cluster that will rely on pool-managed persistent disks. Keep `maxSurge: 0` on the control plane and on worker node pools.
 
 For details on the Kubernetes components included in each VM image, see [OS Support Matrix](../overview/os-support-matrix.mdx).
 
@@ -130,7 +132,7 @@ You can add multiple worker node pools. Each pool has the following configuratio
 | Pool Name | text | Yes | Unique identifier for this node pool |
 | Machine Template | dropdown | Yes | Filter templates by Type: Worker Node and compatible Kubernetes version |
 | Replicas | number | Yes | Default: 3 |
-| Max Surge | number | No | Default: 0, must be ≥ 0 |
+| Max Surge | number | No | Default: 0, must be ≥ 0. Keep this value at `0` if the node pool will use pool-managed persistent disks |
 | Max Unavailable | number | No | Default: 1, must be ≥ 0. When maxSurge = 0, maxUnavailable must be > 0 and ≤ Replicas |
 | SSH Authorized Keys | text | No | Add multiple SSH public keys |
 
@@ -138,6 +140,7 @@ You can add multiple worker node pools. Each pool has the following configuratio
 - Pool names must be unique within the cluster
 - IP Pool must have sufficient available IP addresses (≥ Replicas)
 - maxSurge and maxUnavailable must satisfy the constraint: if maxSurge = 0, then maxUnavailable > 0
+- If the cluster will rely on pool-managed persistent disks, keep `maxSurge = 0` so nodes are replaced one by one during future upgrades
 
 **Tip**: Prefix the pool name with the cluster name followed by a hyphen (e.g., `mycluster-worker-1`) to avoid naming conflicts across different clusters.
 
@@ -168,6 +171,8 @@ Review all configuration settings before creating the cluster:
 - Pool Name, Machine Template, Replicas
 - Max Surge, Max Unavailable, SSH Keys
 
+If the cluster will rely on pool-managed persistent disks, keep **Max Surge** set to `0` for worker node pools.
+
 **Networking**:
 - Pods CIDR, Services CIDR, Join CIDR
 
@@ -196,6 +201,8 @@ Follow these steps in order:
 3. Create the Cluster resource
 
 **Note**: Infrastructure resources (Secret, DCSIpHostnamePool, DCSMachineTemplate) should be configured separately. See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for instructions.
+
+If you need any disk to survive rolling replacement, declare it in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry. This includes the platform-required `/var/cpaas` disk.
 
 ### Network Planning and Load Balancer
 
@@ -229,7 +236,7 @@ spec:
   rolloutStrategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
+      maxSurge: 0 # Required when the cluster relies on pool-managed persistent disks
   kubeadmConfigSpec:
     users:
     - name: boot
@@ -443,7 +450,7 @@ spec:
   rolloutStrategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
+      maxSurge: 0 # Required when the cluster relies on pool-managed persistent disks
   kubeadmConfigSpec:
     users:
     - name: boot

@@ -13,6 +13,20 @@ queries:
 
 This guide explains how to complete Phase 2 of the upgrade workflow for clusters on Huawei DCS. Before you upgrade Kubernetes, complete the Distribution Version upgrade described in [Upgrading Clusters](index.mdx).
 
+:::info
+**Version TODO**
+
+TODO: Document the first DCS provider release that includes pool-managed persistent disks.
+:::
+
+:::info
+**Existing Cluster Migration**
+
+TODO: Replace `<source-version>` and `<target-version>` with the supported migration version range.
+
+If you are upgrading from `<source-version>` to `<target-version>`, where `<target-version>` is the first release that supports pool-managed persistent disks, complete the migration procedure in [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx) before you rely on upgrade-time disk preservation.
+:::
+
 ## Upgrade Sequence
 
 Upgrade DCS clusters in the following order:
@@ -33,11 +47,21 @@ Before you start, ensure all of the following prerequisites are met:
 - The IP Pool has sufficient capacity for rolling updates
 - The VM template supports the target Kubernetes version. See [OS Support Matrix](../overview/os-support-matrix.mdx) for version mapping
 - The target Kubernetes version is compatible with your workloads and add-ons
+- DCS VM templates are `4.2.1` or later if you use pool-managed persistent disks, because safe shutdown and disk detach depend on guest tools
+- If you rely on pool-managed persistent disks, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`
 
 :::warning
-**Data Loss During Upgrades**
+**What Is Preserved During Upgrades**
 
-Upgrades rely on Cluster API's rolling update mechanism. During a rolling update on DCS, data disks are detached from old VMs and reattached to new VMs. Ensure that no cluster functionality or workloads depend on data stored on the system disk.
+Upgrades rely on Cluster API's rolling update mechanism.
+
+- Disks declared in `DCSIpHostnamePool.spec.pool[].persistentDisk` are detached from old VMs and reattached to replacement VMs.
+- This is the supported way to preserve node-local data such as the platform-required `/var/cpaas` disk.
+- Template disks in `DCSMachineTemplate` and any undeclared disks are not preserved across delete-recreate replacement.
+- The system disk is never treated as preserved state.
+- This preservation path requires one-by-one replacement, so keep `maxSurge = 0` on the control plane and worker rollout strategies.
+
+If your existing cluster still keeps preserved data in the old template-disk layout, migrate it first by following [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx).
 :::
 
 ## Using YAML
@@ -65,7 +89,9 @@ Upgrading the control plane machine template lets you roll out updated VM specif
    - Update `spec.template.spec.vmTemplateName`
    - Update `spec.template.spec.vmConfig.dcsMachineCpuSpec.quantity`
    - Update `spec.template.spec.vmConfig.dcsMachineMemorySpec.quantity`
-   - Update `spec.template.spec.vmConfig.dcsMachineDiskSpec`
+   - Update `spec.template.spec.vmConfig.dcsMachineDiskSpec` for system and template-local disks only
+
+   Keep pool-managed persistent disks, including `/var/cpaas`, in `DCSIpHostnamePool.spec.pool[].persistentDisk`.
 
 3. **Apply the updated template**
 
@@ -119,6 +145,7 @@ Worker node Kubernetes upgrades are managed through `MachineDeployment` resource
 1. **Create an updated machine template**
    - Create a new `DCSMachineTemplate` with a `vmTemplateName` that supports the target Kubernetes version
    - Ensure the VM template includes the correct Kubernetes binaries and dependencies
+   - Keep `/var/cpaas` and any other upgrade-preserved disks in the IP pool rather than reintroducing them as template disks
 
 2. **Update the MachineDeployment**
    - Update `spec.template.spec.version` to the target Kubernetes version
@@ -169,7 +196,7 @@ Node Pools with available upgrades show **Upgrade available** indicator. Click o
 
 **Monitoring**:
 - Watch the Node Pool status
-- Nodes will roll update one by one (maxSurge=0, maxUnavailable=1)
+- Nodes will roll update one by one (`maxSurge=0`). This one-by-one replacement is also required when the cluster relies on persistent disks.
 - Upgrade time depends on node count and resources
 
 ### Upgrade Worker Node Pools
@@ -215,10 +242,12 @@ When upgrading across multiple minor versions (for example, v1.32 → v1.34):
 | Upgrade button disabled | Check pool status and Control Plane version |
 | Upgrade stuck | Check IP Pool availability, DCS platform resources |
 | Nodes not joining | Verify network connectivity, DNS settings |
+| Preserved disk did not reattach | Verify the disk is declared in `DCSIpHostnamePool.spec.pool[].persistentDisk`, check `status.persistentDiskStatus`, and confirm the cluster has already been migrated to the pool-managed layout |
 
 ---
 
 ## Additional Resources
 
+- [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx)
 - [Cluster API Upgrade Documentation](https://cluster-api.sigs.k8s.io/tasks/upgrading-clusters)
 - [Kubernetes Version Skew Policy](https://kubernetes.io/docs/setup/release/version-skew-policy/)

@@ -37,6 +37,8 @@ Worker nodes are managed through Cluster API `Machine` resources, providing decl
 
 The IP-Hostname Pool defines the network configuration for worker node virtual machines. You must plan and configure the IP addresses, hostnames, DNS servers, and other network parameters before deployment.
 
+On Huawei DCS, the IP pool is also where you declare persistent disks that must survive VM replacement. Use `persistentDisk` for the platform-required `/var/cpaas` disk and for any other worker-node disk that must be preserved during delete-recreate operations.
+
 :::warning
 **Pool Size Requirement**
 The pool must include at least as many entries as the number of worker nodes you plan to deploy. Insufficient entries will prevent node deployment.
@@ -60,18 +62,36 @@ spec:
     dns: "<worker-dns>"
     hostname: "<worker-hostname-1>"
     machineName: "<worker-machine-name-1>"
+    persistentDisk:
+    - slot: 0
+      quantityGB: 40
+      datastoreClusterName: <datastore-cluster-name>
+      path: /var/cpaas
+      format: xfs
   - ip: "<worker-ip-2>"
     mask: "<worker-mask>"
     gateway: "<worker-gateway>"
     dns: "<worker-dns>"
     hostname: "<worker-hostname-2>"
     machineName: "<worker-machine-name-2>"
+    persistentDisk:
+    - slot: 0
+      quantityGB: 40
+      datastoreClusterName: <datastore-cluster-name>
+      path: /var/cpaas
+      format: xfs
   - ip: "<worker-ip-3>"
     mask: "<worker-mask>"
     gateway: "<worker-gateway>"
     dns: "<worker-dns>"
     hostname: "<worker-hostname-3>"
     machineName: "<worker-machine-name-3>"
+    persistentDisk:
+    - slot: 0
+      quantityGB: 40
+      datastoreClusterName: <datastore-cluster-name>
+      path: /var/cpaas
+      format: xfs
 ```
 
 **Key parameters:**
@@ -84,6 +104,7 @@ spec:
 | `.spec.pool[].dns` | string | DNS server IP addresses (comma-separated for multiple) | No |
 | `.spec.pool[].machineName` | string | Virtual machine name in the DCS platform | No |
 | `.spec.pool[].hostname` | string | Hostname for the virtual machine | No |
+| `.spec.pool[].persistentDisk[]` | []object | Persistent disks bound to this IP slot. Use this for `/var/cpaas` and any disk that must survive node replacement. | No |
 
 ### Step 2: Configure Machine Template
 
@@ -95,9 +116,10 @@ The following disk mount points are mandatory. Do not remove them:
 - System volume (`systemVolume: true`)
 - `/var/lib/kubelet` - Kubelet data directory
 - `/var/lib/containerd` - Container runtime data
-- `/var/cpaas` - Platform-specific data
 
-You may add additional disks, but these essential configurations must be preserved.
+Configure `/var/cpaas` in the IP pool as a persistent disk, not in `DCSMachineTemplate`.
+
+You may add additional template disks, but these essential template disks must be preserved.
 :::
 
 **Example:**
@@ -139,10 +161,6 @@ spec:
           datastoreClusterName: <datastore-cluster-name>
           path: /var/lib/containerd
           format: xfs
-        - quantity: 40
-          datastoreClusterName: <datastore-cluster-name>
-          path: /var/cpaas
-          format: xfs
       ipHostPoolRef:
         name: <worker-iphostname-pool-name>
 ```
@@ -172,6 +190,25 @@ spec:
 | `.spec.template.spec.ipHostPoolRef.name` | string | Referenced DCSIpHostnamePool name | Yes |
 
 *Required when parent object is specified
+
+### Persistent Disks Managed by the IP Pool
+
+Declare any upgrade-preserved disk in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry.
+
+- Use this for `/var/cpaas`, which is required by the platform.
+- Keep `DCSMachineTemplate` for the system disk and template-local disks that may be recreated with the VM.
+- Choose a unique `slot` per IP entry. The controller uses `(ip, slot)` as the persistent-disk identity.
+- On replacement nodes, the guest disk setup logic checks for an existing filesystem. If the disk is already formatted, it skips `mkfs` and mounts the disk directly.
+- Persistent-disk workflows require one-by-one replacement, so keep `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`.
+- You can append new `persistentDisk` entries, but deleting existing entries is not supported. For an already running VM, the controller may attach the disk on the DCS side, but the guest OS will not format or mount it until the next rolling replacement.
+- Treat `format`, `options`, and `pciType` as immutable after creation.
+- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort validation against the DCS platform when it has enough cluster context.
+
+To inspect the runtime state of persistent disks during node operations, check `status.persistentDiskStatus` on the pool:
+
+```bash
+kubectl get dcsiphostnamepool <worker-iphostname-pool-name> -n cpaas-system -o yaml
+```
 
 ### Step 3: Configure Bootstrap Template
 
@@ -243,7 +280,7 @@ metadata:
 spec:
   strategy:
     rollingUpdate:
-      maxSurge: 0
+      maxSurge: 0 # Required when this node pool relies on persistent disks
       maxUnavailable: 1
     type: RollingUpdate
   clusterName: <cluster-name>
@@ -278,8 +315,8 @@ spec:
 | `.spec.template.spec.bootstrap.configRef` | object | Reference to KubeadmConfigTemplate | Yes |
 | `.spec.template.spec.infrastructureRef` | object | Reference to DCSMachineTemplate | Yes |
 | `.spec.template.spec.version` | string | Kubernetes version (must match VM template) | Yes |
-| `.spec.strategy.rollingUpdate.maxSurge` | int | Maximum nodes above desired during update | No |
-| `.spec.strategy.rollingUpdate.maxUnavailable` | int | Maximum unavailable nodes during update | No |
+| `.spec.strategy.rollingUpdate.maxSurge` | int | Maximum nodes above desired during update. Keep this at `0` when the node pool relies on persistent disks | No |
+| `.spec.strategy.rollingUpdate.maxUnavailable` | int | Maximum unavailable nodes during update. When persistent disks are used with `maxSurge = 0`, keep this value greater than `0` and within the replica count | No |
 
 ## Node Management Operations
 
@@ -349,7 +386,16 @@ Increase the number of worker nodes to handle increased workload or add new capa
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<existing-hostname-1>",
-           "machineName": "<existing-machine-name-1>"
+           "machineName": "<existing-machine-name-1>",
+           "persistentDisk": [
+             {
+               "slot": 0,
+               "quantityGB": 40,
+               "datastoreClusterName": "<datastore-cluster-name>",
+               "path": "/var/cpaas",
+               "format": "xfs"
+             }
+           ]
          },
          {
            "ip": "<existing-ip-2>",
@@ -357,7 +403,16 @@ Increase the number of worker nodes to handle increased workload or add new capa
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<existing-hostname-2>",
-           "machineName": "<existing-machine-name-2>"
+           "machineName": "<existing-machine-name-2>",
+           "persistentDisk": [
+             {
+               "slot": 0,
+               "quantityGB": 40,
+               "datastoreClusterName": "<datastore-cluster-name>",
+               "path": "/var/cpaas",
+               "format": "xfs"
+             }
+           ]
          },
          {
            "ip": "<new-worker-ip-1>",
@@ -365,7 +420,16 @@ Increase the number of worker nodes to handle increased workload or add new capa
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<new-worker-hostname-1>",
-           "machineName": "<new-worker-machine-name-1>"
+           "machineName": "<new-worker-machine-name-1>",
+           "persistentDisk": [
+             {
+               "slot": 0,
+               "quantityGB": 40,
+               "datastoreClusterName": "<datastore-cluster-name>",
+               "path": "/var/cpaas",
+               "format": "xfs"
+             }
+           ]
          },
          {
            "ip": "<new-worker-ip-2>",
@@ -373,7 +437,16 @@ Increase the number of worker nodes to handle increased workload or add new capa
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<new-worker-hostname-2>",
-           "machineName": "<new-worker-machine-name-2>"
+           "machineName": "<new-worker-machine-name-2>",
+           "persistentDisk": [
+             {
+               "slot": 0,
+               "quantityGB": 40,
+               "datastoreClusterName": "<datastore-cluster-name>",
+               "path": "/var/cpaas",
+               "format": "xfs"
+             }
+           ]
          }
        ]
      }'
@@ -383,7 +456,9 @@ Increase the number of worker nodes to handle increased workload or add new capa
    **Important Notes**
    - The `pool` array must include **all existing entries** plus the new entries you want to add
    - Copy the existing entries from the exported YAML to avoid data loss
+   - `kubectl patch --type='merge'` replaces the entire `spec.pool` array, so copy every existing `persistentDisk` block unchanged unless you are intentionally adding new disks
    - Ensure each new entry has unique `ip`, `hostname`, and `machineName` values
+   - If new worker nodes also need the platform-required `/var/cpaas` disk, declare it in each new entry's `persistentDisk`
    - Network parameters (`mask`, `gateway`, `dns`) typically match existing entries
    :::
 
@@ -403,7 +478,16 @@ Increase the number of worker nodes to handle increased workload or add new capa
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-1",
-           "machineName": "worker-vm-1"
+           "machineName": "worker-vm-1",
+           "persistentDisk": [
+             {
+               "slot": 0,
+               "quantityGB": 40,
+               "datastoreClusterName": "shared-datastore-cluster",
+               "path": "/var/cpaas",
+               "format": "xfs"
+             }
+           ]
          },
          {
            "ip": "10.0.1.12",
@@ -411,7 +495,16 @@ Increase the number of worker nodes to handle increased workload or add new capa
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-2",
-           "machineName": "worker-vm-2"
+           "machineName": "worker-vm-2",
+           "persistentDisk": [
+             {
+               "slot": 0,
+               "quantityGB": 40,
+               "datastoreClusterName": "shared-datastore-cluster",
+               "path": "/var/cpaas",
+               "format": "xfs"
+             }
+           ]
          },
          {
            "ip": "10.0.1.13",
@@ -419,7 +512,16 @@ Increase the number of worker nodes to handle increased workload or add new capa
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-3",
-           "machineName": "worker-vm-3"
+           "machineName": "worker-vm-3",
+           "persistentDisk": [
+             {
+               "slot": 0,
+               "quantityGB": 40,
+               "datastoreClusterName": "shared-datastore-cluster",
+               "path": "/var/cpaas",
+               "format": "xfs"
+             }
+           ]
          },
          {
            "ip": "10.0.1.14",
@@ -427,7 +529,16 @@ Increase the number of worker nodes to handle increased workload or add new capa
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-4",
-           "machineName": "worker-vm-4"
+           "machineName": "worker-vm-4",
+           "persistentDisk": [
+             {
+               "slot": 0,
+               "quantityGB": 40,
+               "datastoreClusterName": "shared-datastore-cluster",
+               "path": "/var/cpaas",
+               "format": "xfs"
+             }
+           ]
          },
          {
            "ip": "10.0.1.15",
@@ -435,7 +546,16 @@ Increase the number of worker nodes to handle increased workload or add new capa
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-5",
-           "machineName": "worker-vm-5"
+           "machineName": "worker-vm-5",
+           "persistentDisk": [
+             {
+               "slot": 0,
+               "quantityGB": 40,
+               "datastoreClusterName": "shared-datastore-cluster",
+               "path": "/var/cpaas",
+               "format": "xfs"
+             }
+           ]
          }
        ]
      }'
@@ -514,10 +634,12 @@ When you need to recycle specific machine IPs (e.g., for reassignment or IP pool
 
 :::warning
 **Data Loss Warning**
-Scaling down removes nodes and their associated disks. Ensure:
+Scaling down removes nodes and their associated VMs. Ensure:
 - Workloads can tolerate node loss through proper replication
 - No critical data is stored only on the nodes being removed
 - Applications are designed for horizontal scaling
+
+Declared persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` are not deleted just because a Machine is replaced. They remain available for reuse while the corresponding IP slot stays in the pool. Removing the IP slot from the pool, deleting the pool, or deleting the cluster can trigger persistent-volume cleanup.
 :::
 
 ##### Random Removal
@@ -670,7 +792,10 @@ To upgrade worker machine specifications (CPU, memory, disk, VM template), follo
 3. **Rolling Update**
    - The system will automatically trigger a rolling update
    - Worker nodes will be replaced with the new specifications
+   - Any disks declared in `DCSIpHostnamePool.spec.pool[].persistentDisk` are detached from the old VM and reattached to the replacement VM
    - Monitor the update progress through the MachineDeployment status
+
+If you are migrating an existing cluster from the old template-disk layout to pool-managed persistent disks, follow [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx) before you rely on upgrade-time data preservation.
 
 ### Updating Bootstrap Templates
 
@@ -757,7 +882,7 @@ The Node Pools Tab displays all node pools in the cluster:
 | Pool Name | text | Yes | Unique identifier for the node pool |
 | Machine Template | dropdown | Yes | Filter by Type: Worker Node and compatible Kubernetes version |
 | Replicas | number | Yes | Number of nodes in the pool |
-| Max Surge | number | No | Default: 0, must be ≥ 0 |
+| Max Surge | number | No | Default: 0, must be ≥ 0. Keep this value at `0` if the node pool relies on persistent disks |
 | Max Unavailable | number | No | Default: 1, must be ≥ 0. When maxSurge = 0, must be > 0 and ≤ Replicas |
 | SSH Authorized Keys | text | No | Add multiple SSH public keys |
 
@@ -765,6 +890,7 @@ The Node Pools Tab displays all node pools in the cluster:
 - Pool name must be unique within the cluster
 - IP Pool must have sufficient available IP addresses (≥ Replicas)
 - maxSurge/maxUnavailable constraints must be satisfied
+- If the node pool relies on persistent disks, keep `maxSurge = 0` so Machines are replaced one by one
 
 **Tip**: Prefix the pool name with the cluster name followed by a hyphen (e.g., `mycluster-worker-1`) to avoid naming conflicts.
 
