@@ -26,7 +26,7 @@ Use this checklist in the following scenarios:
 Before you begin, ensure the following conditions are met:
 
 - You can access the `global` cluster with `kubectl`.
-- You know which namespace will store the workload cluster objects.
+- The workload cluster objects must be stored in the `cpaas-system` namespace.
 - You have access to the target vCenter inventory, networks, datastores, and templates.
 
 ## How to Use This Checklist
@@ -116,7 +116,7 @@ Use the following table to record the required values and validation results.
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
 | `global` cluster kubeconfig path | - | Yes | `kubectl get ns` succeeds with this kubeconfig. | `/path/to/kubeconfig` | - |
-| Workload object namespace | `<namespace>` | Yes | The namespace that stores workload cluster objects. | `cpaas-system` | - |
+| Workload object namespace | `<namespace>` | Yes | The namespace that stores workload cluster objects. Must be `cpaas-system`. | `cpaas-system` | - |
 | `cluster-api-provider-vsphere` is installed | - | Yes | `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere` returns a result. | `Yes` | - |
 | `cluster-api-provider-kubeadm` is installed | - | Yes | `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-kubeadm` returns a result. | `Yes` | - |
 | `ClusterResourceSet=true` is enabled | - | Yes | The `capi-controller-manager` arguments include `ClusterResourceSet=true`. | `Yes` | - |
@@ -140,8 +140,8 @@ Use the following table to record the required values and validation results.
 |-----------|-------------|----------|---------------------|---------|--------------|
 | VM template name | `<template_name>` | Yes | Used to clone control plane and worker nodes. | `microos-k8s-template` | - |
 | vCenter credential secret name | `<credentials_secret_name>` | Yes | Use a stable name such as `<cluster_name>-vsphere-credentials`. | `demo-cluster-vsphere-credentials` | - |
-| Clone mode | `<clone_mode>` | Yes | `linkedClone` is recommended when your environment supports it. | `linkedClone` | - |
-| Power-off mode | `<power_off_mode>` | Yes | Use the value expected by your CAPV environment. | `trySoft` | - |
+| Clone mode | `<clone_mode>` | Yes | Allowed values: `linkedClone`, `fullClone`. Default is `linkedClone`. `linkedClone` requires the VM template to have at least one snapshot; if none exists, CAPV falls back to `fullClone`. When `linkedClone` is used, `diskGiB` is ignored; the system disk stays at the template's size. Choose `fullClone` if you need `diskGiB` to take effect. | `linkedClone` | - |
+| Power-off mode | `<power_off_mode>` | Yes | Allowed values: `hard`, `soft`, `trySoft`. Default is `hard`. `soft` and `trySoft` require VMware Tools / `open-vm-tools` in the template for graceful shutdown; `trySoft` falls back to `hard` after the guest-soft-power-off timeout. | `trySoft` | - |
 | SSH public key | `<ssh_public_key>` | Yes | Injected into control plane and worker nodes. | `ssh-rsa AAAA...` | - |
 
 The template should also meet the following requirements:
@@ -233,11 +233,11 @@ The template should also meet the following requirements:
 | Control plane CPU | `<cp_num_cpus>` | Yes | CPU count per control plane node. | `4` | - |
 | Control plane memory MiB | `<cp_memory_mib>` | Yes | Memory per control plane node. | `8192` | - |
 | Control plane system datastore | `<cp_system_datastore>` | Yes | Datastore for the control plane system disk. | `datastore-cp` | - |
-| Control plane system disk size GiB | `<cp_system_disk_gib>` | Yes | Baseline example value is `300`. | `300` | - |
+| Control plane system disk size GiB | `<cp_system_disk_gib>` | Yes | Baseline example value is `300`. Ignored when `<clone_mode>` is `linkedClone`; the system disk then stays at the template's size. | `300` | - |
 | Worker CPU | `<worker_num_cpus>` | Yes | CPU count per worker node. | `2` | - |
 | Worker memory MiB | `<worker_memory_mib>` | Yes | Memory per worker node. | `4096` | - |
 | Worker system datastore | `<worker_system_datastore>` | Yes | Datastore for the worker system disk. | `datastore-worker` | - |
-| Worker system disk size GiB | `<worker_system_disk_gib>` | Yes | Baseline example value is `300`. | `300` | - |
+| Worker system disk size GiB | `<worker_system_disk_gib>` | Yes | Baseline example value is `300`. Ignored when `<clone_mode>` is `linkedClone`; the system disk then stays at the template's size. | `300` | - |
 
 ### Standard data disks
 
