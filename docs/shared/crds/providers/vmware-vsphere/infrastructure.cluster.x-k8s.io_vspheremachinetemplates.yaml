@@ -264,7 +264,7 @@ spec:
                                   type: string
                                 gateway6:
                                   description: |-
-                                    Gateway4 is the IPv4 gateway used by this device.
+                                    Gateway6 is the IPv6 gateway used by this device.
                                     Required when DHCP6 is false.
                                   type: string
                                 ipAddrs:
@@ -379,8 +379,7 @@ spec:
                         type: integer
                       numCoresPerSocket:
                         description: |-
-                          NumCPUs is the number of cores among which to distribute CPUs in this
-                          virtual machine.
+                          NumCoresPerSocket is the number of cores per socket in a virtual machine.
                           Defaults to the eponymous property value in the template from which the
                           virtual machine is cloned.
                         format: int32
@@ -586,7 +585,7 @@ spec:
                                   type: string
                                 gateway6:
                                   description: |-
-                                    Gateway4 is the IPv4 gateway used by this device.
+                                    Gateway6 is the IPv6 gateway used by this device.
                                     Required when DHCP6 is false.
                                   type: string
                                 ipAddrs:
@@ -701,8 +700,7 @@ spec:
                         type: integer
                       numCoresPerSocket:
                         description: |-
-                          NumCPUs is the number of cores among which to distribute CPUs in this
-                          virtual machine.
+                          NumCoresPerSocket is the number of cores per socket in a virtual machine.
                           Defaults to the eponymous property value in the template from which the
                           virtual machine is cloned.
                         format: int32
@@ -1175,7 +1173,7 @@ spec:
                                     Required when DHCP4 is false.
                                   type: string
                                 gateway6:
-                                  description: Gateway4 is the IPv4 gateway used by
+                                  description: Gateway6 is the IPv6 gateway used by
                                     this device.
                                   type: string
                                 ipAddrs:
@@ -1298,8 +1296,7 @@ spec:
                         type: integer
                       numCoresPerSocket:
                         description: |-
-                          NumCPUs is the number of cores among which to distribute CPUs in this
-                          virtual machine.
+                          NumCoresPerSocket is the number of cores per socket in a virtual machine.
                           Defaults to the eponymous property value in the template from which the
                           virtual machine is cloned.
                         format: int32
