@@ -153,7 +153,7 @@ Before you continue, also verify the following items:
 - The thumbprint is correct.
 - The template name is correct.
 - The template is resolvable in the target datacenter.
-- The template system disk is not larger than the `diskGiB` value used later in the manifests.
+- If the VM is cloned as a `fullClone`, the template system disk is not larger than the `diskGiB` value used later in the manifests. If CAPV completes a `linkedClone`, the system disk size stays at the template's size and `diskGiB` is ignored.
 - VMware Tools or `open-vm-tools` is installed in the template.
 - The VIP exists and port `6443` is reachable from the execution environment.
 - The load balancer ownership model for real-server maintenance is clear.
@@ -161,6 +161,8 @@ Before you continue, also verify the following items:
 ### Create the namespace and vCenter credential secret
 
 Create the namespace that stores the workload cluster objects.
+
+This workflow stores workload cluster objects in the `cpaas-system` namespace. In the manifests and commands below, replace every `<namespace>` placeholder with `cpaas-system`.
 
 ```yaml title="00-namespace.yaml"
 apiVersion: v1
@@ -256,7 +258,7 @@ kubectl apply -f 10-cluster.yaml
 Create a `ClusterResourceSet` so the workload cluster receives the vSphere CPI configuration and manifests automatically after the workload API server becomes reachable.
 
 <Directive type="warning">
-The CPI `ConfigMap`, `Secret`, and `ClusterResourceSet` resources **must** be created in the same namespace as the `Cluster` resource (`<namespace>`). A `ClusterResourceSet` can only match clusters within its own namespace; deploying it in a different namespace will silently prevent resource delivery.
+The CPI `ConfigMap`, `Secret`, and `ClusterResourceSet` resources **must** be created in the same namespace as the `Cluster` resource. In this guide that namespace is `cpaas-system`. A `ClusterResourceSet` can only match clusters within its own namespace; deploying it in a different namespace will silently prevent resource delivery.
 </Directive>
 
 <Directive type="info">
@@ -651,6 +653,8 @@ kubectl apply -f 03-vspheremachineconfigpool-worker.yaml
 ### Create the control plane objects
 
 Create the `VSphereMachineTemplate` and `KubeadmControlPlane` objects. Replace the placeholders in the following full template with the values collected in the checklist document.
+
+`cloneMode` and `diskGiB` both remain present in the template because CAPV accepts both fields. In practice, `diskGiB` only affects the system disk when the actual clone operation is `fullClone`. If `cloneMode` is `linkedClone` and the template has a usable snapshot, CAPV completes a linked clone and the system disk size remains equal to the source template. If no usable snapshot exists, CAPV falls back to `fullClone`, and `diskGiB` applies again.
 
 ```yaml title="20-control-plane.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -1201,7 +1205,7 @@ Prioritize the following checks:
 - If a machine is stuck in `Provisioning`, check `VSphereMachine` conditions for `MachineConfigPoolReady` — it shows whether slot allocation failed due to pool binding or datacenter mismatch.
 - If a VM is waiting for IP allocation, verify VMware Tools, the static IP settings, and `VSphereVM.status.addresses`.
 - If datastore space is exhausted, verify whether old VM directories or `.vmdk` files remain in the target datastore.
-- If the template system disk size does not match the manifest values, verify that `diskGiB` is not smaller than the template disk size.
+- If the template system disk size does not match the manifest values, first check the actual clone mode. When the VM was created as `linkedClone`, the system disk stays at the template's size and `diskGiB` is ignored. Only `fullClone` uses `diskGiB`, and in that case `diskGiB` must not be smaller than the template disk size.
 - If the control plane endpoint does not come up, verify the load balancer, the VIP, and port `6443`.
 - If the TLS connection to vCenter fails, verify the thumbprint, the vCenter address, and whether proxy settings interfere with the connection.
 
