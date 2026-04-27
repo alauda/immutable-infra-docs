@@ -231,6 +231,7 @@ metadata:
   name: <cluster-name>
   namespace: cpaas-system
   annotations:
+    controlplane.cluster.x-k8s.io/skip-coredns: ""
     controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
 spec:
   rolloutStrategy:
@@ -268,19 +269,24 @@ spec:
           imageTag: <etcd-image-tag>
       # ... (apiServer, controllerManager, scheduler) ...
     initConfiguration:
+      localAPIEndpoint: {}
       patches:
         directory: /etc/kubernetes/patches
       nodeRegistration:
+        imagePullPolicy: IfNotPresent
         kubeletExtraArgs:
           node-labels: "kube-ovn/role=master"
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           protect-kernel-defaults: "true"
     joinConfiguration:
+      discovery: {}
       patches:
         directory: /etc/kubernetes/patches
       nodeRegistration:
+        imagePullPolicy: IfNotPresent
         kubeletExtraArgs:
+          node-ip: NODE_IP
           node-labels: "kube-ovn/role=master"
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
@@ -444,6 +450,7 @@ metadata:
   name: <cluster-name>
   namespace: cpaas-system
   annotations:
+    controlplane.cluster.x-k8s.io/skip-coredns: ""
     controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
 spec:
   rolloutStrategy:
@@ -664,19 +671,24 @@ spec:
           tls-min-version: VersionTLS12
           profiling: "false"
     initConfiguration:
+      localAPIEndpoint: {}
       patches:
         directory: /etc/kubernetes/patches
       nodeRegistration:
+        imagePullPolicy: IfNotPresent
         kubeletExtraArgs:
           node-labels: "kube-ovn/role=master"
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           protect-kernel-defaults: "true"
     joinConfiguration:
+      discovery: {}
       patches:
         directory: /etc/kubernetes/patches
       nodeRegistration:
+        imagePullPolicy: IfNotPresent
         kubeletExtraArgs:
+          node-ip: NODE_IP
           node-labels: "kube-ovn/role=master"
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
@@ -691,6 +703,56 @@ spec:
   replicas: 3
   version: <control-plane-kubernetes-version>
 ```
+
+:::tip
+**Alternative: reference a centrally managed Secret instead of inline content**
+
+The Alauda Container Platform DCS Infrastructure Provider plugin ships a Secret named `dcs-kubernetes-<kubernetes-major-minor>-files` in the `cpaas-system` namespace (for example, `dcs-kubernetes-1.33-files` for Kubernetes 1.33). It contains the canonical content of `psa-config.yaml`, `control-plane-kubelet-patch.json`, and `audit-policy.yaml`, and is updated together with each release.
+
+When that Secret is present, you can replace the three inline `files` entries with `contentFrom.secret` references. Inline and Secret-referenced forms are functionally equivalent; using the Secret keeps file content aligned with the installed plugin version and avoids manual updates on cluster upgrades.
+
+```yaml
+files:
+- contentFrom:
+    secret:
+      key: psa-config.yaml
+      name: dcs-kubernetes-1.33-files
+  owner: "root:root"
+  path: /etc/kubernetes/admission/psa-config.yaml
+  permissions: "0644"
+- contentFrom:
+    secret:
+      key: control-plane-kubelet-patch.json
+      name: dcs-kubernetes-1.33-files
+  owner: "root:root"
+  path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+  permissions: "0644"
+- contentFrom:
+    secret:
+      key: audit-policy.yaml
+      name: dcs-kubernetes-1.33-files
+  owner: "root:root"
+  path: /etc/kubernetes/audit/policy.yaml
+  permissions: "0644"
+- path: /etc/kubernetes/encryption-provider.conf
+  owner: "root:root"
+  append: false
+  permissions: "0644"
+  content: |
+    apiVersion: apiserver.config.k8s.io/v1
+    kind: EncryptionConfiguration
+    resources:
+    - resources:
+      - secrets
+      providers:
+      - aescbc:
+          keys:
+          - name: key1
+            secret: <base64-encoded-secret>
+```
+
+`encryption-provider.conf` is not provided by the Secret. You can either keep it inline as shown above (and supply your own `<base64-encoded-secret>`), or omit the inline file entirely and rely on the version that the DCS VM template image already bakes in — both are valid; the latter is simpler when the VM template's default key is acceptable for your environment.
+:::
 
 ---
 
