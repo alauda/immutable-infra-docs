@@ -353,9 +353,9 @@ The disk configuration varies by template type.
 | Mount Path | Default Size (GB) | Can Delete |
 |------------|-------------------|------------|
 | System Volume | (template default) | No |
-| `/var/lib/etcd` | 10 | No |
 | `/var/lib/kubelet` | 100 | No |
 | `/var/lib/containerd` | 100 | No |
+| `/var/lib/etcd` | 10 | No |
 
 **Worker Node Required Disks**:
 
@@ -426,10 +426,6 @@ spec:
         - quantity: 0
           datastoreClusterName: <datastore-cluster-name>
           systemVolume: true
-        - quantity: 10
-          datastoreClusterName: <datastore-cluster-name>
-          path: /var/lib/etcd
-          format: xfs
         - quantity: 100
           datastoreClusterName: <datastore-cluster-name>
           path: /var/lib/kubelet
@@ -437,6 +433,10 @@ spec:
         - quantity: 100
           datastoreClusterName: <datastore-cluster-name>
           path: /var/lib/containerd
+          format: xfs
+        - quantity: 10
+          datastoreClusterName: <datastore-cluster-name>
+          path: /var/lib/etcd
           format: xfs
       ipHostPoolRef:
         name: <iphostname-pool-name>
