@@ -257,12 +257,16 @@ spec:
       postKubeadmCommands:
       - chmod 600 /var/lib/kubelet/config.yaml
       joinConfiguration:
+        discovery: {}
         patches:
           directory: /etc/kubernetes/patches
         nodeRegistration:
+          imagePullPolicy: IfNotPresent
           kubeletExtraArgs:
+            node-ip: NODE_IP
             provider-id: PROVIDER_ID
             volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+            protect-kernel-defaults: "true"
 ```
 
 ### Step 4: Configure Machine Deployment
