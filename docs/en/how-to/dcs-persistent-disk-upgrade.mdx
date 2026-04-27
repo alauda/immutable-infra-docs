@@ -151,13 +151,23 @@ Edit the currently referenced `DCSMachineTemplate` in place so it no longer decl
 
 Add `persistentDisk` entries to the matching IP slot for every preserved disk.
 
-The spec must match the live disk attributes exactly:
+The spec interacts with the live disk attributes in three ways:
 
-- `quantityGB`
-- `datastoreName` or `datastoreClusterName`
-- `path`
-- `format` (use `xfs` by default; if the live disk already uses another filesystem, keep the live format)
-- `pciType`
+**Strict claim match.** A mismatch on any of these fields fails the claim and sets `phase=Error` with `lastError`. The controller retries on a slow loop until the spec is corrected:
+
+- `quantityGB` — must match the live disk size exactly
+- `datastoreName` or `datastoreClusterName` — must point to the same storage target as the live disk
+- `pciType` — must match the live disk PCI type (or be omitted to accept the implementation default)
+
+**Filesystem (affects guest-side initialization, not the claim check):**
+
+- `format` — used only when initializing a fresh disk. If the live disk already has a filesystem, the existing format is preserved and `mkfs` is skipped.
+
+**Guest-side (applied on replacement VMs only, not part of the claim check):**
+
+- `path` — mount path inside the guest
+- `mountOptions` — mount options
+- `options` — `mkfs` options applied only on first format
 
 For the platform-required `/var/cpaas` disk, move it into the pool-managed layout as part of this migration.
 
@@ -233,11 +243,13 @@ Inspect the pool status to confirm the controller has claimed and tracked the di
 kubectl get dcsiphostnamepool <iphostname-pool-name> -n cpaas-system -o yaml
 ```
 
-During the transition, each record appears under `status.persistentDiskStatus`. Watch for:
+During the transition, each record appears under `status.persistentDiskStatus`. The stable phases to watch for are:
 
 - `phase: Attached` while the old VM still owns the disk
-- `phase: Available` after detach and conversion
+- `phase: Available` after the disk is detached (and converted from a stock volume to an independent shared volume when needed)
 - `phase: Attached` again after the replacement VM reattaches the disk
+
+Transient phases (`Attaching`, `Detaching`) may briefly appear during the corresponding operations; `Deleting` appears when a disk is being permanently removed, for example during pool or cluster cleanup. The full phase set is `Creating`, `Available`, `Attaching`, `Attached`, `Detaching`, `Deleting`, `Error`.
 
 If a disk enters `phase: Error`, inspect `lastError` before retrying.
 

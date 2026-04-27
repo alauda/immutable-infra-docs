@@ -31,11 +31,16 @@ If you are upgrading from `<source-version>` to `<target-version>`, where `<targ
 
 Upgrade DCS clusters in the following order:
 
-1. Upgrade the Distribution Version (Aligned Extensions). See [Upgrading Distribution Version](index.mdx).
-2. Upgrade the control plane Kubernetes version.
-3. Upgrade worker nodes to the target Kubernetes version.
+1. **(Prerequisite)** Upgrade the ACP platform on the management cluster first. This brings the cluster-api-provider-dcs controller and the related CAPI components (core, KubeadmControlPlane provider, bootstrap provider) to versions that understand the new schema. Trigger workload-cluster upgrades only after the management-side controllers have rolled out and become Ready.
+2. Upgrade the Distribution Version (Aligned Extensions) on the workload cluster. See [Upgrading Distribution Version](index.mdx).
+3. Upgrade the control plane Kubernetes version.
+4. Upgrade worker nodes to the target Kubernetes version.
 
 Cluster API orchestrates rolling updates with built-in safety mechanisms to reduce service disruption.
+
+:::warning
+Skipping step 1 risks two failure modes: the old controller silently ignores new schema fields written to `DCSIpHostnamePool` / `DCSMachineTemplate`; or a controller image swap mid-rollout interrupts persistent-disk state-machine progression. Always settle the management-side upgrade before touching workload rollout.
+:::
 
 ## Prerequisites
 

@@ -200,7 +200,7 @@ Declare any upgrade-preserved disk in the matching `DCSIpHostnamePool.spec.pool[
 - Choose a unique `slot` per IP entry. The controller uses `(ip, slot)` as the persistent-disk identity.
 - On replacement nodes, the guest disk setup logic checks for an existing filesystem. If the disk is already formatted, it skips `mkfs` and mounts the disk directly.
 - Persistent-disk workflows require one-by-one replacement, so keep `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`.
-- You can append new `persistentDisk` entries, but deleting existing entries is not supported. For an already running VM, the controller may attach the disk on the DCS side, but the guest OS will not format or mount it until the next rolling replacement.
+- You can append new `persistentDisk` entries, but deleting existing entries is not supported. A newly appended entry does not affect a running VM: the controller does not hot-attach it, and the guest OS does not format or mount it. The disk reaches `phase: Available` in the pool status; attachment happens when the VM is next replaced through a rolling update.
 - Treat `format`, `options`, and `pciType` as immutable after creation.
 - Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort validation against the DCS platform when it has enough cluster context.
 
