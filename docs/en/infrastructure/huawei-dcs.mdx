@@ -478,7 +478,10 @@ The datastore clusters (`datastoreClusterName`) must support cross-host access a
 If your datastore does not support direct file uploads (required for Ignition configs), you must provide a shared storage solution (e.g., NFS) that supports multi-host mounting.
 
 **Disk Configuration Rules**
-You may add custom template disks, but must retain the mandatory system and data disks shown in the example (`systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`). Configure `/var/cpaas` in the IP pool as a persistent disk.
+You may add custom template disks, but must retain mandatory disks by node role:
+- Control plane: `systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`
+- Worker: `systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`
+Configure `/var/cpaas` in the IP pool as a persistent disk.
 :::
 
 ---
