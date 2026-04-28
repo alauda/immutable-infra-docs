@@ -257,11 +257,9 @@ spec:
       postKubeadmCommands:
       - chmod 600 /var/lib/kubelet/config.yaml
       joinConfiguration:
-        discovery: {}
         patches:
           directory: /etc/kubernetes/patches
         nodeRegistration:
-          imagePullPolicy: IfNotPresent
           kubeletExtraArgs:
             node-ip: NODE_IP
             provider-id: PROVIDER_ID

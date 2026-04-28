@@ -269,22 +269,18 @@ spec:
           imageTag: <etcd-image-tag>
       # ... (apiServer, controllerManager, scheduler) ...
     initConfiguration:
-      localAPIEndpoint: {}
       patches:
         directory: /etc/kubernetes/patches
       nodeRegistration:
-        imagePullPolicy: IfNotPresent
         kubeletExtraArgs:
           node-labels: "kube-ovn/role=master"
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           protect-kernel-defaults: "true"
     joinConfiguration:
-      discovery: {}
       patches:
         directory: /etc/kubernetes/patches
       nodeRegistration:
-        imagePullPolicy: IfNotPresent
         kubeletExtraArgs:
           node-ip: NODE_IP
           node-labels: "kube-ovn/role=master"
@@ -671,22 +667,18 @@ spec:
           tls-min-version: VersionTLS12
           profiling: "false"
     initConfiguration:
-      localAPIEndpoint: {}
       patches:
         directory: /etc/kubernetes/patches
       nodeRegistration:
-        imagePullPolicy: IfNotPresent
         kubeletExtraArgs:
           node-labels: "kube-ovn/role=master"
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           protect-kernel-defaults: "true"
     joinConfiguration:
-      discovery: {}
       patches:
         directory: /etc/kubernetes/patches
       nodeRegistration:
-        imagePullPolicy: IfNotPresent
         kubeletExtraArgs:
           node-ip: NODE_IP
           node-labels: "kube-ovn/role=master"
