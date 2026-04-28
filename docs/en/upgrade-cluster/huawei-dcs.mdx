@@ -22,7 +22,7 @@ DCS provider `v1.0.16` is the first release that supports pool-managed persisten
 :::info
 **Existing Cluster Migration**
 
-If your cluster runs ACP `v4.2.1` or later and you are moving to DCS provider `v1.0.16`, the first release that supports pool-managed persistent disks, complete the migration procedure in [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx) before you rely on upgrade-time disk preservation.
+If your cluster runs ACP `v4.2.1` or later and you are moving to DCS provider `v1.0.16` or later, complete the migration procedure in [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx) before you rely on upgrade-time disk preservation.
 :::
 
 ## Upgrade Sequence
@@ -64,7 +64,7 @@ Upgrades rely on Cluster API's rolling update mechanism.
 - The system disk is never treated as preserved state.
 - This preservation path requires one-by-one replacement, so keep `maxSurge = 0` on the control plane and worker rollout strategies.
 
-If your existing cluster still keeps preserved data in the old template-disk layout, migrate it first by following [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx).
+If your existing cluster still keeps preserved data in the old template-disk layout, migrate it first by following [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx).
 :::
 
 ## Using YAML
@@ -165,13 +165,14 @@ Worker node Kubernetes upgrades are managed through `MachineDeployment` resource
 
 Use this workflow to upgrade Kubernetes from the web UI after Phase 1 is complete.
 
-**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests.
+**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests. If the upgrade relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the `persistentDisk` declaration on `DCSIpHostnamePool` remains YAML-only and is not exposed in the web UI.
 
 ### Prerequisites
 
 - The Distribution Version upgrade is complete. See [Upgrading Distribution Version](index.mdx)
 - The Control Plane Node Pool is in Running state
 - The IP Pool has sufficient capacity for rolling updates
+- If the upgrade relies on pool-managed persistent disks, ensure the required `DCSIpHostnamePool.spec.pool[].persistentDisk` entries have already been created or updated through YAML
 
 ### Upgrade Workflow
 
@@ -251,6 +252,6 @@ When upgrading across multiple minor versions (for example, v1.32 → v1.34):
 
 ## Additional Resources
 
-- [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx)
+- [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx)
 - [Cluster API Upgrade Documentation](https://cluster-api.sigs.k8s.io/tasks/upgrading-clusters)
 - [Kubernetes Version Skew Policy](https://kubernetes.io/docs/setup/release/version-skew-policy/)

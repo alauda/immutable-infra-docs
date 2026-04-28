@@ -11,10 +11,12 @@ queries:
 
 Use this guide when you upgrade an existing Huawei DCS cluster from the older template-disk layout to the current pool-managed persistent-disk model.
 
+In DCS provider `v1.0.16`, this migration is YAML-driven because `DCSIpHostnamePool.spec.pool[].persistentDisk` is not exposed in the web UI.
+
 :::info
 **Version**
 
-Use this procedure when the cluster runs ACP `v4.2.1` or later and the target DCS provider version is `v1.0.16`, the first release that supports pool-managed persistent disks.
+Use this procedure when the cluster runs ACP `v4.2.1` or later and the target DCS provider version is `v1.0.16` or later.
 
 This procedure currently assumes all of the following:
 
@@ -259,7 +261,7 @@ If a disk enters `phase: Error`, inspect `lastError` before retrying.
 - The controller only protects disks that are declared in `persistentDisk`. Any undeclared disk still follows VM lifecycle and may be deleted with the old VM.
 - This migration changes the ownership model of preserved disks. Do not keep the same disk defined in both `DCSMachineTemplate` and `DCSIpHostnamePool`.
 - If you need to preserve `/var/cpaas`, move it into the IP pool as part of this migration instead of leaving it in the template.
-- This runbook applies to clusters on ACP `v4.2.1` or later that are moving to DCS provider `v1.0.16`.
+- This runbook applies to clusters on ACP `v4.2.1` or later that are moving to DCS provider `v1.0.16` or later.
 
 ## Related Topics
 

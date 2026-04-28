@@ -797,7 +797,7 @@ To upgrade worker machine specifications (CPU, memory, disk, VM template), follo
    - Any disks declared in `DCSIpHostnamePool.spec.pool[].persistentDisk` are detached from the old VM and reattached to the replacement VM
    - Monitor the update progress through the MachineDeployment status
 
-If you are migrating an existing cluster from the old template-disk layout to pool-managed persistent disks, follow [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx) before you rely on upgrade-time data preservation.
+If you are migrating an existing cluster from the old template-disk layout to pool-managed persistent disks, follow [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx) before you rely on upgrade-time data preservation.
 
 ### Updating Bootstrap Templates
 
@@ -840,7 +840,9 @@ For Kubernetes upgrades on Huawei DCS, see [Upgrading Kubernetes on Huawei DCS](
 
 Node pools provide a declarative way to manage groups of nodes with identical configurations. You can view, add, and delete worker node pools through the web UI.
 
-**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use the YAML-based node pool workflows in this document.
+**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use the YAML-based node pool workflows in this document. If the node-pool workflow relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the `persistentDisk` declaration on `DCSIpHostnamePool` remains YAML-only and is not exposed in the node-pool UI.
+
+If the node pool relies on pool-managed persistent disks, prepare or update the corresponding `DCSIpHostnamePool` entry with YAML before you use the web UI workflow here.
 
 :::info
 **Navigation**: Clusters → Clusters → Select cluster → Node Pools Tab

@@ -11,7 +11,7 @@ queries:
 
 # Creating Clusters on Huawei DCS
 
-This document provides instructions for creating Kubernetes clusters on the Huawei DCS platform. YAML-based cluster creation is available through manifests. If Fleet Essentials is installed and Alauda Container Platform DCS Infrastructure Provider is `1.0.13` or later, you can also create clusters through the web UI.
+This document provides instructions for creating Kubernetes clusters on the Huawei DCS platform. YAML-based cluster creation is available through manifests. If Fleet Essentials is installed and Alauda Container Platform DCS Infrastructure Provider is `1.0.13` or later, you can also create clusters through the web UI. If the workflow relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the `persistentDisk` declaration on `DCSIpHostnamePool` is available through YAML only and is not exposed in the web UI.
 
 :::info
 The web UI provides a guided workflow with validation, while YAML offers more automation flexibility.
@@ -72,7 +72,9 @@ Configure the public registry credentials. This includes:
 
 ## Using the Web UI
 
-**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests.
+**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests. If you use pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, configure `DCSIpHostnamePool.spec.pool[].persistentDisk` through YAML because the web UI does not expose that field.
+
+If the new cluster will rely on pool-managed persistent disks, create or update the backing `DCSIpHostnamePool` with YAML and then use the web UI for the rest of the cluster workflow.
 
 ### Creation Workflow
 

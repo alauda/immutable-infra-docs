@@ -116,13 +116,17 @@ kubectl apply -f dcs-secret.yaml -n cpaas-system
 
 IP pools define the network configuration (IP addresses, subnet masks, gateways, DNS) for cluster nodes. Each pool can contain multiple node entries, and each node can have multiple network interface configurations.
 
-For DCS persistent disks, each IP entry can also declare `persistentDisk` items. These disks are bound to the IP slot instead of the VM lifecycle, so they can be detached from an old VM and reattached to a replacement VM during rolling upgrades. Use this mechanism for the platform-required `/var/cpaas` disk and for any other node-local data that must survive delete-recreate operations.
+For DCS persistent disks, each IP entry can also declare `persistentDisk` items. These disks are bound to the IP slot instead of the VM lifecycle, so they can be detached from an old VM and reattached to a replacement VM during rolling upgrades. Use this mechanism for the platform-required `/var/cpaas` disk and for any other node-local data that must survive delete-recreate operations. In DCS provider `v1.0.16`, this `persistentDisk` declaration is supported through YAML only.
 
 ### Using the Web UI
 
 #### Prerequisites
 
 - Cloud Credential has been created
+
+:::info
+In DCS provider `v1.0.16`, the IP Pool web UI covers IP, hostname, and NIC settings only. It does not expose `DCSIpHostnamePool.spec.pool[].persistentDisk`. Configure persistent disks through YAML manifests.
+:::
 
 #### Creating an IP Pool
 
@@ -229,6 +233,8 @@ You must configure machine information for a number of machines greater than or 
 ### Persistent Disks in the IP Pool
 
 Declare upgrade-preserved disks in `DCSIpHostnamePool.spec.pool[].persistentDisk`, not in `DCSMachineTemplate`.
+
+In DCS provider `v1.0.16`, YAML is the only supported way to declare these persistent disks.
 
 - Use the IP entry to bind each persistent disk to a fixed `(ip, slot)` identity.
 - Use this model for the platform-required `/var/cpaas` disk.
