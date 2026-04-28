@@ -290,6 +290,10 @@ spec:
   selector:
     matchLabels: null
   template:
+    metadata:
+      labels:
+        cluster.x-k8s.io/cluster-name: <cluster-name>
+        pool.name: <worker-machine-deployment-name>
     spec:
       nodeDrainTimeout: 1m
       nodeDeletionTimeout: 5m
