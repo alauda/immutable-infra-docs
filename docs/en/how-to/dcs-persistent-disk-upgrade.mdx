@@ -12,9 +12,9 @@ queries:
 Use this guide when you upgrade an existing Huawei DCS cluster from the older template-disk layout to the current pool-managed persistent-disk model.
 
 :::info
-**Version TODO**
+**Version**
 
-TODO: Document the supported source version range and the target release that first includes pool-managed persistent disks.
+Use this procedure when the cluster runs ACP `v4.2.1` or later and the target DCS provider version is `v1.0.16`, the first release that supports pool-managed persistent disks.
 
 This procedure currently assumes all of the following:
 
@@ -259,7 +259,7 @@ If a disk enters `phase: Error`, inspect `lastError` before retrying.
 - The controller only protects disks that are declared in `persistentDisk`. Any undeclared disk still follows VM lifecycle and may be deleted with the old VM.
 - This migration changes the ownership model of preserved disks. Do not keep the same disk defined in both `DCSMachineTemplate` and `DCSIpHostnamePool`.
 - If you need to preserve `/var/cpaas`, move it into the IP pool as part of this migration instead of leaving it in the template.
-- If you need a provider-version gate for this runbook, update the TODO block at the top after the release owner confirms the supported version range.
+- This runbook applies to clusters on ACP `v4.2.1` or later that are moving to DCS provider `v1.0.16`.
 
 ## Related Topics
 

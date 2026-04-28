@@ -14,17 +14,15 @@ queries:
 This guide explains how to complete Phase 2 of the upgrade workflow for clusters on Huawei DCS. Before you upgrade Kubernetes, complete the Distribution Version upgrade described in [Upgrading Clusters](index.mdx).
 
 :::info
-**Version TODO**
+**Version**
 
-TODO: Document the first DCS provider release that includes pool-managed persistent disks.
+DCS provider `v1.0.16` is the first release that supports pool-managed persistent disks.
 :::
 
 :::info
 **Existing Cluster Migration**
 
-TODO: Replace `<source-version>` and `<target-version>` with the supported migration version range.
-
-If you are upgrading from `<source-version>` to `<target-version>`, where `<target-version>` is the first release that supports pool-managed persistent disks, complete the migration procedure in [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx) before you rely on upgrade-time disk preservation.
+If your cluster runs ACP `v4.2.1` or later and you are moving to DCS provider `v1.0.16`, the first release that supports pool-managed persistent disks, complete the migration procedure in [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs-persistent-disk-upgrade.mdx) before you rely on upgrade-time disk preservation.
 :::
 
 ## Upgrade Sequence
