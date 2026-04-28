@@ -159,7 +159,7 @@ The spec interacts with the live disk attributes in three ways:
 
 - `quantityGB` — must match the live disk size exactly
 - `datastoreName` or `datastoreClusterName` — must point to the same storage target as the live disk
-- `pciType` — must match the live disk PCI type (or be omitted to accept the implementation default)
+- `pciType` — must match the live disk PCI type. If omitted, the provider uses the default `VIRTIO`; verify the live disk PCI type before omitting this field, because a non-`VIRTIO` live disk can fail the strict claim match
 
 **Filesystem (affects guest-side initialization, not the claim check):**
 
