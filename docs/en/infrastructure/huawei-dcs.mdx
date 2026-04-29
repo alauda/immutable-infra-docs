@@ -285,7 +285,7 @@ spec:
 
 **Update rules:**
 
-- You can append new `persistentDisk` entries to an existing IP slot. The newly added disk does not affect a running VM: the controller does not hot-attach it on the DCS side, and the guest OS does not format or mount it. The disk is provisioned in the pool and reaches `phase: Available`; it is attached to a VM only when the VM is replaced through a rolling update.
+- You can append new `persistentDisk` entries to an existing IP slot. The controller attaches the newly added disk to the running VM on the DCS side, but it does not format or mount the disk inside the guest OS. Guest formatting and mounting take effect only after the VM is replaced and the replacement VM runs the generated disk setup during bootstrap.
 - Do not delete existing `persistentDisk` entries from the spec. The webhook rejects removal.
 - Treat `format`, `options`, and `pciType` as immutable after creation.
 - Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort platform validation when the pool carries a cluster label.
