@@ -37,7 +37,7 @@ Worker nodes are managed through Cluster API `Machine` resources, providing decl
 
 The IP-Hostname Pool defines the network configuration for worker node virtual machines. You must plan and configure the IP addresses, hostnames, DNS servers, and other network parameters before deployment.
 
-On Huawei DCS, the IP pool is also where you declare persistent disks that must survive VM replacement. Use `persistentDisk` for the platform-required `/var/cpaas` disk and for any other worker-node disk that must be preserved during delete-recreate operations.
+On Huawei DCS, the IP pool is also where you declare persistent disks that must survive VM replacement. Use `persistentDisk` for the platform-required `/var/cpaas` disk and for any other worker-node disk that must be preserved during delete-recreate operations. This workflow requires DCS provider `v1.0.16` or later.
 
 :::warning
 **Pool Size Requirement**
@@ -193,7 +193,7 @@ spec:
 
 ### Persistent Disks Managed by the IP Pool
 
-Declare any upgrade-preserved disk in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry.
+Declare any upgrade-preserved disk in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry (DCS provider `v1.0.16` or later).
 
 - Use this for `/var/cpaas`, which is required by the platform.
 - Keep `DCSMachineTemplate` for the system disk and template-local disks that may be recreated with the VM.
