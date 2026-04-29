@@ -38,7 +38,7 @@ When installed, Fleet Essentials enables:
 Fleet Essentials works with Infrastructure Providers to deliver platform-specific cluster management. Providers that implement these Fleet Essentials extension anchors can add their own cluster creation workflows and management pages.
 
 **Provider Extensions**:
-- **DCS Provider**: Alauda Container Platform DCS Infrastructure Provider `1.0.13` and later adds DCS-specific UI pages and workflows on Huawei DCS
+- **DCS Provider**: Alauda Container Platform DCS Infrastructure Provider `1.0.13` and later adds DCS-specific UI pages and workflows on Huawei DCS. Pool-managed persistent-disk scenarios require DCS provider `v1.0.16` or later, and in `v1.0.16` the `DCSIpHostnamePool.spec.pool[].persistentDisk` configuration remains YAML-only
 - **HCS Provider**: Enables UI-based cluster creation and management on Huawei Cloud Stack (coming soon)
 - **vSphere Provider**: The VMware vSphere infrastructure provider is generally available; its Fleet Essentials UI extension for cluster creation and management is coming soon
 
