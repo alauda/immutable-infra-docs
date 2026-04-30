@@ -91,7 +91,10 @@ spec:
                       items:
                         description: |-
                           PersistentDisk describes a disk that survives VM upgrades on an IP slot.
-                          Identity key is (ip, slot); path is only the guest mount point.
+                          Identity key is (ip, slot). Path/Format are guest-side concerns: when both
+                          are nil the disk runs in raw block mode — the controller still attaches it
+                          to the VM, but Ignition skips mkfs/mount, leaving the device for guest-side
+                          applications (e.g. Ceph OSD) to manage.
                         properties:
                           datastoreClusterName:
                             description: Provide exactly one of DatastoreClusterName
@@ -100,8 +103,11 @@ spec:
                           datastoreName:
                             type: string
                           format:
-                            description: Format is the filesystem (xfs/ext4/...).
-                              Immutable after creation.
+                            description: |-
+                              Format is the filesystem (xfs/ext4/...). Optional: when nil and Path is
+                              also nil, the disk runs in raw block mode; when Path is set but Format
+                              is nil, the Ignition template falls back to ext4. Immutable after
+                              creation.
                             type: string
                           mountOptions:
                             items:
@@ -113,7 +119,9 @@ spec:
                               type: string
                             type: array
                           path:
-                            description: Path is the guest mount point (e.g. /var/lib/etcd).
+                            description: |-
+                              Path is the guest mount point (e.g. /var/lib/etcd). Optional: when nil,
+                              Ignition does not render mkfs/mount for this disk (raw block mode).
                             pattern: ^/.+
                             type: string
                           pciType:
@@ -130,8 +138,6 @@ spec:
                             minimum: 0
                             type: integer
                         required:
-                        - format
-                        - path
                         - quantityGB
                         - slot
                         type: object
@@ -203,7 +209,6 @@ spec:
                       type: string
                   required:
                   - ip
-                  - path
                   - slot
                   type: object
                 type: array
