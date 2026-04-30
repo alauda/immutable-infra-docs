@@ -69,8 +69,8 @@ spec:
                       type: string
                     dvSwitchName:
                       description: |-
-                        DVSwitch name for multi-NIC support.
-                        If NIC's DVSwitchName or PortGroupName is nil, the VM template's DVSwitchName and PortGroupName will be used as fallback.
+                        add for multi nic support
+                        if nic DVSwitchName or PortGroupName is nil, we will use vmtemplate DVSwitchName and PortGroupName
                       type: string
                     gateway:
                       type: string
@@ -84,6 +84,68 @@ spec:
                       type: string
                     mask:
                       type: string
+                    persistentDisk:
+                      description: |-
+                        PersistentDisk defines disks that should survive VM upgrades (delete-recreate).
+                        Each entry is bound to (ip, slot); slot determines attach order and guest device name.
+                      items:
+                        description: |-
+                          PersistentDisk describes a disk that survives VM upgrades on an IP slot.
+                          Identity key is (ip, slot). Path/Format are guest-side concerns: when both
+                          are nil the disk runs in raw block mode — the controller still attaches it
+                          to the VM, but Ignition skips mkfs/mount, leaving the device for guest-side
+                          applications (e.g. Ceph OSD) to manage.
+                        properties:
+                          datastoreClusterName:
+                            description: Provide exactly one of DatastoreClusterName
+                              or DatastoreName.
+                            type: string
+                          datastoreName:
+                            type: string
+                          format:
+                            description: |-
+                              Format is the filesystem (xfs/ext4/...). Optional: when nil and Path is
+                              also nil, the disk runs in raw block mode; when Path is set but Format
+                              is nil, the Ignition template falls back to ext4. Immutable after
+                              creation.
+                            type: string
+                          mountOptions:
+                            items:
+                              type: string
+                            type: array
+                          options:
+                            description: 'Options: mkfs flags. Immutable after creation.'
+                            items:
+                              type: string
+                            type: array
+                          path:
+                            description: |-
+                              Path is the guest mount point (e.g. /var/lib/etcd). Optional: when nil,
+                              Ignition does not render mkfs/mount for this disk (raw block mode).
+                            pattern: ^/.+
+                            type: string
+                          pciType:
+                            description: PciType defaults to "VIRTIO". Immutable after
+                              creation.
+                            type: string
+                          quantityGB:
+                            minimum: 1
+                            type: integer
+                          slot:
+                            description: |-
+                              Slot is the disk position (>= 0), unique per IP. Determines attach
+                              order, sequenceNum and guest device name. Immutable.
+                            minimum: 0
+                            type: integer
+                        required:
+                        - quantityGB
+                        - slot
+                        type: object
+                        x-kubernetes-validations:
+                        - message: exactly one of datastoreClusterName or datastoreName
+                            is required
+                          rule: has(self.datastoreClusterName) != has(self.datastoreName)
+                      type: array
                     portGroupName:
                       type: string
                     portGroupUrn:
@@ -95,6 +157,61 @@ spec:
             type: object
           status:
             description: DCSIpHostnamePoolStatus defines the observed state of DCSIpHostnamePool.
+            properties:
+              persistentDiskStatus:
+                description: |-
+                  PersistentDiskStatus survives DCSMachine delete-recreate; used for
+                  volume coordination and crash recovery.
+                items:
+                  description: PersistentDiskStatus is the runtime state of a persistent
+                    volume at a (ip, slot).
+                  properties:
+                    attachedVmUrn:
+                      type: string
+                    datastoreUrn:
+                      type: string
+                    ip:
+                      type: string
+                    lastError:
+                      type: string
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    name:
+                      description: |-
+                        Name is the DCS volume name; format: {poolName}-{sha256(ip/slot)[:8]}.
+                        Used for idempotent CreateVolume-by-name lookup.
+                      type: string
+                    ownerMachineName:
+                      type: string
+                    ownerMachineUID:
+                      description: |-
+                        OwnerMachineUID is retained across Machine delete so rolling upgrade
+                        can hand the record to the next Machine rather than orphan it.
+                      type: string
+                    path:
+                      type: string
+                    phase:
+                      description: DiskPhase is the coordination phase of a persistent
+                        disk record.
+                      enum:
+                      - Creating
+                      - Available
+                      - Attaching
+                      - Attached
+                      - Detaching
+                      - Deleting
+                      - Error
+                      type: string
+                    slot:
+                      type: integer
+                    volumeUrn:
+                      type: string
+                  required:
+                  - ip
+                  - slot
+                  type: object
+                type: array
             type: object
         type: object
     served: true
