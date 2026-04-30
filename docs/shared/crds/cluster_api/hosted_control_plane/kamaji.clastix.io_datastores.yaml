@@ -285,7 +285,7 @@ spec:
               description: DataStoreStatus defines the observed state of DataStore.
               properties:
                 usedBy:
-                  description: List of the Tenant Control Planes, namespaced named, using this data store.
+                  description: List of the Tenant Control Planes, namespaced names, using this data store.
                   items:
                     type: string
                   type: array

@@ -478,7 +478,7 @@ spec:
                   provider.
                 type: boolean
               nodeRefs:
-                description: nodeRefs will point to the corresponding Nodes if it
+                description: nodeRefs will point to the corresponding Nodes if
                   they exist.
                 items:
                   description: ObjectReference contains enough information to let

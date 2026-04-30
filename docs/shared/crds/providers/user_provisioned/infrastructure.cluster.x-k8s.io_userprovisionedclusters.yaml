@@ -17,8 +17,7 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: The desired number of pods. This is typically equal to the number
-        of nodes satisfied to run pods.
+    - description: The current lifecycle phase of the UserProvisionedCluster.
       jsonPath: .status.phase
       name: Phase
       type: string
