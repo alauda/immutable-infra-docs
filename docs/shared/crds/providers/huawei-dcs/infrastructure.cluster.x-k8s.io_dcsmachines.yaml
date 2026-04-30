@@ -278,6 +278,10 @@ spec:
                 description: FailureDomains is a slice of FailureDomains.
                 type: object
               networkConfig:
+                description: |-
+                  DCSMachineNetworkConfig is the Pool IP entry projected onto a DCSMachine.
+                  It mirrors DCSIpHostname but excludes pool-owned fields that have no meaning on
+                  a per-Machine record (notably PersistentDisk, which is coordinated by the Pool).
                 properties:
                   additionNic:
                     items:
@@ -303,9 +307,6 @@ spec:
                   dns:
                     type: string
                   dvSwitchName:
-                    description: |-
-                      DVSwitch name for multi-NIC support.
-                      If NIC's DVSwitchName or PortGroupName is nil, the VM template's DVSwitchName and PortGroupName will be used as fallback.
                     type: string
                   gateway:
                     type: string

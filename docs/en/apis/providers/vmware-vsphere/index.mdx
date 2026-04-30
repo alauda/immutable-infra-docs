@@ -27,11 +27,8 @@ The VMware vSphere Infrastructure Provider defines custom resources for managing
 | `VSphereMachineConfigPool` | Pool of pre-defined node slots with hostnames, static IPs, and persistent disks | [VSphereMachineConfigPool](./vspheremachineconfigpool.mdx) |
 | `VSphereFailureDomain` | Describes a datacenter, compute cluster, datastore, and network topology used as a failure domain | [VSphereFailureDomain](./vspherefailuredomain.mdx) |
 | `VSphereDeploymentZone` | Binds a `VSphereFailureDomain` to a vCenter server and placement constraints | [VSphereDeploymentZone](./vspheredeploymentzone.mdx) |
+| `VSphereClusterTemplate` | Template consumed by Cluster API ClusterClass and managed-topology flows | [VSphereClusterTemplate](./vsphereclustertemplate.mdx) |
 
 ## API Group
 
 All VMware vSphere resources belong to the API group `infrastructure.cluster.x-k8s.io/v1beta1`.
-
-## Not Covered
-
-The provider also ships `VSphereClusterTemplate`, which is consumed by Cluster API ClusterClass / managed-topology flows. This product provisions workload clusters from explicit `Cluster`, `VSphereCluster`, and `KubeadmControlPlane` manifests rather than through ClusterClass, so `VSphereClusterTemplate` is not documented here.
