@@ -18,6 +18,8 @@ Before creating clusters on Huawei DCS, you need to configure infrastructure res
 
 You can manage infrastructure resources using either the web UI or YAML manifests. The web UI provides a guided interface with validation, while YAML offers automation capabilities.
 
+On Huawei DCS, the IP pool also carries any disks that must survive VM replacement. This includes the platform-required `/var/cpaas` disk.
+
 :::info
 **Namespace Requirement**
 All infrastructure resources must be deployed in the `cpaas-system` namespace to ensure proper integration with the platform as business clusters.
@@ -114,11 +116,17 @@ kubectl apply -f dcs-secret.yaml -n cpaas-system
 
 IP pools define the network configuration (IP addresses, subnet masks, gateways, DNS) for cluster nodes. Each pool can contain multiple node entries, and each node can have multiple network interface configurations.
 
+For DCS persistent disks, each IP entry can also declare `persistentDisk` items. These disks are bound to the IP slot instead of the VM lifecycle, so they can be detached from an old VM and reattached to a replacement VM during rolling upgrades. Use this mechanism for the platform-required `/var/cpaas` disk and for any other node-local data that must survive delete-recreate operations. Since DCS provider `v1.0.16`, this `persistentDisk` declaration is supported through YAML only.
+
 ### Using the Web UI
 
 #### Prerequisites
 
 - Cloud Credential has been created
+
+:::info
+Since DCS provider `v1.0.16`, the IP Pool web UI covers IP, hostname, and NIC settings only. It does not expose `DCSIpHostnamePool.spec.pool[].persistentDisk`. Configure persistent disks through YAML manifests.
+:::
 
 #### Creating an IP Pool
 
@@ -222,6 +230,67 @@ spec:
 You must configure machine information for a number of machines greater than or equal to the number of nodes you plan to deploy. Insufficient entries will prevent node deployment.
 :::
 
+### Persistent Disks in the IP Pool
+
+Declare upgrade-preserved disks in `DCSIpHostnamePool.spec.pool[].persistentDisk`, not in `DCSMachineTemplate`.
+
+Since DCS provider `v1.0.16`, YAML is the only supported way to declare these persistent disks.
+
+- Use the IP entry to bind each persistent disk to a fixed `(ip, slot)` identity.
+- Use this model for the platform-required `/var/cpaas` disk.
+- Keep `DCSMachineTemplate` focused on the system disk and any template-local disks that may be recreated with the VM.
+- When a replacement VM boots, the guest disk setup script checks for an existing filesystem. If one already exists, it skips formatting and mounts the disk directly.
+- Pool-managed persistent disks require one-by-one replacement. Keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0` when you rely on this feature.
+
+If you plan to use persistent disks, ensure the DCS VM template is `4.2.1` or later because safe shutdown and disk detach depend on guest tools inside the guest OS.
+
+**Example:**
+
+```yaml title="dcs-ippool-with-persistent-disk.yaml"
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSIpHostnamePool
+metadata:
+  name: <iphostname-pool-name>
+  namespace: cpaas-system
+spec:
+  pool:
+  - ip: "<ip-1>"
+    mask: "<mask>"
+    gateway: "<gateway>"
+    dns: "<dns>"
+    hostname: "<hostname-1>"
+    machineName: "<machine-name-1>"
+    persistentDisk:
+    - slot: 0
+      quantityGB: 40
+      datastoreClusterName: <datastore-cluster-name>
+      path: /var/cpaas
+      format: xfs
+      mountOptions:
+      - defaults
+```
+
+**Persistent disk field descriptions:**
+
+| Field | Description |
+|-------|-------------|
+| `slot` | Disk position within the IP slot. It determines attach order, guest device naming, and the sequence number used during volume claim and reattach. |
+| `quantityGB` | Disk size in GB. |
+| `datastoreName` / `datastoreClusterName` | Specify exactly one storage target for the persistent disk. |
+| `path` | Mount path inside the guest OS. `/var/cpaas` is the platform-required path. |
+| `format` | Filesystem used when the disk is first initialized. If the replacement VM sees an existing filesystem, formatting is skipped. |
+| `options` | `mkfs` options applied only when the disk is first formatted. |
+| `mountOptions` | Mount options applied when the disk is mounted. |
+| `pciType` | Optional PCI disk type. If omitted, the controller uses the default value from the implementation. |
+
+**Update rules:**
+
+- You can append new `persistentDisk` entries to an existing IP slot. The controller attaches the newly added disk to the running VM on the DCS side, but it does not format or mount the disk inside the guest OS. Guest formatting and mounting take effect only after the VM is replaced and the replacement VM runs the generated disk setup during bootstrap.
+- Do not delete existing `persistentDisk` entries from the spec. The webhook rejects removal.
+- Treat `format`, `options`, and `pciType` as immutable after creation.
+- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort platform validation when the pool carries a cluster label.
+- Treat `path` and `mountOptions` changes as guest-side changes that take effect on replacement machines during rolling updates.
+
 ---
 
 ## Machine Templates \{#machine-templates}
@@ -290,10 +359,9 @@ The disk configuration varies by template type.
 | Mount Path | Default Size (GB) | Can Delete |
 |------------|-------------------|------------|
 | System Volume | (template default) | No |
-| `/var/lib/etcd` | 10 | No |
 | `/var/lib/kubelet` | 100 | No |
 | `/var/lib/containerd` | 100 | No |
-| `/var/cpaas` | 40 | No |
+| `/var/lib/etcd` | 10 | No |
 
 **Worker Node Required Disks**:
 
@@ -302,9 +370,14 @@ The disk configuration varies by template type.
 | System Volume | (template default) | No |
 | `/var/lib/kubelet` | 100 | No |
 | `/var/lib/containerd` | 100 | No |
-| `/var/cpaas` | 40 | No |
 
 You may add additional disks, but must retain all mandatory disks listed above.
+
+:::info
+**Platform-required persistent disk**
+
+`/var/cpaas` is still required by the platform, but it is no longer documented as a `DCSMachineTemplate` disk. Configure it in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry instead so it can survive VM replacement.
+:::
 
 **Disk Field Descriptions**:
 
@@ -359,10 +432,6 @@ spec:
         - quantity: 0
           datastoreClusterName: <datastore-cluster-name>
           systemVolume: true
-        - quantity: 10
-          datastoreClusterName: <datastore-cluster-name>
-          path: /var/lib/etcd
-          format: xfs
         - quantity: 100
           datastoreClusterName: <datastore-cluster-name>
           path: /var/lib/kubelet
@@ -371,9 +440,9 @@ spec:
           datastoreClusterName: <datastore-cluster-name>
           path: /var/lib/containerd
           format: xfs
-        - quantity: 40
+        - quantity: 10
           datastoreClusterName: <datastore-cluster-name>
-          path: /var/cpaas
+          path: /var/lib/etcd
           format: xfs
       ipHostPoolRef:
         name: <iphostname-pool-name>
@@ -415,7 +484,10 @@ The datastore clusters (`datastoreClusterName`) must support cross-host access a
 If your datastore does not support direct file uploads (required for Ignition configs), you must provide a shared storage solution (e.g., NFS) that supports multi-host mounting.
 
 **Disk Configuration Rules**
-You may add custom disks, but must retain the mandatory system and data disks shown in the example (`systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`, `/var/cpaas`).
+You may add custom template disks, but must retain mandatory disks by node role:
+- Control plane: `systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`
+- Worker: `systemVolume`, `/var/lib/kubelet`, `/var/lib/containerd`
+Configure `/var/cpaas` in the IP pool as a persistent disk.
 :::
 
 ---
@@ -428,6 +500,7 @@ Infrastructure resources have the following dependency relationships:
 Cloud Credential
     ↓
 IP Pool
+    (network settings + persistent disk declarations)
     ↓
 Machine Template → references IP Pool
     ↓

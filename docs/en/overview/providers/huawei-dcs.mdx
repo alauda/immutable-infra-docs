@@ -17,28 +17,36 @@ The Huawei DCS Infrastructure Provider enables Immutable Infrastructure on Huawe
 
 DCS (Datacenter Virtualization Solution) is Huawei's virtualization platform that provides enterprise-grade virtualization capabilities. The DCS Provider integrates with DCS to manage virtual machines, networks, and storage resources for Kubernetes clusters.
 
+:::info
+**Version**
+
+Pool-managed persistent disks are first supported in DCS provider `v1.0.16`.
+In `v1.0.16`, `DCSIpHostnamePool.spec.pool[].persistentDisk` is managed through YAML only; the web UI does not expose this configuration.
+:::
+
 ## Key Features
 
 - **Virtual Machine Management**: Provision and manage VMs on DCS platform
 - **Network Configuration**: Support for multi-NIC configurations with customizable network settings
-- **Storage Management**: Flexible disk configuration with support for multiple datastores
+- **Storage Management**: Flexible disk configuration with template disks and IP-slot-based persistent disks across multiple datastores
 - **High Availability**: Built-in support for highly available control plane deployments
 - **Rolling Updates**: Automated rolling updates for zero-downtime maintenance
+- **Upgrade Data Preservation**: Declared persistent disks can be detached from old VMs and reattached to replacement VMs during rolling upgrades so preserved node-local data is not lost with the system disk
 
 ## Cluster Management Capabilities
 
 The DCS Provider always supports **YAML-based** cluster management through Cluster API manifests.
-It also supports **UI-based** cluster management when **Fleet Essentials** is installed and **Alauda Container Platform DCS Infrastructure Provider** is `1.0.13` or later.
+It also supports **UI-based** cluster management when **Fleet Essentials** is installed and **Alauda Container Platform DCS Infrastructure Provider** is `1.0.13` or later. If the UI workflow relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the persistent-disk declaration on `DCSIpHostnamePool` remains YAML-only.
 
 ### UI-Based Management (Fleet Essentials)
 
 Fleet Essentials provides the UI extension anchors that allow Alauda Container Platform DCS Infrastructure Provider to add DCS-specific pages dynamically.
-When Fleet Essentials is installed and the provider version is `1.0.13` or later, you can manage DCS clusters through the web UI:
+When Fleet Essentials is installed and the provider version is `1.0.13` or later, you can manage DCS clusters through the web UI. Pool-managed persistent-disk scenarios require DCS provider `v1.0.16` or later, but in `v1.0.16` the `persistentDisk` declaration on `DCSIpHostnamePool` must still be managed through YAML manifests:
 
 **Infrastructure Resource Management**:
 - [Cloud Credentials](../../infrastructure/huawei-dcs.mdx#cloud-credentials) - Store DCS platform access credentials
-- [IP Pools](../../infrastructure/huawei-dcs.mdx#ip-pools) - Manage IP address allocations with multi-NIC support
-- [Machine Templates](../../infrastructure/huawei-dcs.mdx#machine-templates) - Define VM specifications for Control Plane and Worker Nodes
+- [IP Pools](../../infrastructure/huawei-dcs.mdx#ip-pools) - Manage IP address allocations and multi-NIC settings. In `v1.0.16`, IP-slot persistent disks such as `/var/cpaas` remain YAML-managed
+- [Machine Templates](../../infrastructure/huawei-dcs.mdx#machine-templates) - Define VM specifications for Control Plane and Worker Nodes, excluding pool-managed persistent disks
 
 **Cluster Lifecycle**:
 - [Create Clusters](../../create-cluster/huawei-dcs.mdx) - 5-step wizard workflow for guided cluster creation
@@ -60,7 +68,7 @@ For automation and GitOps workflows, you can manage DCS clusters using YAML mani
 - Define infrastructure resources (Secret, DCSIpHostnamePool, DCSMachineTemplate)
 - Create cluster resources (KubeadmControlPlane, DCSCluster, Cluster)
 - Manage worker nodes (MachineDeployment, KubeadmConfigTemplate)
-- Perform rolling updates and upgrades
+- Perform rolling updates and upgrades with declared persistent disks preserved across node replacement
 
 See [Creating Clusters on Huawei DCS](../../create-cluster/huawei-dcs.mdx) for YAML-based instructions.
 
@@ -82,6 +90,7 @@ The DCS Provider implements the Cluster API infrastructure provider specificatio
 - DCS platform with API access
 - Interface interconnection user with administrator role
 - Virtual machine templates with MicroOS images
+- DCS VM templates `4.2.1` or later when you use pool-managed persistent disks, because safe shutdown and disk detach depend on guest tools
 - Shared storage with cross-host access capability
 
 ## Documentation

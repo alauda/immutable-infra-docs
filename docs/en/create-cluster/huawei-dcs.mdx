@@ -11,7 +11,7 @@ queries:
 
 # Creating Clusters on Huawei DCS
 
-This document provides instructions for creating Kubernetes clusters on the Huawei DCS platform. YAML-based cluster creation is available through manifests. If Fleet Essentials is installed and Alauda Container Platform DCS Infrastructure Provider is `1.0.13` or later, you can also create clusters through the web UI.
+This document provides instructions for creating Kubernetes clusters on the Huawei DCS platform. YAML-based cluster creation is available through manifests. If Fleet Essentials is installed and Alauda Container Platform DCS Infrastructure Provider is `1.0.13` or later, you can also create clusters through the web UI. If the workflow relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the `persistentDisk` declaration on `DCSIpHostnamePool` is available through YAML only and is not exposed in the web UI.
 
 :::info
 The web UI provides a guided workflow with validation, while YAML offers more automation flexibility.
@@ -26,8 +26,8 @@ Before creating clusters, ensure all of the following prerequisites are met:
 Configure the following infrastructure resources before creating a cluster:
 
 - **[Cloud Credential](../infrastructure/huawei-dcs.mdx#cloud-credentials)** - DCS platform access information
-- **[IP Pool](../infrastructure/huawei-dcs.mdx#ip-pools)** - Network configuration for cluster nodes
-- **[Machine Template](../infrastructure/huawei-dcs.mdx#machine-templates)** - VM specifications for control plane and worker nodes
+- **[IP Pool](../infrastructure/huawei-dcs.mdx#ip-pools)** - Network configuration for cluster nodes and any IP-slot persistent disks such as `/var/cpaas`
+- **[Machine Template](../infrastructure/huawei-dcs.mdx#machine-templates)** - VM specifications for control plane and worker nodes, excluding pool-managed persistent disks
 
 See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for detailed configuration instructions.
 
@@ -45,6 +45,8 @@ For Kubernetes installation, you must:
 - Upload the MicroOS image to the DCS platform
 - Create a virtual machine template based on this image
 - Ensure the template includes all necessary Kubernetes components
+- Use DCS VM templates `4.2.1` or later if you plan to use persistent disks, because safe shutdown and disk detach depend on guest tools
+- Use one-by-one replacement for any cluster that will rely on pool-managed persistent disks. Keep `maxSurge: 0` on the control plane and on worker node pools.
 
 For details on the Kubernetes components included in each VM image, see [OS Support Matrix](../overview/os-support-matrix.mdx).
 
@@ -70,7 +72,9 @@ Configure the public registry credentials. This includes:
 
 ## Using the Web UI
 
-**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests.
+**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests. If you use pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, configure `DCSIpHostnamePool.spec.pool[].persistentDisk` through YAML because the web UI does not expose that field.
+
+If the new cluster will rely on pool-managed persistent disks, create or update the backing `DCSIpHostnamePool` with YAML and then use the web UI for the rest of the cluster workflow.
 
 ### Creation Workflow
 
@@ -130,7 +134,7 @@ You can add multiple worker node pools. Each pool has the following configuratio
 | Pool Name | text | Yes | Unique identifier for this node pool |
 | Machine Template | dropdown | Yes | Filter templates by Type: Worker Node and compatible Kubernetes version |
 | Replicas | number | Yes | Default: 3 |
-| Max Surge | number | No | Default: 0, must be ≥ 0 |
+| Max Surge | number | No | Default: 0, must be ≥ 0. Keep this value at `0` if the node pool will use pool-managed persistent disks |
 | Max Unavailable | number | No | Default: 1, must be ≥ 0. When maxSurge = 0, maxUnavailable must be > 0 and ≤ Replicas |
 | SSH Authorized Keys | text | No | Add multiple SSH public keys |
 
@@ -138,6 +142,7 @@ You can add multiple worker node pools. Each pool has the following configuratio
 - Pool names must be unique within the cluster
 - IP Pool must have sufficient available IP addresses (≥ Replicas)
 - maxSurge and maxUnavailable must satisfy the constraint: if maxSurge = 0, then maxUnavailable > 0
+- If the cluster will rely on pool-managed persistent disks, keep `maxSurge = 0` so nodes are replaced one by one during future upgrades
 
 **Tip**: Prefix the pool name with the cluster name followed by a hyphen (e.g., `mycluster-worker-1`) to avoid naming conflicts across different clusters.
 
@@ -168,6 +173,8 @@ Review all configuration settings before creating the cluster:
 - Pool Name, Machine Template, Replicas
 - Max Surge, Max Unavailable, SSH Keys
 
+If the cluster will rely on pool-managed persistent disks, keep **Max Surge** set to `0` for worker node pools.
+
 **Networking**:
 - Pods CIDR, Services CIDR, Join CIDR
 
@@ -197,6 +204,8 @@ Follow these steps in order:
 
 **Note**: Infrastructure resources (Secret, DCSIpHostnamePool, DCSMachineTemplate) should be configured separately. See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for instructions.
 
+If you need any disk to survive rolling replacement, declare it in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry. This includes the platform-required `/var/cpaas` disk.
+
 ### Network Planning and Load Balancer
 
 Before creating control plane resources, plan the network architecture and deploy a load balancer for high availability.
@@ -224,12 +233,13 @@ metadata:
   name: <cluster-name>
   namespace: cpaas-system
   annotations:
+    controlplane.cluster.x-k8s.io/skip-coredns: ""
     controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
 spec:
   rolloutStrategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
+      maxSurge: 0 # Required when the cluster relies on pool-managed persistent disks
   kubeadmConfigSpec:
     users:
     - name: boot
@@ -274,6 +284,7 @@ spec:
         directory: /etc/kubernetes/patches
       nodeRegistration:
         kubeletExtraArgs:
+          node-ip: NODE_IP
           node-labels: "kube-ovn/role=master"
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
@@ -346,7 +357,6 @@ metadata:
   annotations:
     capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
     capi.cpaas.io/resource-kind: DCSCluster
-    cpaas.io/kube-ovn-version: <kube-ovn-version>
     cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>
   labels:
     cluster-type: DCS
@@ -438,12 +448,13 @@ metadata:
   name: <cluster-name>
   namespace: cpaas-system
   annotations:
+    controlplane.cluster.x-k8s.io/skip-coredns: ""
     controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
 spec:
   rolloutStrategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
+      maxSurge: 0 # Required when the cluster relies on pool-managed persistent disks
   kubeadmConfigSpec:
     users:
     - name: boot
@@ -671,6 +682,7 @@ spec:
         directory: /etc/kubernetes/patches
       nodeRegistration:
         kubeletExtraArgs:
+          node-ip: NODE_IP
           node-labels: "kube-ovn/role=master"
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
@@ -685,6 +697,56 @@ spec:
   replicas: 3
   version: <control-plane-kubernetes-version>
 ```
+
+:::tip
+**Alternative: reference a centrally managed Secret instead of inline content**
+
+The Alauda Container Platform DCS Infrastructure Provider plugin ships a Secret named `dcs-kubernetes-<kubernetes-major-minor>-files` in the `cpaas-system` namespace (for example, `dcs-kubernetes-1.33-files` for Kubernetes 1.33). It contains the canonical content of `psa-config.yaml`, `control-plane-kubelet-patch.json`, and `audit-policy.yaml`, and is updated together with each release.
+
+When that Secret is present, you can replace the three inline `files` entries with `contentFrom.secret` references. Inline and Secret-referenced forms are functionally equivalent; using the Secret keeps file content aligned with the installed plugin version and avoids manual updates on cluster upgrades.
+
+```yaml
+files:
+- contentFrom:
+    secret:
+      key: psa-config.yaml
+      name: dcs-kubernetes-1.33-files
+  owner: "root:root"
+  path: /etc/kubernetes/admission/psa-config.yaml
+  permissions: "0644"
+- contentFrom:
+    secret:
+      key: control-plane-kubelet-patch.json
+      name: dcs-kubernetes-1.33-files
+  owner: "root:root"
+  path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+  permissions: "0644"
+- contentFrom:
+    secret:
+      key: audit-policy.yaml
+      name: dcs-kubernetes-1.33-files
+  owner: "root:root"
+  path: /etc/kubernetes/audit/policy.yaml
+  permissions: "0644"
+- path: /etc/kubernetes/encryption-provider.conf
+  owner: "root:root"
+  append: false
+  permissions: "0644"
+  content: |
+    apiVersion: apiserver.config.k8s.io/v1
+    kind: EncryptionConfiguration
+    resources:
+    - resources:
+      - secrets
+      providers:
+      - aescbc:
+          keys:
+          - name: key1
+            secret: <base64-encoded-secret>
+```
+
+`encryption-provider.conf` is not provided by the Secret. You can either keep it inline as shown above (and supply your own `<base64-encoded-secret>`), or omit the inline file entirely and rely on the version that the DCS VM template image already bakes in — both are valid; the latter is simpler when the VM template's default key is acceptable for your environment.
+:::
 
 ---
 
