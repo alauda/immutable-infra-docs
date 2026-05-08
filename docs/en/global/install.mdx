@@ -1,0 +1,142 @@
+---
+weight: 20
+title: Installing the global Cluster
+queries:
+  - install global cluster on immutable infrastructure
+  - microos global cluster installation
+  - install platform on huawei dcs vmware vsphere huawei cloud stack
+  - immutable os global install
+---
+
+# Installing the global Cluster
+
+This document describes how to install the `global` cluster onto Immutable Infrastructure. The `global` cluster is the platform's control plane and is provisioned through Cluster API. Use this path when you want the platform's own cluster to run on an immutable operating system such as MicroOS.
+
+## When to Use This Path
+
+Choose this installation path when **all** of the following apply:
+
+- You want the `global` cluster to run on an immutable operating system. MicroOS is the supported image today; additional images may be added later.
+- Your infrastructure is one of the supported providers: Huawei DCS, VMware vSphere, or Huawei Cloud Stack. Bare-metal support is planned.
+- You can run a temporary KIND host that has network access to the target IaaS platform.
+
+For traditional operating systems such as Ubuntu or RHEL, use <ExternalSiteLink name="acp" href="/install/index.html" children="the standard installation path" /> instead.
+
+## Common Prerequisites
+
+The following prerequisites apply to every provider. Provider-specific prerequisites are listed in the corresponding tab in Step 2 and Step 5 of the procedure below.
+
+- A KIND host that meets the minimum hardware and network requirements. See the [Overview](../overview/index.mdx) for sizing guidance.
+- The Core Package and the provider plugin packages from the Customer Portal.
+- Network reachability between the KIND host and the target IaaS platform's API endpoint.
+- IP and hostname planning for the `global` control plane and worker nodes. See [Infrastructure Resources](../infrastructure/index.mdx) for the resource model used by each provider.
+- For x86_64 nodes that use ACP-provided MicroOS images, the underlying CPUs must support the `x86-64-v2` ISA baseline. See [OS Support Matrix](../overview/os-support-matrix.mdx).
+
+## Procedure
+
+### Step 1 — Bootstrap the KIND Host
+
+Run the bootstrap script provided by the Core Package. This brings up a temporary management cluster (`minialauda`) on the KIND host, which is used to drive the installation.
+
+```shell
+tar -xvf <core-package> -C /root/cpaas-install
+cd /root/cpaas-install/installer
+sh setup.sh
+```
+
+The bootstrap script provisions an embedded registry, the Cluster API control plane, and the provider plugins required to reach the IaaS platform.
+
+### Step 2 — Configure the global Cluster Manifest
+
+Apply the Cluster API manifest that describes the desired `global` cluster. The manifest is provider-specific.
+
+<Tabs>
+  <Tab label="Huawei DCS">
+
+This tab is owned by the Huawei DCS provider author. Place the `DCSCluster`, `DCSMachineTemplate`, `DCSIpHostnamePool`, and `KubeadmControlPlane` manifests here, including immutable-OS-specific values such as `baseDirPath: /var/cpaas`.
+
+  </Tab>
+  <Tab label="VMware vSphere">
+
+This tab is owned by the VMware vSphere provider author. Place the `VSphereCluster`, `VSphereMachineTemplate`, and related manifests here, including any immutable-OS-specific values.
+
+  </Tab>
+  <Tab label="Huawei Cloud Stack">
+
+This tab is owned by the Huawei Cloud Stack provider author. Place the `HCSCluster`, `HCSMachineTemplate`, and related manifests here, including any immutable-OS-specific values.
+
+  </Tab>
+  <Tab label="Bare Metal">
+    <Directive type="info" title="Status: Planned">
+      Bare-metal support for the `global` cluster on Immutable Infrastructure is in development.
+    </Directive>
+  </Tab>
+</Tabs>
+
+### Step 3 — Wait for the Control Plane
+
+Wait for the Cluster API provider to provision the virtual machines and bring up the Kubernetes control plane.
+
+```shell
+kubectl --kubeconfig <minialauda-kubeconfig> get clusters.cluster.x-k8s.io -A
+kubectl --kubeconfig <minialauda-kubeconfig> get kubeadmcontrolplane -A
+```
+
+The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` and the `Cluster` reports `Phase: Provisioned`.
+
+### Step 4 — Trigger the Platform Installation
+
+Submit the platform installation request to the embedded installer's REST API. The installer takes care of importing the Cluster API resources into the new `global` cluster, deploying the platform's base operator, and installing the selected plugins.
+
+```shell
+curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/<provider>" \
+  -H 'Content-Type: application/json' \
+  -d @config.json
+```
+
+Replace `<provider>` with the endpoint suffix that matches the provider you selected in Step 2.
+
+### Step 5 — Provide Provider Credentials
+
+After the platform installation starts, supply the provider credentials so that ongoing reconciliation against the IaaS platform can continue without the KIND host.
+
+<Tabs>
+  <Tab label="Huawei DCS">
+
+Provider author: document the credential `Secret` shape and the values that must be filled in for DCS.
+
+  </Tab>
+  <Tab label="VMware vSphere">
+
+Provider author: document the credential `Secret` shape for vSphere.
+
+  </Tab>
+  <Tab label="Huawei Cloud Stack">
+
+Provider author: document the credential `Secret` shape for HCS.
+
+  </Tab>
+  <Tab label="Bare Metal">
+    <Directive type="info" title="Status: Planned" />
+  </Tab>
+</Tabs>
+
+## Verification
+
+After the installer reports completion, verify that the `global` cluster is healthy.
+
+```shell
+kubectl --kubeconfig <global-kubeconfig> get nodes
+kubectl --kubeconfig <global-kubeconfig> get clusters.platform.tkestack.io global \
+  -o jsonpath='{.status.phase}'
+kubectl --kubeconfig <global-kubeconfig> get pods -n cpaas-system
+```
+
+All control plane and worker nodes must be `Ready`, the `global` cluster must report `Phase: Running`, and core platform pods must be `Running` or `Completed`.
+
+## Next Steps
+
+- Install additional provider plugins on the new `global` cluster: see [Installation](../install/index.mdx).
+- Configure infrastructure resources for workload clusters: see [Infrastructure Resources](../infrastructure/index.mdx).
+- Create your first workload cluster: see [Creating Clusters](../create-cluster/index.mdx).
+- Plan disaster recovery: see [Disaster Recovery](./disaster_recovery.mdx).

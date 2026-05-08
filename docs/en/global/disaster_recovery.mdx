@@ -1,0 +1,32 @@
+---
+weight: 40
+title: Global Cluster Disaster Recovery
+queries:
+  - global cluster disaster recovery on immutable infrastructure
+  - immutable infra etcd sync
+  - microos global dr
+  - immutable os disaster recovery
+---
+
+# Global Cluster Disaster Recovery
+
+<Directive type="info" title="Status: Planned">
+  Disaster recovery for the `global` cluster on Immutable Infrastructure is in development. This page reserves the location in the documentation tree so that links from sibling pages remain stable. The detailed procedure will be added in a subsequent release.
+</Directive>
+
+## Scope
+
+When this documentation lands, this page will cover:
+
+- etcd synchronization between a primary and a standby `global` cluster that both run on Immutable Infrastructure.
+- The `baseDirPath` and persistent-disk conventions used by the disaster-recovery manifests on each supported provider.
+- Failover, failback, and verification procedures.
+
+## Where to Look in the Meantime
+
+For traditional-operating-system `global` cluster disaster recovery, see <ExternalSiteLink name="acp" href="/install/global_dr.html" children="Global Cluster Disaster Recovery" />.
+
+For installation and upgrade of the `global` cluster on Immutable Infrastructure, see:
+
+- [Installing the global Cluster](./install.mdx)
+- [Upgrading the global Cluster](./upgrade.mdx)

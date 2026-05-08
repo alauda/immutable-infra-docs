@@ -1,0 +1,135 @@
+---
+weight: 30
+title: Upgrading the global Cluster
+queries:
+  - upgrade global cluster on immutable infrastructure
+  - microos global cluster upgrade
+  - upgrade platform on huawei dcs vmware vsphere huawei cloud stack
+  - immutable os global upgrade
+---
+
+# Upgrading the global Cluster
+
+This document describes how to upgrade a `global` cluster that runs on Immutable Infrastructure. Upgrades replace nodes with new MicroOS images managed by the Cluster API provider; in-place node upgrades are not used.
+
+## When to Use This Path
+
+Choose this upgrade path when:
+
+- The `global` cluster was originally installed on Immutable Infrastructure. See [Installing the global Cluster](./install.mdx).
+- Your infrastructure is one of the supported providers: Huawei DCS, VMware vSphere, or Huawei Cloud Stack. Bare-metal support is planned.
+
+For traditional-OS `global` clusters, use <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="the standard upgrade path" /> instead.
+
+## Two-Phase Upgrade Overview
+
+Like workload clusters, the `global` cluster on Immutable Infrastructure follows a two-phase upgrade.
+
+1. **Phase 1 — Distribution Version**: aligned and agnostic extensions are upgraded to the target Distribution Version. The procedure is shared with workload clusters; see [Upgrading Clusters](../upgrade-cluster/index.mdx) for the Phase 1 mechanics.
+2. **Phase 2 — Kubernetes and OS Image**: nodes are replaced with new MicroOS images that contain the target Kubernetes version. This document focuses on Phase 2 for the `global` cluster.
+
+<Directive type="info" title="Phase 1 Compatibility">
+  Before starting Phase 2, verify that every workload cluster falls within the Compatible Versions matrix of the target Distribution Version. Workload clusters that are out of range must be upgraded first.
+</Directive>
+
+## Common Prerequisites
+
+- The `global` cluster has completed Phase 1 (Distribution Version upgrade).
+- An etcd backup of the `global` cluster has been taken and verified.
+- The new MicroOS image and the matching `KubeadmControlPlane` and `MachineDeployment` versions are available on the platform's registry.
+- A maintenance window plan that accounts for rolling control plane replacement.
+
+## Procedure
+
+### Step 1 — Update the global Cluster Manifest
+
+Update the Cluster API manifests of the `global` cluster to reference the new MicroOS image and Kubernetes version. The manifest fields to update are provider-specific.
+
+<Tabs>
+  <Tab label="Huawei DCS">
+
+Provider author: list the manifest fields to update for DCS (for example, `KubeadmControlPlane.spec.version` and `DCSMachineTemplate.spec.template.spec.vmTemplateName`).
+
+  </Tab>
+  <Tab label="VMware vSphere">
+
+Provider author: list the manifest fields to update for vSphere.
+
+  </Tab>
+  <Tab label="Huawei Cloud Stack">
+
+Provider author: list the manifest fields to update for HCS.
+
+  </Tab>
+  <Tab label="Bare Metal">
+    <Directive type="info" title="Status: Planned">
+      Bare-metal support for the `global` cluster on Immutable Infrastructure is in development.
+    </Directive>
+  </Tab>
+</Tabs>
+
+### Step 2 — Apply the Updated Manifest
+
+Apply the updated manifest from a host that has access to the management plane.
+
+```shell
+kubectl apply -f <updated-manifest>
+```
+
+The Cluster API provider begins replacing control plane and worker nodes one at a time using the new image. Original nodes are deleted only after the replacement nodes report `Ready`.
+
+### Step 3 — Monitor the Rolling Replacement
+
+Watch the rolling replacement until all control plane and worker nodes have been replaced.
+
+```shell
+kubectl get machines -A -o wide
+kubectl get kubeadmcontrolplane -A
+```
+
+The upgrade is complete when every `Machine` reports the new Kubernetes version and `Phase: Running`, and the `KubeadmControlPlane` reports `Ready: True` against the new version.
+
+## Verification
+
+After the rolling replacement finishes, verify that the upgraded `global` cluster is healthy.
+
+```shell
+kubectl --kubeconfig <global-kubeconfig> get nodes -o wide
+kubectl --kubeconfig <global-kubeconfig> get clusterversionshadow -o yaml
+kubectl --kubeconfig <global-kubeconfig> get pods -n cpaas-system
+```
+
+All nodes must report the new Kubernetes version, the `ClusterVersionShadow` must reflect the target Distribution Version, and core platform pods must be `Running`.
+
+## Rollback Considerations
+
+Rollback after a partial Phase 2 upgrade is provider-specific. In general:
+
+- If the upgrade has not yet replaced any control plane node, revert the manifest to the previous image and reapply.
+- If control plane nodes have been replaced, restore from the etcd backup taken before starting the upgrade, then revert the manifest.
+
+<Tabs>
+  <Tab label="Huawei DCS">
+
+Provider author: document any DCS-specific rollback considerations, such as IP-pool persistent disk binding.
+
+  </Tab>
+  <Tab label="VMware vSphere">
+
+Provider author: document any vSphere-specific rollback considerations.
+
+  </Tab>
+  <Tab label="Huawei Cloud Stack">
+
+Provider author: document any HCS-specific rollback considerations.
+
+  </Tab>
+  <Tab label="Bare Metal">
+    <Directive type="info" title="Status: Planned" />
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+- Upgrade workload clusters to the same Distribution Version: see [Upgrading Clusters](../upgrade-cluster/index.mdx).
+- Review machine configuration changes that ship with the new image: see [Machine Configuration](../machine-configuration/index.mdx).
