@@ -41,6 +41,8 @@ Like workload clusters, the `global` cluster on Immutable Infrastructure follows
 
 ## Procedure
 
+After installation, the Cluster API controllers that manage the `global` cluster run on the `global` cluster itself. Use the `global` kubeconfig for the `kubectl` commands in this procedure.
+
 ### Step 1 — Update the global Cluster Manifest
 
 Update the Cluster API manifests of the `global` cluster to reference the new MicroOS image and Kubernetes version. The manifest fields to update are provider-specific.
@@ -70,10 +72,10 @@ Provider author: list the manifest fields to update for HCS.
 
 ### Step 2 — Apply the Updated Manifest
 
-Apply the updated manifest from a host that has access to the management plane.
+Apply the updated manifest against the `global` cluster.
 
 ```shell
-kubectl apply -f <updated-manifest>
+kubectl --kubeconfig <global-kubeconfig> apply -f <updated-manifest>
 ```
 
 The Cluster API provider begins replacing control plane and worker nodes one at a time using the new image. Original nodes are deleted only after the replacement nodes report `Ready`.
@@ -83,8 +85,8 @@ The Cluster API provider begins replacing control plane and worker nodes one at 
 Watch the rolling replacement until all control plane and worker nodes have been replaced.
 
 ```shell
-kubectl get machines -A -o wide
-kubectl get kubeadmcontrolplane -A
+kubectl --kubeconfig <global-kubeconfig> get machines -A -o wide
+kubectl --kubeconfig <global-kubeconfig> get kubeadmcontrolplane -A
 ```
 
 The upgrade is complete when every `Machine` reports the new Kubernetes version and `Phase: Running`, and the `KubeadmControlPlane` reports `Ready: True` against the new version.

@@ -24,7 +24,7 @@ For traditional operating systems such as Ubuntu or RHEL, use <ExternalSiteLink 
 
 ## Common Prerequisites
 
-The following prerequisites apply to every provider. Provider-specific prerequisites are listed in the corresponding tab in Step 2 and Step 5 of the procedure below.
+The following prerequisites apply to every provider. Provider-specific prerequisites are listed in the corresponding tab in Step 2 of the procedure below.
 
 - A KIND host that meets the minimum hardware and network requirements. See the [Overview](../overview/index.mdx) for sizing guidance.
 - The Core Package and the provider plugin packages from the Customer Portal.
@@ -88,8 +88,12 @@ The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` 
 
 Submit the platform installation request to the embedded installer's REST API. The installer takes care of importing the Cluster API resources into the new `global` cluster, deploying the platform's base operator, and installing the selected plugins.
 
+<Directive type="info" title="Network Scope">
+  `INSTALLER_IP` is the address of the temporary KIND host. The installer endpoint is exposed only on that host for the duration of the installation and is not routable from external networks.
+</Directive>
+
 ```shell
-curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/<provider>" \
+curl -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/<provider>" \
   -H 'Content-Type: application/json' \
   -d @config.json
 ```
