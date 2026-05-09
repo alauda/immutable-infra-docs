@@ -1,3 +1,4 @@
+.llmstxt-cache/**
 **/node_modules
 **/dist
 local/*
