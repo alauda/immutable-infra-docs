@@ -342,7 +342,7 @@ spec:
 | `.spec.controlPlaneLoadBalancer` | object | Control plane API server exposure method | Yes |
 | `.spec.controlPlaneLoadBalancer.type` | string | Currently only supports "external" | Yes |
 | `.spec.controlPlaneLoadBalancer.host` | string | Load balancer IP or domain name | Yes |
-| `.spec.credentialSecretRef.name` | string | DCS authentication Secret name | Yes |
+| `.spec.credentialSecretRef.name` | string | DCS authentication Secret name. The Secret defines whether DCS Provider authenticates as an interface interconnection user (default) or a domain user — see [Credential User Types](../infrastructure/huawei-dcs.mdx#user-types). | Yes |
 | `.spec.networkType` | string | Currently only supports "kube-ovn" | Yes |
 | `.spec.site` | string | DCS platform site ID | Yes |
 
