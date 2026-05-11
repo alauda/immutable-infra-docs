@@ -88,7 +88,11 @@ The DCS Provider implements the Cluster API infrastructure provider specificatio
 ## Requirements
 
 - DCS platform with API access
-- Interface interconnection user with administrator role
+- A DCS administrator-role user, either:
+  - `Interface interconnection user` (default), or
+  - `Domain user` (LDAP/AD-backed; requires DCS domain authentication configured by your DCS administrator).
+
+  See [Credential User Types](../../infrastructure/huawei-dcs.mdx#user-types) for selection criteria and DCS-side requirements.
 - Virtual machine templates with MicroOS images
 - DCS VM templates `4.2.1` or later when you use pool-managed persistent disks, because safe shutdown and disk detach depend on guest tools
 - Shared storage with cross-host access capability

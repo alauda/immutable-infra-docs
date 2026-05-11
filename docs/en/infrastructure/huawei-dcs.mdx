@@ -36,15 +36,20 @@ Cloud credentials store the DCS platform access information required for cluster
 Before creating a cloud credential, verify the following DCS platform requirements:
 
 **User Configuration**:
-- **User Type**: Must be `Interface interconnection user`
+- **User Type**: One of the following:
+  - `Interface interconnection user` — default; existing behaviour. Use this when an interconnect-style account is already provisioned in the DCS portal.
+  - `Domain user` — LDAP/AD-backed user managed in the directory service. Requires that DCS has **domain authentication configured by your DCS administrator**, and that the directory user is **pre-created in the DCS portal** with the role mapping below.
 - **Role**: Must be `administrator`
 
-**Password Policy**:
+**Password Policy** (applies to `Interface interconnection user` only):
+
 Navigate to **System Management** → **Rights Management** → **Rights Management Policy** and verify:
 - **Policy**: `Whether to modify the password of an interface interconnection user upon password resetting and first login`
 - **Value**: Must be set to **No**
 
 If set to `Yes`, the user's password will be forced to change upon first login, breaking authentication and causing cluster creation failures.
+
+For `Domain user`, password lifecycle is governed by your LDAP/AD directory service, not by DCS portal policy.
 
 #### Creating a Cloud Credential
 
@@ -73,6 +78,12 @@ If set to `Yes`, the user's password will be forced to change upon first login, 
 
 **Deleting Credentials**: Click **Delete** to remove a credential. Confirm the deletion in the dialog.
 
+:::info
+**Domain user support: YAML only in this version**
+
+The web UI currently only creates `Interface interconnection user` credentials. To create a `Domain user` credential, use the YAML path below and set `userType: domain` in the Secret.
+:::
+
 ### Using YAML
 
 Create a Secret resource to store DCS authentication information:
@@ -83,6 +94,7 @@ data:
   authUser: <base64-encoded-auth-user>
   authKey: <base64-encoded-auth-key>
   endpoint: <base64-encoded-endpoint>
+  userType: <base64-encoded-user-type>   # optional; "interconnect" (default) or "domain"
 kind: Secret
 metadata:
   name: <auth-secret-name>
@@ -97,6 +109,7 @@ type: Opaque
 | `.data.authUser` | DCS platform API user login name (base64-encoded) |
 | `.data.authKey` | DCS platform API user login password (base64-encoded) |
 | `.data.endpoint` | DCS platform API address with http or https protocol (base64-encoded). **Note**: The default API port for DCS platform is 7443 (not the common 8443). If your environment uses a custom port, confirm with your administrator. |
+| `.data.userType` | Optional. Base64 of the credential user type. Allowed plain-text values (before base64) are `interconnect` (default; used when the key is absent or empty) or `domain`. Matching is case-insensitive (`Domain`, `DOMAIN`, and `domain` all map to the same value). Any other value, including the legacy DCS magic numbers `1` and `2`, is rejected with a configuration error so a `domain` user is never silently authenticated as `interconnect`. |
 
 **Example**:
 
@@ -105,10 +118,24 @@ type: Opaque
 echo -n "admin" | base64
 echo -n "your-password" | base64
 echo -n "https://dcs.example.com:7443" | base64
+echo -n "domain" | base64   # only when using a domain user; omit for interconnect (default)
 
 # Apply the Secret
 kubectl apply -f dcs-secret.yaml -n cpaas-system
 ```
+
+### Credential User Types \{#user-types}
+
+DCS Provider supports two credential user types, selected by the optional Secret key `userType`:
+
+| `userType` value | Maps to DCS user | When to use | DCS-side requirement | Password lifecycle |
+|---|---|---|---|---|
+| `interconnect` (default; equivalent to the key being absent or empty) | `Interface interconnection user` | Existing deployments and the simplest path when an interconnect account is already provisioned in DCS. | DCS portal must keep the policy "Whether to modify the password of an interface interconnection user upon password resetting and first login" set to **No**. | Governed by DCS portal policy. |
+| `domain` | `Domain user` (LDAP/AD-backed) | Customers whose security audit requires LDAP/AD-managed credentials, or deployments that already standardize on directory-service accounts. | DCS must have **domain authentication configured by your DCS administrator**, and the directory user must be **pre-created in the DCS portal with the `administrator` role**. | Governed by your LDAP/AD directory service, not by DCS portal policy. |
+
+**Compatibility**: Existing Secrets without a `userType` key continue to authenticate as before; no migration is required to keep using interconnect-style credentials.
+
+**UI coverage**: The current web UI form does not expose the `userType` field. To use the `domain` value, configure the Secret through YAML.
 
 ---
 
