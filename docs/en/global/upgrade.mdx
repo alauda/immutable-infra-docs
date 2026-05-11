@@ -4,7 +4,7 @@ title: Upgrading the global Cluster
 queries:
   - upgrade global cluster on immutable infrastructure
   - microos global cluster upgrade
-  - upgrade platform on huawei dcs vmware vsphere huawei cloud stack
+  - upgrade platform on huawei dcs huawei cloud stack
   - immutable os global upgrade
 ---
 
@@ -17,7 +17,7 @@ This document describes how to upgrade a `global` cluster that runs on Immutable
 Choose this upgrade path when:
 
 - The `global` cluster was originally installed on Immutable Infrastructure. See [Installing the global Cluster](./install.mdx).
-- Your infrastructure is one of the supported providers: Huawei DCS, VMware vSphere, or Huawei Cloud Stack. Bare-metal support is planned.
+- Your infrastructure is one of the documented providers: Huawei DCS or Huawei Cloud Stack. VMware vSphere and bare-metal support for the `global` cluster are planned.
 
 For traditional-OS `global` clusters, use <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="the standard upgrade path" /> instead.
 
@@ -50,17 +50,74 @@ Update the Cluster API manifests of the `global` cluster to reference the new Mi
 <Tabs>
   <Tab label="Huawei DCS">
 
-Provider author: list the manifest fields to update for DCS (for example, `KubeadmControlPlane.spec.version` and `DCSMachineTemplate.spec.template.spec.vmTemplateName`).
+For DCS, create new immutable infrastructure templates instead of editing templates that are already referenced by running machines.
+
+Update the control plane resources:
+
+- Create a new `DCSMachineTemplate` for the target image and set `spec.template.spec.vmTemplateName` to the MicroOS template that matches the target Kubernetes version.
+- Keep preserved node-local data, including `/var/cpaas`, in `DCSIpHostnamePool.spec.pool[].persistentDisk`. Do not move preserved disks back into `DCSMachineTemplate`.
+- Set `KubeadmControlPlane.spec.version` to the target Kubernetes version.
+- Point `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` to the new `DCSMachineTemplate`.
+- Keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` when the cluster uses pool-managed persistent disks.
+
+Update worker node resources:
+
+- Create a new worker `DCSMachineTemplate` with the target `vmTemplateName`.
+- Set each `MachineDeployment.spec.template.spec.version` to the target Kubernetes version.
+- Point each `MachineDeployment.spec.template.spec.infrastructureRef.name` to the new worker `DCSMachineTemplate`.
+- Keep each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge: 0` when the worker pool uses pool-managed persistent disks.
+
+Pool-managed persistent disks are declared on the IP pool, not on the machine template:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSIpHostnamePool
+metadata:
+  name: <pool-name>
+  namespace: cpaas-system
+spec:
+  pool:
+    - ip: <node-ip>
+      hostname: <node-hostname>
+      persistentDisk:
+        - slot: 0
+          quantityGB: 40
+          datastoreName: <datastore-name>
+          path: /var/cpaas
+          format: xfs
+          mountOptions:
+            - defaults
+```
+
+Use the IP pool status to confirm that preserved disks are detached from old VMs and attached to replacement VMs during the rolling replacement.
 
   </Tab>
   <Tab label="VMware vSphere">
 
-Provider author: list the manifest fields to update for vSphere.
+<Directive type="info" title="Status: Planned">
+  VMware vSphere upgrade support for the `global` cluster on Immutable Infrastructure is planned. This procedure will be added in a later release.
+</Directive>
 
   </Tab>
   <Tab label="Huawei Cloud Stack">
 
-Provider author: list the manifest fields to update for HCS.
+For HCS, create new immutable infrastructure templates instead of editing templates that are already referenced by running machines.
+
+Update the control plane resources:
+
+- Create a new `HCSMachineTemplate` for the target image and set `spec.template.spec.imageName` to the MicroOS image that matches the target Kubernetes version.
+- Leave runtime identity fields unset in the new template, including `spec.template.spec.providerID` and `spec.template.spec.serverId`.
+- Set `KubeadmControlPlane.spec.version` to the target Kubernetes version.
+- Point `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` to the new `HCSMachineTemplate`.
+- Keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` for the fixed-size `HCSMachineConfigPool` path unless you have prepared extra hostname and static IP entries.
+
+Update worker node resources:
+
+- Create a new worker `HCSMachineTemplate` with the target `imageName`.
+- Set each `MachineDeployment.spec.template.spec.version` to the target Kubernetes version.
+- Point each `MachineDeployment.spec.template.spec.infrastructureRef.name` to the new worker `HCSMachineTemplate`.
+
+Do not treat HCS `dataVolumes` as preserved state during node replacement. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade. Single-control-plane HCS clusters are supported for creation, but this rolling upgrade workflow is for highly available control planes.
 
   </Tab>
   <Tab label="Bare Metal">
@@ -78,7 +135,7 @@ Apply the updated manifest against the `global` cluster.
 kubectl --kubeconfig <global-kubeconfig> apply -f <updated-manifest>
 ```
 
-The Cluster API provider begins replacing control plane and worker nodes one at a time using the new image. Original nodes are deleted only after the replacement nodes report `Ready`.
+The Cluster API provider begins replacing control plane and worker nodes by using the new image. When `maxSurge: 0` is set, each old node is drained and deleted before its replacement can reuse the same fixed identity, IP address, or preserved disk.
 
 ### Step 3 — Monitor the Rolling Replacement
 
@@ -107,27 +164,34 @@ All nodes must report the new Kubernetes version, the `ClusterVersionShadow` mus
 
 Rollback after a partial Phase 2 upgrade is provider-specific. In general:
 
-- If the upgrade has not yet replaced any control plane node, revert the manifest to the previous image and reapply.
-- If control plane nodes have been replaced, restore from the etcd backup taken before starting the upgrade, then revert the manifest.
+If the upgrade has not yet replaced any control plane node, revert the manifest to the previous image and reapply. If control plane nodes have been replaced, restore from the etcd backup taken before starting the upgrade, then revert the manifest.
 
 <Tabs>
   <Tab label="Huawei DCS">
 
-Provider author: document any DCS-specific rollback considerations, such as IP-pool persistent disk binding.
+For DCS clusters that use pool-managed persistent disks, confirm disk state before rollback:
+
+First, check `DCSIpHostnamePool.status.persistentDiskStatus` before deleting or recreating machines. Do not delete retained DCS volumes that are listed in `DCSIpHostnamePool.spec.pool[].persistentDisk`.
+
+Keep `maxSurge: 0` while reverting to the previous machine templates so replacement happens one node at a time. If the control plane was already replaced and cluster state is inconsistent, restore from the verified etcd backup before reapplying the previous manifest.
 
   </Tab>
   <Tab label="VMware vSphere">
 
-Provider author: document any vSphere-specific rollback considerations.
+<Directive type="info" title="Status: Planned">
+  VMware vSphere rollback guidance for the `global` cluster on Immutable Infrastructure is planned.
+</Directive>
 
   </Tab>
   <Tab label="Huawei Cloud Stack">
 
-Provider author: document any HCS-specific rollback considerations.
+For HCS, rollback depends on platform and etcd backups. Node-local data on HCS `dataVolumes` is not a reliable rollback source because node replacement may delete the old VM and attached volumes. If the control plane was already replaced, restore from the verified etcd backup, then reapply the previous manifest with the previous `HCSMachineTemplate` references and Kubernetes versions.
 
   </Tab>
   <Tab label="Bare Metal">
-    <Directive type="info" title="Status: Planned" />
+    <Directive type="info" title="Status: Planned">
+      Bare-metal rollback guidance for the `global` cluster on Immutable Infrastructure is planned.
+    </Directive>
   </Tab>
 </Tabs>
 
