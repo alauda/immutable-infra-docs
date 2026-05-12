@@ -10,17 +10,56 @@ queries:
 
 # Global Cluster Disaster Recovery
 
+This page is the disaster recovery entry point for a `global` cluster that runs on Immutable Infrastructure. Deploy-time disaster recovery configuration is part of the `global` cluster installation procedure.
+
+## Deployment Procedure
+
+Use [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment) in the installation guide when you create the primary and standby `global` clusters.
+
+That deployment procedure is the authoritative source for the installation-time DR configuration, including:
+
+- Primary and standby clusters use the same Kubernetes API server encryption provider configuration.
+- The etcd server certificate SAN list includes the local control plane VIP, Platform Access Address, and DR VIP.
+- Huawei DCS deployments reference the shared encryption provider Secret from `DCSCluster.spec.encryptionProviderConfigRef`.
+- Huawei Cloud Stack deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
+- The primary cluster installs `global-etcd-sync` with the standby cluster connection values after both installations succeed.
+
+## Operational Scope
+
+After the primary and standby clusters are installed, operate DR as a separate lifecycle process. Keep the installation manifests aligned with the installation guide, then use an approved operations runbook for the following tasks:
+
+- Verify `etcd-sync` health and replication lag.
+- Verify that the standby cluster can decrypt Kubernetes Secrets created on the primary cluster.
+- Validate the DR VIP and platform access path before a planned failover.
+- Execute failover and failback with an approved operations procedure.
+- Reconcile provider-specific resources after a failover.
+
+## Provider Notes
+
+<Tabs>
+  <Tab label="Huawei DCS">
+
+Follow the DCS steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The DCS installation must keep the same encryption provider Secret and `DCSCluster.spec.encryptionProviderConfigRef` on both sides. Do not add the encryption provider file to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for DCS.
+
+  </Tab>
+  <Tab label="VMware vSphere">
+
 <Directive type="info" title="Status: Planned">
-  Disaster recovery for the `global` cluster on Immutable Infrastructure is in development. This page reserves the location in the documentation tree so that links from sibling pages remain stable. The detailed procedure will be added in a subsequent release.
+  VMware vSphere disaster recovery support for the `global` cluster on Immutable Infrastructure is planned.
 </Directive>
 
-## Scope
+  </Tab>
+  <Tab label="Huawei Cloud Stack">
 
-When this documentation lands, this page will cover:
+Follow the HCS steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The HCS installation uses the same `KubeadmControlPlane` encryption file entry and etcd SAN configuration as the primary installation. No `HCSCluster` encryption Secret reference is required.
 
-- etcd synchronization between a primary and a standby `global` cluster that both run on Immutable Infrastructure.
-- The `baseDirPath` and persistent-disk conventions used by the disaster-recovery manifests on each supported provider.
-- Failover, failback, and verification procedures.
+  </Tab>
+  <Tab label="Bare Metal">
+    <Directive type="info" title="Status: Planned">
+      Bare-metal disaster recovery support for the `global` cluster on Immutable Infrastructure is planned.
+    </Directive>
+  </Tab>
+</Tabs>
 
 ## See Also
 
