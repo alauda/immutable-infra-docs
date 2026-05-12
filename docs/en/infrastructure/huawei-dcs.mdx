@@ -102,6 +102,28 @@ metadata:
 type: Opaque
 ```
 
+:::tip
+**Skip the manual base64 step with `stringData`**
+
+The example above uses `data:`, which is Kubernetes' standard for Secrets — every value must already be base64-encoded. If you would rather author the Secret in plain text, replace the `data:` block with `stringData:` and provide the values directly. The API server transparently base64-encodes them at write time, so the final stored Secret is byte-identical to the `data:` form and the DCS Provider controller sees the same content either way.
+
+```yaml title="dcs-secret-stringdata.yaml"
+apiVersion: v1
+stringData:
+  authUser: <plain-text-auth-user>
+  authKey: <plain-text-auth-key>
+  endpoint: <plain-text-endpoint>
+  userType: <plain-text-user-type>   # optional; "interconnect" (default) or "domain"
+kind: Secret
+metadata:
+  name: <auth-secret-name>
+  namespace: cpaas-system
+type: Opaque
+```
+
+`stringData:` is write-only — once the Secret is created, `kubectl get secret -o yaml` will only show the `data:` form, which is the canonical representation. The two forms are mutually exclusive at write time; do not set the same key in both blocks.
+:::
+
 **Parameter Descriptions**:
 
 | Parameter | Description |
