@@ -635,9 +635,9 @@ The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` 
 
 ### Step 7 — Import Additional Resources When Required
 
-Before triggering the installer, create an import ConfigMap only when you must import custom resources that are not covered by the default installation flow.
+Before triggering the installer, create the `dcs-import-extra-resources` ConfigMap when required by your deployment scenario.
 
-For DCS, create `dcs-import-extra-resources` when additional DCS resources must be preserved or imported into the installed `global` cluster. For HCS DR installations, this ConfigMap is required so that the installer imports HCS infrastructure resources during standby installation.
+This ConfigMap is mandatory for HCS DR standby installations (to import HCS infrastructure resources) and optional for DCS when you need to preserve additional resources beyond the default installation flow.
 
 ### Step 8 — Trigger the Platform Installation
 
