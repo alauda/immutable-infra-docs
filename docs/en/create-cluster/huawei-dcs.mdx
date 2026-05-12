@@ -222,7 +222,7 @@ The example manifests below use `<placeholder>` syntax for values that are envir
 | `<auth-secret-name>` | The Secret you authored in [Infrastructure → Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). | `kubectl -n cpaas-system get secret <name>` |
 | `<cluster-name>` | Operator-chosen; must satisfy DNS-1123. Reused across `Cluster`, `KubeadmControlPlane`, and the `cluster.x-k8s.io/cluster-name` label on every `Machine`. | n/a |
 | `<load-balancer-ip-or-domain-name>` | Operator-supplied: the IP / hostname clients use to reach the cluster API server. For single-control-plane clusters with no external LB, this is the IP of the sole master node (see [Single-control-plane layout](#single-control-plane-layout)). | n/a |
-| `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the global cluster's CIDRs, or any other CAPI cluster's CIDRs you intend to interconnect. kube-ovn defaults are documented in the [Kube-OVN reference](../../overview/networks.mdx); leaving them empty is **not recommended** for production. | n/a |
+| `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the global cluster's CIDRs, or any other CAPI cluster's CIDRs you intend to interconnect. Leaving them empty falls back to the kube-ovn defaults shipped with the global cluster, which is **not recommended** for production: explicit CIDRs avoid silent collisions when multiple workload clusters live on the same global. | n/a |
 
 ### Magic-Token Placeholders \{#magic-tokens}
 
@@ -381,6 +381,8 @@ For development, PoC, or any deployment where the control plane has only **one**
 
 - `.spec.controlPlaneLoadBalancer.host` and `.spec.controlPlaneEndpoint.host` — set both to **the IP of the sole master node** (the same IP allocated to the master in the control-plane `DCSIpHostnamePool`).
 - `.spec.controlPlaneLoadBalancer.type` — keep as `external` (the type field has no other supported value).
+
+Concretely:
 
 ```yaml
 spec:
