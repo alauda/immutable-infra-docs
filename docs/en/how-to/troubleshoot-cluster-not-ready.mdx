@@ -42,7 +42,7 @@ ERROR  failed to reconcile DCSCluster: ServiceAccount "sentry" not found
 
 The reconciler tries to apply the CNI through an `AppRelease` resource that is executed by the workload cluster's own `sentry` ServiceAccount. If that ServiceAccount is not present, the CNI is never deployed and the workload nodes stay `NotReady`.
 
-## Invariants of a Healthy Imported Cluster
+## Invariants of a Healthy Imported Cluster \{#invariants-of-a-healthy-imported-cluster}
 
 Once a workload cluster reaches a healthy steady state, all of the following must hold. Verify each invariant from the `global` cluster context unless noted otherwise.
 
