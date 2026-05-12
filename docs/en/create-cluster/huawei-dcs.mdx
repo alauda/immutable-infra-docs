@@ -450,8 +450,8 @@ The example above shows three annotations, but a complete `Cluster` resource car
 | `capi.cpaas.io/resource-kind` | Yes | Literal `DCSCluster` | Tells the CAPI infrastructure binding which kind to bind to. |
 | `capi.cpaas.io/kubernetes` | Yes | Same value as `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version`. | Display label, also consumed by some upgrade and inventory tooling. Source-of-truth is the `cpaas.io/dcs-vm-template` ConfigMap's `kubernetesVersion`. |
 | `cpaas.io/kube-ovn-join-cidr` | Yes | Operator-chosen `/16` CIDR, must not overlap with pod / service CIDRs or any other cluster's join CIDR. | Kube-OVN inter-node tunnel network. |
-| `cpaas.io/kube-ovn-version` | Yes | The kube-ovn release the global cluster ships with (read from the existing `cpaas.io/kube-ovn-version` annotation of any healthy cluster on the same global). | Pin the kube-ovn version installed into the workload cluster. |
-| `cpaas.io/registry-address` | Yes | The image registry the global cluster uses (typically `<global-cluster-ip>:11443`). Read from the existing `cpaas.io/registry-address` annotation of any healthy cluster. | Workload cluster pulls platform images (CoreDNS, kube-proxy, kube-ovn) from this registry. |
+| `cpaas.io/kube-ovn-version` | Yes | The kube-ovn release the global cluster ships with. Read it from the `cpaas.io/kube-ovn-version` annotation on the `global` CAPI Cluster (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/kube-ovn-version}'`). The same value lives on every healthy workload cluster on the same global, so you can also read it from any of those if they exist. | Pin the kube-ovn version installed into the workload cluster. |
+| `cpaas.io/registry-address` | Yes | The image registry the global cluster uses (typically `<global-cluster-ip>:11443`). Read it from the `cpaas.io/registry-address` annotation on the `global` CAPI Cluster (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'`). | Workload cluster pulls platform images (CoreDNS, kube-proxy, kube-ovn) from this registry. |
 | `cpaas.io/nodes-mode` | Yes | Literal `self-managed` for clusters that DCS Provider provisions. | Marks the cluster as having its node lifecycle managed by CAPI + this provider. |
 
 ACP controllers may write additional read-only annotations (`cpaas.io/cpu-cores-number`, `cpaas.io/memories`, `cpaas.io/nodes-number`, and so on) after the cluster is up — these are computed and **must not** be pre-set in the YAML you apply.
@@ -817,7 +817,10 @@ files:
 **Minimum plugin version**: This Secret is shipped by the DCS Provider plugin starting from `v1.0.13`. On older plugin versions the Secret does not exist; keep the inline `content:` form in that case. To check whether the Secret is present on the target cluster before deciding which form to use:
 
 ```bash
-kubectl -n cpaas-system get secret dcs-kubernetes-1.33-files >/dev/null 2>&1 \
+# Replace <kubernetes-major-minor> with the value matching this cluster
+# (for example, 1.33 for Kubernetes v1.33.x).
+K8S_MM=<kubernetes-major-minor>
+kubectl -n cpaas-system get secret "dcs-kubernetes-${K8S_MM}-files" >/dev/null 2>&1 \
   && echo "Secret present — contentFrom.secret form is supported" \
   || echo "Secret missing — use inline content form"
 ```

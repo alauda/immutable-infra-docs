@@ -54,12 +54,17 @@ Once a workload cluster reaches a healthy steady state, all of the following mus
 
 2. The Cluster API `Cluster` resource carries the label `capi.cpaas.io/imported: ""`.
 
+   The label value is the empty string `""` on a healthy import, so a `jsonpath` query alone cannot distinguish "label missing" from "label value is empty". Use `jq` to check label presence explicitly:
+
    ```shell
-   kubectl get cluster <cluster-name> -n <namespace> \
-     -o jsonpath='{.metadata.labels.capi\.cpaas\.io/imported}'
+   kubectl get cluster <cluster-name> -n <namespace> -o json | \
+     jq -r 'if (.metadata.labels | has("capi.cpaas.io/imported"))
+            then "present (value=\"\(.metadata.labels["capi.cpaas.io/imported"])\")"
+            else "missing"
+            end'
    ```
 
-   An empty string `""` is the expected label value. Missing means the import has not completed.
+   Expected output: `present (value="")`. `missing` means the import has not completed.
 
 3. Exactly one `clustercredentials.platform.tkestack.io` object is labelled for the cluster.
 
