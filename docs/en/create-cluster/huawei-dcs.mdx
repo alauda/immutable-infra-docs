@@ -813,6 +813,14 @@ files:
 ```
 
 `encryption-provider.conf` is not provided by the Secret. You can either keep it inline as shown above (and supply your own `<base64-encoded-secret>`), or omit the inline file entirely and rely on the version that the DCS VM template image already bakes in — both are valid; the latter is simpler when the VM template's default key is acceptable for your environment.
+
+**Minimum plugin version**: This Secret is shipped by the DCS Provider plugin starting from `v1.0.13`. On older plugin versions the Secret does not exist; keep the inline `content:` form in that case. To check whether the Secret is present on the target cluster before deciding which form to use:
+
+```bash
+kubectl -n cpaas-system get secret dcs-kubernetes-1.33-files >/dev/null 2>&1 \
+  && echo "Secret present — contentFrom.secret form is supported" \
+  || echo "Secret missing — use inline content form"
+```
 :::
 
 ---
