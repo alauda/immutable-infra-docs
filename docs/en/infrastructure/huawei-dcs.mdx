@@ -320,6 +320,85 @@ spec:
 
 ---
 
+## DCS Platform Capacity and Placement \{#capacity-and-placement}
+
+Before authoring `DCSMachineTemplate` resources, verify that the target DCS site, datastore, and compute cluster have enough free capacity to host the planned VMs, and that the DCS-side scheduling policy can place new VMs on the available hosts. Skipping these checks is the single most common cause of VMs that appear to hang in `creating` state with no error returned by the DCS API.
+
+### Choosing a datastore \{#choosing-datastore}
+
+Each `DCSMachineDiskSpec` entry binds a disk to a DCS datastore through one of two mutually exclusive fields:
+
+- `datastoreName` — pins the disk to a specific datastore. The DCS scheduler does **not** look at sibling datastores even if they have free space. This is the strictest binding.
+- `datastoreClusterName` — pins the disk to a datastore cluster (a DCS-side group of datastores). The DCS scheduler chooses one specific datastore from the cluster that satisfies capacity. This is the safer default when the platform provides a datastore cluster.
+
+Prefer `datastoreClusterName` whenever the DCS administrator has configured a datastore cluster, so a single near-full datastore does not block deployments while sibling datastores still have free space.
+
+**Capacity preflight**:
+
+Before applying a new `DCSMachineTemplate`, list the existing DCS datastores and confirm that the target has enough free capacity for the worst case of `system disk + ∑(spec disk size) × replica count`. From an environment with DCS API access, the read-only listing looks like this:
+
+```bash
+curl -k -sS "${DCS_BASE}/service/sites/${SITE}/datastores" \
+  -H "X-Auth-Token: ${TOKEN}" -H 'version: 8.1' \
+  | python3 -c "
+import json,sys
+for ds in json.load(sys.stdin).get('datastores',[]) or []:
+  print(f\"{ds.get('name','?'):24} cap={ds.get('capacityGB','?')}GB used={ds.get('usedSizeGB','?')}GB free={ds.get('freeSizeGB','?')}GB state={ds.get('status','?')}\")"
+```
+
+Each `DCSMachineTemplate` cp / worker pair commonly needs the system disk (template-default, often ~80 GB) plus the explicit data disks declared in the spec, so a single control-plane node with `etcd 10G + kubelet 100G + containerd 100G + /var/cpaas 100G` consumes roughly 390 GB before the template's system disk. A datastore used above ~70 % is a strong signal to pick a different datastore — even if the absolute free space looks large, fragmentation and reservations can cause new VM placement to stall.
+
+### Host placement requirements \{#host-placement}
+
+A `DCSMachineTemplate.spec.template.spec.resource` field controls how DCS picks the physical host for the cloned VM:
+
+- `type: cluster` + `name: <cluster-name>` — lets the DCS cluster scheduler pick a host automatically. Requires the DCS cluster to have **DRS enabled** (or an equivalent balancer policy) so the scheduler can place new VMs on under-utilized hosts.
+- `type: host` + `name: <host-name>` — pins every cloned VM to one specific host. Use this when DRS is disabled, or when the platform has uneven host capacity and you must steer new VMs onto a specific host with free CPU and memory.
+
+If the DCS cluster has DRS disabled and the existing hosts are unevenly loaded (for example, one host is severely CPU-over-committed while another is mostly idle), the `type: cluster` mode can leave the deploy task stalled because the scheduler cannot pick a host that simultaneously satisfies the cluster's overcommit and reservation policies. Switching to `type: host` and pointing at a known-healthy host removes that ambiguity.
+
+To check current host load before applying a new template:
+
+```bash
+curl -k -sS "${DCS_BASE}/service/sites/${SITE}/hosts" \
+  -H "X-Auth-Token: ${TOKEN}" -H 'version: 8.1' \
+  | python3 -c "
+import json,sys
+for h in json.load(sys.stdin).get('hosts',[]) or []:
+  print(f\"{h.get('name','?'):10} status={h.get('status','?'):10} cpuUsed/total={h.get('cpuUsedCores','?')}/{h.get('cpuTotalCores','?')}c memUsed={h.get('memUsedSizeMB','?')}MB cpuMuxRatio={h.get('cpuMuxRatio','?')}\")"
+```
+
+A `cpuMuxRatio` (CPU allocation / physical cores) above ~3× on every host in the cluster, combined with DRS disabled, indicates the cluster is already saturated and will likely refuse new placements until either DRS is enabled or the load is rebalanced manually.
+
+### Troubleshooting: VM stuck in `creating` \{#stuck-creating}
+
+If a `DCSMachine` stays in `Provisioning` with `status.cdRomFile` set (so DCS API auth and ISO upload succeeded) but the DCS-side VM never leaves `status=creating` and never gets a `hostName`, the failure is almost always at the DCS placement layer, not in the controller.
+
+Diagnostic ladder, in order:
+
+1. **Confirm it is a placement stall**, not a slow boot. Query the VM and the matching deploy task on DCS:
+
+    ```bash
+    curl -k -sS "${DCS_BASE}/service/sites/${SITE}/vms?name=${VM_NAME}&limit=10" \
+      -H "X-Auth-Token: ${TOKEN}" -H 'version: 8.1'
+    curl -k -sS "${DCS_BASE}/service/sites/${SITE}/tasks?status=running&limit=50" \
+      -H "X-Auth-Token: ${TOKEN}" -H 'version: 8.1'
+    ```
+
+    Symptoms of a placement stall: `status=creating`, `hostName=` (empty / unscheduled), `disks` array empty or unchanging, and the deploy task sitting at the same `progress` value with no errors for more than ~5 minutes.
+
+2. **Check datastore free space** and **host load** using the snippets in [Choosing a datastore](#choosing-datastore) and [Host placement requirements](#host-placement). Datastore above 70 % used, or all hosts at high `cpuMuxRatio`, are the leading causes.
+
+3. **If DRS is disabled on the DCS cluster**, switch the relevant `DCSMachineTemplate.spec.template.spec.resource` to `type: host` + an explicit healthy host name, delete the stuck `Machine`, and let the controller re-derive a fresh `DCSMachine` against the new template.
+
+4. **If the DCS-side deploy task is genuinely deadlocked** (cancellable but unresponsive to ACP-driven `DeleteVm`), escalate to a DCS administrator with portal-admin credentials to cancel the task. The 7443 REST API does not expose a task-cancel endpoint for non-admin users, so the recovery path is owned by the DCS platform team, not by ACP.
+
+5. **Watch out for serialization side-effects**. In environments with a global DeployVM lock, a single stuck task can cause every new deploy to stall at the same progress percentage. Resolving the original stuck task usually unblocks the queue.
+
+A `DCSMachine` whose status conditions show `InfrastructureReady=False reason=WaitingForInfrastructure` for more than 10 minutes, together with the symptoms above, should be treated as a DCS-platform incident and not as a Cluster API or DCS Provider regression.
+
+---
+
 ## Machine Templates \{#machine-templates}
 
 Machine templates define the virtual machine specifications (VM template, CPU, memory, disk, network) for cluster nodes. Each machine template has a **Type** that determines its usage:

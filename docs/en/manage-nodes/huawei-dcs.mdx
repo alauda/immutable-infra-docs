@@ -267,6 +267,27 @@ spec:
             protect-kernel-defaults: "true"
 ```
 
+`PROVIDER_ID` and `NODE_IP` are literal magic tokens that DCS Provider substitutes at machine-join time — keep them exactly as written. See [Magic-Token Placeholders](../create-cluster/huawei-dcs.mdx#magic-tokens) for the full list.
+
+:::tip
+**Alternative: reference a centrally managed Secret for the worker kubelet patch**
+
+The DCS Provider plugin ships a Secret named `dcs-kubernetes-<kubernetes-major-minor>-files` in the `cpaas-system` namespace (for example, `dcs-kubernetes-1.33-files` for Kubernetes 1.33). In addition to the control-plane files it serves to `KubeadmControlPlane` (see the create-cluster Appendix), this Secret also contains a `worker-kubelet-patch.json` key suitable for the worker `KubeadmConfigTemplate`. When that Secret is present, you can replace the inline `files` entry above with a `contentFrom.secret` reference — this keeps the worker kubelet patch in sync with the installed plugin version and avoids manual updates on cluster upgrades.
+
+```yaml
+files:
+- contentFrom:
+    secret:
+      key: worker-kubelet-patch.json
+      name: dcs-kubernetes-1.33-files
+  owner: "root:root"
+  path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+  permissions: "0644"
+```
+
+The inline and Secret-referenced forms are functionally equivalent; the Secret form is the recommended path when the plugin Secret is available in the target cluster.
+:::
+
 ### Step 4: Configure Machine Deployment
 
 The MachineDeployment orchestrates the creation and management of worker nodes by referencing the previously configured DCSMachineTemplate and KubeadmConfigTemplate resources. It manages the desired number of nodes and handles rolling updates.
@@ -923,6 +944,24 @@ Click the **Conditions** link on the Control Plane Node Pool card to view detail
 | Type | Status | Last Transition Time | Reason | Message |
 |------|--------|---------------------|--------|---------|
 | Condition Type | Status | Timestamp | Reason | Human-readable details |
+
+---
+
+## Troubleshooting \{#troubleshooting}
+
+### A new worker `Machine` stays in `Provisioning` and the DCS VM stays in `creating` \{#worker-stuck-creating}
+
+The diagnostic flow is identical for control-plane and worker `Machine` objects — when a `DCSMachine` reaches `Provisioning` with `status.cdRomFile` already set (DCS API auth and ISO upload succeeded), but the underlying DCS VM never schedules to a host, the failure is on the DCS platform side and not in the controller.
+
+See [Infrastructure → Troubleshooting: VM stuck in `creating`](../infrastructure/huawei-dcs.mdx#stuck-creating) for the full diagnostic ladder, which covers:
+
+- Confirming the symptom is a placement stall (not a slow boot).
+- Checking datastore free space.
+- Checking host CPU / memory utilisation and overcommit ratios.
+- Switching `DCSMachineTemplate.spec.template.spec.resource` from `type: cluster` to `type: host` when the DCS cluster has DRS disabled.
+- Escalation path when the deploy task is genuinely deadlocked.
+
+The same diagnostic applies whether the stuck node is the first control-plane node of a fresh cluster, a new worker added through `MachineDeployment` scaling, or a replacement worker created during a rolling update.
 
 ---
 
