@@ -36,6 +36,18 @@ The following prerequisites apply to every provider:
 - A platform access address, registry address, and Pod and Service CIDR ranges.
 - For x86_64 nodes that use ACP-provided MicroOS images, the underlying CPUs must support the `x86-64-v2` ISA baseline. See [OS Support Matrix](../overview/os-support-matrix.mdx).
 
+## Compatibility and Version Inputs
+
+Before installation, record the supported version set for the delivery package:
+
+| Input | Purpose |
+|-------|---------|
+| Core Package version | Provides the installer, local registry, and base platform payload. |
+| Kubeadm provider chart version | Must match the Cluster API control plane resources used by the global manifest. |
+| Infrastructure provider chart version | Use the DCS or HCS provider chart version delivered with the target release. |
+| MicroOS image or VM template | Must contain the Kubernetes version used by `K8S_VERSION`. |
+| `K8S_VERSION` | Use v-prefixed semver that matches the target MicroOS image, such as `v<major>.<minor>.<patch>`. |
+
 ## Procedure
 
 ### Step 1 — Prepare Common Variables
@@ -44,15 +56,21 @@ Set the common variables on the KIND host.
 
 ```shell
 export HOST_IP="<kind-host-ip>"
-export LOCAL_REGISTRY_ADDRESS="${HOST_IP}:11443"
-export BOOTSTRAP_REGISTRY_ADDRESS="${HOST_IP}:11443"
+export LOCAL_REGISTRY_ADDRESS="127.0.0.1:11443"
+export BOOTSTRAP_REGISTRY_ADDRESS="172.18.0.1:11443"
+export NODE_REGISTRY_ADDRESS="${HOST_IP}:11443"
 export CONTROL_PLANE_VIP="<global-control-plane-vip>"
 export PLATFORM_HOST="<platform-access-domain-or-vip>"
 export REGISTRY_DOMAIN="<platform-registry-domain-or-vip>:11443"
 export CLUSTER_CIDR="100.3.0.0/16"
 export SERVICE_CIDR="100.4.0.0/16"
-export K8S_VERSION="v1.34.5"
+export K8S_VERSION="<target-kubernetes-version>"
+export INGRESS_CLASS_NAME="global-alb2"
+export HCS_SECRET_NAME="global-secret"
+# Use v-prefixed semver that matches the target MicroOS image.
 ```
+
+Use `LOCAL_REGISTRY_ADDRESS` when pushing packages from the KIND host. Use `BOOTSTRAP_REGISTRY_ADDRESS` in AppRelease chart repository values because provider Pods read the chart repository from inside the bootstrap KIND network. Use `NODE_REGISTRY_ADDRESS` in Cluster API registry annotations because provisioned `global` nodes must pull images through an address reachable from their subnet.
 
 ### Step 2 — Bootstrap the KIND Host
 
@@ -122,18 +140,21 @@ spec:
       - name: ait/chart-cluster-api-provider-kubeadm
         releaseName: cluster-api-provider-kubeadm
         targetRevision: ${KUBEADM_PROVIDER_VERSION}
-    repoURL: ${LOCAL_REGISTRY_ADDRESS}
+    repoURL: ${BOOTSTRAP_REGISTRY_ADDRESS}
   timeout: 120
   values:
     global:
+      albName: ${INGRESS_CLASS_NAME}
       auth:
         default_admin: admin@cpaas.io
       cluster:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: DCS
+        type: Baremetal # Provider internal value; keep Baremetal for DCS global installation.
       host: ${PLATFORM_HOST}
+      ingress:
+        ingressClassName: ${INGRESS_CLASS_NAME}
       labelBaseDomain: cpaas.io
       namespace: cpaas-system
       platformUrl: https://${PLATFORM_HOST}
@@ -141,7 +162,7 @@ spec:
         enabled: false
       region: global
       registry:
-        address: ${LOCAL_REGISTRY_ADDRESS}
+        address: ${BOOTSTRAP_REGISTRY_ADDRESS}
         imagePullSecrets:
           - global-registry-auth
       replicas: 1
@@ -165,18 +186,21 @@ spec:
       - name: ait/chart-cluster-api-provider-dcs
         releaseName: cluster-api-provider-dcs
         targetRevision: ${DCS_PROVIDER_VERSION}
-    repoURL: ${LOCAL_REGISTRY_ADDRESS}
+    repoURL: ${BOOTSTRAP_REGISTRY_ADDRESS}
   timeout: 120
   values:
     global:
+      albName: ${INGRESS_CLASS_NAME}
       auth:
         default_admin: admin@cpaas.io
       cluster:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: DCS
+        type: Baremetal # Provider internal value; keep Baremetal for DCS global installation.
       host: ${PLATFORM_HOST}
+      ingress:
+        ingressClassName: ${INGRESS_CLASS_NAME}
       labelBaseDomain: cpaas.io
       namespace: cpaas-system
       platformUrl: https://${PLATFORM_HOST}
@@ -184,7 +208,7 @@ spec:
         enabled: false
       region: global
       registry:
-        address: ${LOCAL_REGISTRY_ADDRESS}
+        address: ${BOOTSTRAP_REGISTRY_ADDRESS}
         imagePullSecrets:
           - global-registry-auth
       replicas: 1
@@ -258,18 +282,21 @@ spec:
       - name: ait/chart-cluster-api-provider-kubeadm
         releaseName: cluster-api-provider-kubeadm
         targetRevision: ${KUBEADM_PROVIDER_VERSION}
-    repoURL: ${LOCAL_REGISTRY_ADDRESS}
+    repoURL: ${BOOTSTRAP_REGISTRY_ADDRESS}
   timeout: 120
   values:
     global:
+      albName: ${INGRESS_CLASS_NAME}
       auth:
         default_admin: admin@cpaas.io
       cluster:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: HCS
+        type: Baremetal # Provider internal value; keep Baremetal for HCS global installation.
       host: ${PLATFORM_HOST}
+      ingress:
+        ingressClassName: ${INGRESS_CLASS_NAME}
       labelBaseDomain: cpaas.io
       namespace: cpaas-system
       platformUrl: https://${PLATFORM_HOST}
@@ -277,7 +304,7 @@ spec:
         enabled: false
       region: global
       registry:
-        address: ${LOCAL_REGISTRY_ADDRESS}
+        address: ${BOOTSTRAP_REGISTRY_ADDRESS}
         imagePullSecrets:
           - global-registry-auth
       replicas: 1
@@ -301,18 +328,21 @@ spec:
       - name: ait/chart-cluster-api-provider-hcs
         releaseName: cluster-api-provider-hcs
         targetRevision: ${HCS_PROVIDER_VERSION}
-    repoURL: ${LOCAL_REGISTRY_ADDRESS}
+    repoURL: ${BOOTSTRAP_REGISTRY_ADDRESS}
   timeout: 120
   values:
     global:
+      albName: ${INGRESS_CLASS_NAME}
       auth:
         default_admin: admin@cpaas.io
       cluster:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: HCS
+        type: Baremetal # Provider internal value; keep Baremetal for HCS global installation.
       host: ${PLATFORM_HOST}
+      ingress:
+        ingressClassName: ${INGRESS_CLASS_NAME}
       labelBaseDomain: cpaas.io
       namespace: cpaas-system
       platformUrl: https://${PLATFORM_HOST}
@@ -320,7 +350,7 @@ spec:
         enabled: false
       region: global
       registry:
-        address: ${LOCAL_REGISTRY_ADDRESS}
+        address: ${BOOTSTRAP_REGISTRY_ADDRESS}
         imagePullSecrets:
           - global-registry-auth
       replicas: 1
@@ -369,7 +399,6 @@ The DCS `global` manifest must contain the following resources in the `cpaas-sys
 | Resource | Purpose |
 |----------|---------|
 | `Secret` with `type: CloudCredential` | Stores `authUser`, `authKey`, `endpoint`, and `site` for DCS API access. |
-| `ConfigMap` with label `cpaas.io/dcs-vm-template` | Describes the MicroOS VM image, Kubernetes version, CoreDNS tag, and etcd tag. |
 | `DCSIpHostnamePool` for control plane nodes | Assigns static IPs, hostnames, network settings, and any pool-managed persistent disks. |
 | `DCSMachineTemplate` for control plane nodes | Defines the DCS VM template, folder, CPU, memory, and template-local disks. |
 | `KubeadmControlPlane` | Bootstraps the Kubernetes control plane. Set `spec.version` to `${K8S_VERSION}`. |
@@ -381,7 +410,7 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 
 - Set `Cluster.metadata.name`, `DCSCluster.metadata.name`, and the Cluster API references to `global`.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: DCS`.
-- Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${BOOTSTRAP_REGISTRY_ADDRESS}`.
+- Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for MicroOS.
 - Keep the release manifest's non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries.
 - For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef` and do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
@@ -402,7 +431,7 @@ metadata:
   annotations:
     capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
     capi.cpaas.io/resource-kind: DCSCluster
-    cpaas.io/registry-address: "${BOOTSTRAP_REGISTRY_ADDRESS}"
+    cpaas.io/registry-address: "${NODE_REGISTRY_ADDRESS}"
 spec:
   clusterNetwork:
     pods:
@@ -483,7 +512,7 @@ Use the HCS resource fields from [Creating Clusters on Huawei Cloud Stack](../cr
 
 - Set `Cluster.metadata.name`, `HCSCluster.metadata.name`, and the Cluster API references to `global`.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: HCS`.
-- Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${BOOTSTRAP_REGISTRY_ADDRESS}`.
+- Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for MicroOS.
 - Keep the release manifest's non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries.
 - For a normal non-DR deployment, do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
@@ -504,7 +533,7 @@ metadata:
   annotations:
     capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
     capi.cpaas.io/resource-kind: HCSCluster
-    cpaas.io/registry-address: "${BOOTSTRAP_REGISTRY_ADDRESS}"
+    cpaas.io/registry-address: "${NODE_REGISTRY_ADDRESS}"
 spec:
   clusterNetwork:
     pods:
@@ -608,7 +637,7 @@ The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` 
 
 Before triggering the installer, create an import ConfigMap only when you must import custom resources that are not covered by the default installation flow.
 
-For DCS, create `dcs-import-extra-resources` when additional DCS resources must be preserved or imported into the installed `global` cluster. For HCS, keep the same ConfigMap name when the installer request expects it.
+For DCS, create `dcs-import-extra-resources` when additional DCS resources must be preserved or imported into the installed `global` cluster. For HCS DR installations, this ConfigMap is required so that the installer imports HCS infrastructure resources during standby installation.
 
 ### Step 8 — Trigger the Platform Installation
 
@@ -623,11 +652,25 @@ export INSTALLER_IP=$(kubectl get pods -n cpaas-system -l service_name=cpaas-ins
   `INSTALLER_IP` is the Pod IP of the embedded installer in `minialauda`. The endpoint is used only during installation.
 </Directive>
 
-Create the installer configuration JSON file on the current KIND host. The same structure is used for normal installation and for each side of a DR installation.
+Create the provider-specific installer configuration JSON file on the current KIND host, then submit it to the installer endpoint. DCS and HCS use the same endpoint path, but their request bodies are different.
+
+| Field | Huawei DCS | Huawei Cloud Stack |
+|-------|------------|--------------------|
+| Endpoint path | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` |
+| `console.host` | Local `global` HA VIP list | Empty list, `[]` |
+| `console.globalHost` | Platform access address | Platform access address |
+| `cluster.clusterCIDR` and `cluster.serviceCIDR` | Required | Not set |
+| `cluster.features.ha` | Required, points to the local HA VIP with `isThirdParty: true` | Not set; HCS ELB is declared in `HCSCluster` |
+| `hostIP` | Current KIND host IP | Current KIND host IP |
+
+<Tabs>
+  <Tab label="Huawei DCS">
+
+The DCS installer request includes the external HA VIP because DCS uses a third-party control plane VIP.
 
 ```shell
 mkdir -p /root/yamls
-export INSTALLER_CONFIG_JSON="/root/yamls/installer-config.json"
+export INSTALLER_CONFIG_JSON="/root/yamls/installer-config-dcs.json"
 
 cat > "${INSTALLER_CONFIG_JSON}" <<EOF
 {
@@ -648,11 +691,17 @@ cat > "${INSTALLER_CONFIG_JSON}" <<EOF
     "httpPort": 80,
     "httpsPort": 443,
     "cert": {
-      "thirdParty": {
-        "certificate": "<base64-full-certificate-chain>",
-        "privateKey": "<base64-private-key>",
-        "pkcs12Certificate": null,
-        "pkcs12Password": ""
+      "selfSigned": {}
+    }
+  },
+  "cluster": {
+    "clusterCIDR": "${CLUSTER_CIDR}",
+    "serviceCIDR": "${SERVICE_CIDR}",
+    "features": {
+      "ha": {
+        "vip": "${CONTROL_PLANE_VIP}",
+        "vport": 6443,
+        "isThirdParty": true
       }
     }
   },
@@ -664,20 +713,13 @@ cat > "${INSTALLER_CONFIG_JSON}" <<EOF
   "hostIP": "${HOST_IP}"
 }
 EOF
-```
 
-Set `console.host` to the local `global` HA VIP as a list. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform domain. Set `hostIP` to the current KIND node IP. For DR, create this file once on the primary KIND host and once on the standby KIND host; only `console.host` and `hostIP` differ between the two sides.
-
-<Tabs>
-  <Tab label="Huawei DCS">
-
-The DCS installer endpoint is `/api/config/dcs`.
-
-```shell
 curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   -H 'Content-Type: application/json' \
   -d @"${INSTALLER_CONFIG_JSON}"
 ```
+
+Set `console.host` and `cluster.features.ha.vip` to the local `global` HA VIP. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address.
 
   </Tab>
   <Tab label="VMware vSphere">
@@ -689,9 +731,41 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   </Tab>
   <Tab label="Huawei Cloud Stack">
 
-The current HCS `global` installer package uses the same installer API suffix as the DCS package.
+HCS uses the same installer endpoint path as DCS, but its request body does not include `cluster.features.ha`. The control plane VIP is owned by the HCS ELB declared in `HCSCluster.spec.controlPlaneLoadBalancer`, so `console.host` must remain an empty list.
 
 ```shell
+mkdir -p /root/yamls
+export INSTALLER_CONFIG_JSON="/root/yamls/installer-config-hcs.json"
+
+cat > "${INSTALLER_CONFIG_JSON}" <<EOF
+{
+  "basic": {
+    "username": "admin@cpaas.io",
+    "password": "<base64-platform-admin-password>"
+  },
+  "registry": {
+    "domain": "${REGISTRY_DOMAIN}",
+    "username": "<registry-username>",
+    "password": "<base64-registry-password>"
+  },
+  "console": {
+    "host": [],
+    "globalHost": "${PLATFORM_HOST}",
+    "httpPort": 80,
+    "httpsPort": 443,
+    "cert": {
+      "selfSigned": {}
+    }
+  },
+  "product": [
+    "base",
+    "acp"
+  ],
+  "deployMode": "normal",
+  "hostIP": "${HOST_IP}"
+}
+EOF
+
 curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   -H 'Content-Type: application/json' \
   -d @"${INSTALLER_CONFIG_JSON}"
@@ -704,6 +778,10 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
     </Directive>
   </Tab>
 </Tabs>
+
+<Directive type="info" title="Third-Party Console Certificates">
+  The examples use a self-signed console certificate. If the environment requires a third-party certificate, replace `console.cert` with a `thirdParty` block that contains the base64 full certificate chain, private key, and optional PKCS#12 values before you submit the installer request.
+</Directive>
 
 ### Step 9 — Monitor the Installation
 
@@ -828,7 +906,41 @@ No `HCSCluster` encryption Secret reference is required. For HCS, append this fi
 
 Keep the same `serverCertSANs` on both the primary and standby installation environments.
 
-If you created `dcs-import-extra-resources` for additional installer imports, keep the ConfigMap on both the primary and standby installation environments.
+Create and apply `dcs-import-extra-resources` on the HCS standby installation environment before the HCS DR installer import. The ConfigMap name is shared by the installer and remains `dcs-import-extra-resources` even for HCS.
+
+```shell
+mkdir -p /root/yamls
+cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+    - resource: "secrets"
+      names: ["${HCS_SECRET_NAME}"]
+      method: kubectl
+    - resource: "hcsclusters.infrastructure.cluster.x-k8s.io"
+      names: ["global"]
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsclusters/cpaas-system/"
+      method: etcdctl
+    - resource: "hcsmachinetemplates.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsmachinetemplates/cpaas-system/"
+      method: etcdctl
+    - resource: "hcsmachineconfigpools.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsmachineconfigpools/cpaas-system/"
+      method: etcdctl
+    - resource: "hcsmachines.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsmachines/cpaas-system/"
+      method: etcdctl
+EOF
+
+kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+```
+
+Set `HCS_SECRET_NAME` to the same Secret name used by `HCSCluster.spec.identityRef.name`.
 
   </Tab>
   <Tab label="Bare Metal">
@@ -842,29 +954,36 @@ If you created `dcs-import-extra-resources` for additional installer imports, ke
 
 Run Steps 1 through 9 for both the primary and standby `global` clusters.
 
-For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `console.host` in `INSTALLER_CONFIG_JSON` to the primary HA VIP list and set `hostIP` to the primary KIND node IP. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the primary KIND host.
+Use the provider-specific installer configuration differences for both sides:
 
-After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. In Step 8 on the standby KIND host, set `console.host` to the standby HA VIP list and set `hostIP` to the standby KIND node IP. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby KIND host; do not reuse the primary KIND host value.
+| Provider | Primary installation | Standby installation |
+|----------|----------------------|----------------------|
+| Huawei DCS | Set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. | Set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. |
+| Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. |
 
-After both clusters are installed, get the primary `k8sadmin` token on a primary control plane node. Use this decoded bearer token to call the primary cluster ModuleInfo API.
+For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB.
+
+After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. In Step 8 on the standby KIND host, set `hostIP` to the standby KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For HCS, keep `console.host: []`. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby KIND host; do not reuse the primary KIND host value.
+
+After both clusters are installed, get the primary `k8sadmin` token on a primary control plane node. `etcd-sync` is installed only on the standby cluster, and its `active_cluster_*` values point to the primary cluster. Keep this value in its original base64 Secret form for `active_cluster_token`.
 
 ```shell
-export PRIMARY_CLUSTER_TOKEN="$(sudo kubectl get secret -n cpaas-system k8sadmin -o jsonpath='{.data.token}' | base64 -d)"
+export PRIMARY_CLUSTER_TOKEN_B64="$(sudo kubectl get secret -n cpaas-system k8sadmin -o jsonpath='{.data.token}')"
 ```
 
-Get the standby `k8sadmin` token on a standby control plane node.
+Get the standby `k8sadmin` token on a standby control plane node. Use this decoded bearer token to call the standby cluster ModuleInfo API.
 
 ```shell
-export STANDBY_CLUSTER_TOKEN="$(sudo kubectl get secret -n cpaas-system k8sadmin -o jsonpath='{.data.token}' | base64 -d)"
+export STANDBY_CLUSTER_BEARER_TOKEN="$(sudo kubectl get secret -n cpaas-system k8sadmin -o jsonpath='{.data.token}' | base64 -d)"
 ```
 
 If you create the `global-etcd-sync` ModuleInfo payload from a different host, securely transfer the decoded value from the standby control plane node and export it there.
 
 ```shell
-export STANDBY_CLUSTER_TOKEN="<decoded-value>"
+export STANDBY_CLUSTER_BEARER_TOKEN="<decoded-standby-token>"
 ```
 
-Create the `global-etcd-sync` ModuleInfo payload for the primary cluster. The `active_cluster_vip` and `active_cluster_token` values must point to the standby cluster.
+Create the `global-etcd-sync` ModuleInfo payload for the standby cluster. The `active_cluster_vip` and `active_cluster_token` values must point to the primary cluster.
 
 ```shell
 cat > "${ETCD_SYNC_MODULEINFO}" <<EOF
@@ -884,19 +1003,19 @@ cat > "${ETCD_SYNC_MODULEINFO}" <<EOF
     "config": {
       "monitor_check_interval": 1,
       "detail": false,
-      "active_cluster_vip": "${STANDBY_CLUSTER_VIP}",
-      "active_cluster_token": "${STANDBY_CLUSTER_TOKEN}"
+      "active_cluster_vip": "${PRIMARY_CLUSTER_VIP}",
+      "active_cluster_token": "${PRIMARY_CLUSTER_TOKEN_B64}"
     }
   }
 }
 EOF
 ```
 
-Install `global-etcd-sync` by calling the ModuleInfo API on the primary cluster.
+Install `global-etcd-sync` by calling the ModuleInfo API on the standby cluster.
 
 ```shell
-curl -sk -X POST "https://${PRIMARY_CLUSTER_VIP}/apis/cluster.alauda.io/v1alpha1/moduleinfoes" \
-  -H "Authorization: Bearer ${PRIMARY_CLUSTER_TOKEN}" \
+curl -sk -X POST "https://${STANDBY_CLUSTER_VIP}/apis/cluster.alauda.io/v1alpha1/moduleinfoes" \
+  -H "Authorization: Bearer ${STANDBY_CLUSTER_BEARER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d @"${ETCD_SYNC_MODULEINFO}"
 ```
