@@ -286,6 +286,8 @@ files:
 ```
 
 The inline and Secret-referenced forms are functionally equivalent; the Secret form is the recommended path when the plugin Secret is available in the target cluster.
+
+**Minimum plugin version**: Same as the control-plane Appendix tip — `worker-kubelet-patch.json` is part of the `dcs-kubernetes-1.33-files` Secret shipped from DCS Provider `v1.0.13`. On older plugin versions the Secret does not exist; keep the inline `content:` form in that case.
 :::
 
 ### Step 4: Configure Machine Deployment
