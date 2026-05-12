@@ -81,7 +81,7 @@ For `Domain user`, password lifecycle is governed by your LDAP/AD directory serv
 :::info
 **Domain user support: YAML only in this version**
 
-The web UI currently only creates `Interface interconnection user` credentials. To create a `Domain user` credential, use the YAML path below and set `userType: domain` in the Secret.
+The web UI currently only creates `Interface interconnection user` credentials. To create a `Domain user` credential, use the YAML path below and set `.data.userType` to the base64 value of `domain` (for example, `ZG9tYWlu`) in the Secret. The base64 encoding step is shown in the `Example` block further down this page.
 :::
 
 ### Using YAML
