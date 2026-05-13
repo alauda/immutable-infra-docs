@@ -196,15 +196,44 @@ To ensure proper integration as business clusters, all resources must be deploye
 
 ### Configuration Workflow
 
-Follow these steps in order:
+Follow these steps in order to provision a functional cluster (control plane **and** worker nodes):
 
-1. Configure KubeadmControlPlane
-2. Configure DCSCluster
-3. Create the Cluster resource
+1. Configure `KubeadmControlPlane` (control-plane spec and kubeadm bootstrap).
+2. Configure `DCSCluster` (infrastructure binding and load balancer reference).
+3. Create the `Cluster` resource (top-level CAPI object that links the two above).
+4. Configure worker resources: `KubeadmConfigTemplate` (worker bootstrap), worker `DCSMachineTemplate`, worker `DCSIpHostnamePool`, and `MachineDeployment`. **The control plane alone is not a usable cluster.** See [Managing Nodes on Huawei DCS](../manage-nodes/huawei-dcs.mdx#worker-node-deployment) for the four worker YAML resources.
 
-**Note**: Infrastructure resources (Secret, DCSIpHostnamePool, DCSMachineTemplate) should be configured separately. See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for instructions.
+**Note**: Infrastructure resources (Secret, control-plane `DCSIpHostnamePool`, control-plane `DCSMachineTemplate`) should be configured separately. See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for instructions.
 
 If you need any disk to survive rolling replacement, declare it in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry. This includes the platform-required `/var/cpaas` disk.
+
+### Resolving Placeholder Values \{#resolving-placeholders}
+
+The example manifests below use `<placeholder>` syntax for values that are environment-specific. Several of these have a canonical source of truth that you should query rather than hand-pick:
+
+| Placeholder | Source of truth | How to retrieve |
+|---|---|---|
+| `<control-plane-kubernetes-version>` / `<worker-kubernetes-version>` | A `cpaas.io/dcs-vm-template` ConfigMap in the `cpaas-system` namespace, one per distribution version. | `kubectl -n cpaas-system get cm -l cpaas.io/dcs-vm-template -o yaml` — read `data.kubernetesVersion`. |
+| `<dns-image-tag>` | Same ConfigMap, `data.corednsTag`. | Same `kubectl get cm` query as above. |
+| `<etcd-image-tag>` | Same ConfigMap, `data.etcdTag`. | Same `kubectl get cm` query as above. |
+| `<vm-template-name>` (in `DCSMachineTemplate.spec.template.spec.vmTemplateName`) | The ConfigMap's `cpaas.io/dcs-vm-template` label value (must match the VM template name registered in the DCS platform). | Same `kubectl get cm` query — read the label. |
+| `<base64-encoded-secret>` in `encryption-provider.conf` | Generated locally; treat as a real cluster secret. | `head -c 32 /dev/urandom \| base64` — store securely and reuse across control-plane replicas of the same cluster. |
+| `<ssh-authorized-keys>` | Operator-supplied. Each entry is a single-line OpenSSH-format public key (`ssh-ed25519 AAAA…` / `ssh-rsa AAAA…`). The field is required by the ignition validator and must be non-empty. For test or PoC clusters that do not need interactive SSH, supply any syntactically valid public key (you do not need to hold the matching private key); for production, use the operator team's signing key. | n/a — generated or sourced from the operator. |
+| `<auth-secret-name>` | The Secret you authored in [Infrastructure → Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). | `kubectl -n cpaas-system get secret <name>` |
+| `<cluster-name>` | Operator-chosen; must satisfy DNS-1123. Reused across `Cluster`, `KubeadmControlPlane`, and the `cluster.x-k8s.io/cluster-name` label on every `Machine`. | n/a |
+| `<load-balancer-ip-or-domain-name>` | Operator-supplied: the IP / hostname clients use to reach the cluster API server. For single-control-plane clusters with no external LB, this is the IP of the sole master node (see [Single-control-plane layout](#single-control-plane-layout)). | n/a |
+| `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the global cluster's CIDRs, or any other CAPI cluster's CIDRs you intend to interconnect. Leaving them empty falls back to the kube-ovn defaults shipped with the global cluster, which is **not recommended** for production: explicit CIDRs avoid silent collisions when multiple workload clusters live on the same global. | n/a |
+
+### Magic-Token Placeholders \{#magic-tokens}
+
+A few values in the example manifests look like placeholders but are **actually literal tokens** substituted by the DCS Provider at machine-join time. Leave them exactly as written:
+
+| Literal token | Meaning | Substituted by |
+|---|---|---|
+| `PROVIDER_ID` | The per-Machine provider ID (e.g. `dcs://<dcsmachine-name>`). | DCS Provider — overwritten in the generated kubelet config before `kubeadm init` / `kubeadm join` runs. |
+| `NODE_IP` | The node IP allocated from the `DCSIpHostnamePool` entry attached to this Machine. | DCS Provider — overwritten with the value of `DCSIpHostnamePool.spec.pool[].ip`. |
+
+Replacing or quoting these tokens manually breaks the join flow and produces nodes that never register with the control plane.
 
 ### Network Planning and Load Balancer
 
@@ -306,8 +335,8 @@ spec:
 |-----------|------|-------------|----------|
 | `.spec.kubeadmConfigSpec` | object | kubeadm bootstrap provider startup parameters | Yes |
 | `.spec.machineTemplate.infrastructureRef` | object | DCSMachineTemplate reference | Yes |
-| `.spec.replicas` | int | Control plane replica count (≤ IP Pool size) | Yes |
-| `.spec.version` | string | Kubernetes version (must match VM template) | Yes |
+| `.spec.replicas` | int | Control plane replica count. Must satisfy `1 ≤ replicas ≤ IP Pool size`. Set to `1` for development / PoC single-control-plane deployments (see [Single-control-plane layout](#single-control-plane-layout)). Production usually uses `3` for HA. | Yes |
+| `.spec.version` | string | Kubernetes version (must match VM template — see [Resolving Placeholder Values](#resolving-placeholders)) | Yes |
 
 For component versions (e.g., `<dns-image-tag>`, `<etcd-image-tag>`), refer to [OS Support Matrix](../overview/os-support-matrix.mdx).
 
@@ -342,9 +371,31 @@ spec:
 | `.spec.controlPlaneLoadBalancer` | object | Control plane API server exposure method | Yes |
 | `.spec.controlPlaneLoadBalancer.type` | string | Currently only supports "external" | Yes |
 | `.spec.controlPlaneLoadBalancer.host` | string | Load balancer IP or domain name | Yes |
-| `.spec.credentialSecretRef.name` | string | DCS authentication Secret name | Yes |
+| `.spec.credentialSecretRef.name` | string | DCS authentication Secret name. The Secret defines whether DCS Provider authenticates as an interface interconnection user (default) or a domain user — see [Credential User Types](../infrastructure/huawei-dcs.mdx#user-types). | Yes |
 | `.spec.networkType` | string | Currently only supports "kube-ovn" | Yes |
 | `.spec.site` | string | DCS platform site ID | Yes |
+
+#### Single-Control-Plane (No External LB) Layout \{#single-control-plane-layout}
+
+For development, PoC, or any deployment where the control plane has only **one** replica (`KubeadmControlPlane.spec.replicas: 1`), you do not have a real load balancer in front of the API server. Two fields nevertheless still require a value:
+
+- `.spec.controlPlaneLoadBalancer.host` and `.spec.controlPlaneEndpoint.host` — set both to **the IP of the sole master node** (the same IP allocated to the master in the control-plane `DCSIpHostnamePool`).
+- `.spec.controlPlaneLoadBalancer.type` — keep as `external` (the type field has no other supported value).
+
+Concretely:
+
+```yaml
+spec:
+  controlPlaneLoadBalancer:
+    host: 10.226.82.150     # same IP as the master node from the IP pool
+    port: 6443
+    type: external
+  controlPlaneEndpoint:
+    host: 10.226.82.150     # same as above
+    port: 6443
+```
+
+This layout has no HA — losing the single master makes the cluster API unreachable until the master is recovered. For production, use `replicas: 3` with a real load balancer.
 
 ### Configure Cluster
 
@@ -384,10 +435,26 @@ spec:
 
 | Parameter | Type | Description | Required |
 |-----------|------|-------------|----------|
-| `.spec.clusterNetwork.pods.cidrBlocks` | []string | Pod CIDR | No |
-| `.spec.clusterNetwork.services.cidrBlocks` | []string | Service network CIDR | No |
+| `.spec.clusterNetwork.pods.cidrBlocks` | []string | Pod CIDR. Optional in the CAPI schema but **recommended to set explicitly** so multiple CAPI clusters can co-exist without overlap. If unset, kube-ovn falls back to a default that may conflict with another cluster on the same global. | Recommended |
+| `.spec.clusterNetwork.services.cidrBlocks` | []string | Service CIDR. Same recommendation as the pod CIDR — set explicitly to avoid collisions across clusters. | Recommended |
 | `.spec.controlPlaneRef` | object | Control plane reference | Yes |
 | `.spec.infrastructureRef` | object | Infrastructure cluster reference | Yes |
+
+**Cluster Annotations**:
+
+The example above shows three annotations, but a complete `Cluster` resource carries a few more. The table below lists the annotations the **operator authors** (some others are written by ACP controllers and you should not pre-set them):
+
+| Annotation | Required | Value source | Purpose |
+|---|---|---|---|
+| `capi.cpaas.io/resource-group-version` | Yes | Literal `infrastructure.cluster.x-k8s.io/v1beta1` | Tells the CAPI infrastructure binding which API group to use. |
+| `capi.cpaas.io/resource-kind` | Yes | Literal `DCSCluster` | Tells the CAPI infrastructure binding which kind to bind to. |
+| `capi.cpaas.io/kubernetes` | Yes | Same value as `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version`. | Display label, also consumed by some upgrade and inventory tooling. Source-of-truth is the `cpaas.io/dcs-vm-template` ConfigMap's `kubernetesVersion`. |
+| `cpaas.io/kube-ovn-join-cidr` | Yes | Operator-chosen `/16` CIDR, must not overlap with pod / service CIDRs or any other cluster's join CIDR. | Kube-OVN inter-node tunnel network. |
+| `cpaas.io/kube-ovn-version` | Yes | The kube-ovn release the global cluster ships with. Read it from the `cpaas.io/kube-ovn-version` annotation on the `global` CAPI Cluster (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/kube-ovn-version}'`). The same value lives on every healthy workload cluster on the same global, so you can also read it from any of those if they exist. | Pin the kube-ovn version installed into the workload cluster. |
+| `cpaas.io/registry-address` | Yes | The image registry the global cluster uses (typically `<global-cluster-ip>:11443`). Read it from the `cpaas.io/registry-address` annotation on the `global` CAPI Cluster (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'`). | Workload cluster pulls platform images (CoreDNS, kube-proxy, kube-ovn) from this registry. |
+| `cpaas.io/nodes-mode` | Yes | Literal `self-managed` for clusters that DCS Provider provisions. | Marks the cluster as having its node lifecycle managed by CAPI + this provider. |
+
+ACP controllers may write additional read-only annotations (`cpaas.io/cpu-cores-number`, `cpaas.io/memories`, `cpaas.io/nodes-number`, and so on) after the cluster is up — these are computed and **must not** be pre-set in the YAML you apply.
 
 ### Deploying Nodes
 
@@ -746,6 +813,17 @@ files:
 ```
 
 `encryption-provider.conf` is not provided by the Secret. You can either keep it inline as shown above (and supply your own `<base64-encoded-secret>`), or omit the inline file entirely and rely on the version that the DCS VM template image already bakes in — both are valid; the latter is simpler when the VM template's default key is acceptable for your environment.
+
+**Minimum plugin version**: This Secret is shipped by the DCS Provider plugin starting from `v1.0.13`. On older plugin versions the Secret does not exist; keep the inline `content:` form in that case. To check whether the Secret is present on the target cluster before deciding which form to use:
+
+```bash
+# Replace <kubernetes-major-minor> with the value matching this cluster
+# (for example, 1.33 for Kubernetes v1.33.x).
+K8S_MM=<kubernetes-major-minor>
+kubectl -n cpaas-system get secret "dcs-kubernetes-${K8S_MM}-files" >/dev/null 2>&1 \
+  && echo "Secret present — contentFrom.secret form is supported" \
+  || echo "Secret missing — use inline content form"
+```
 :::
 
 ---
@@ -756,3 +834,7 @@ After creating a cluster:
 
 - [Manage Nodes](../manage-nodes/huawei-dcs.mdx)
 - [Upgrade Cluster](../upgrade-cluster/huawei-dcs.mdx)
+
+## Troubleshooting
+
+If the cluster reaches `Provisioned` but never becomes Ready — for example, workload nodes stay `NotReady` because the CNI is not deployed — see [Troubleshoot a Workload Cluster Stuck in Provisioned](../how-to/troubleshoot-cluster-not-ready.mdx).

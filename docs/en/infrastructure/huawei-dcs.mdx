@@ -36,15 +36,20 @@ Cloud credentials store the DCS platform access information required for cluster
 Before creating a cloud credential, verify the following DCS platform requirements:
 
 **User Configuration**:
-- **User Type**: Must be `Interface interconnection user`
+- **User Type**: One of the following:
+  - `Interface interconnection user` — default; existing behaviour. Use this when an interconnect-style account is already provisioned in the DCS portal.
+  - `Domain user` — LDAP/AD-backed user managed in the directory service. Requires that DCS has **domain authentication configured by your DCS administrator**, and that the directory user is **pre-created in the DCS portal** with the role mapping below.
 - **Role**: Must be `administrator`
 
-**Password Policy**:
+**Password Policy** (applies to `Interface interconnection user` only):
+
 Navigate to **System Management** → **Rights Management** → **Rights Management Policy** and verify:
 - **Policy**: `Whether to modify the password of an interface interconnection user upon password resetting and first login`
 - **Value**: Must be set to **No**
 
 If set to `Yes`, the user's password will be forced to change upon first login, breaking authentication and causing cluster creation failures.
+
+For `Domain user`, password lifecycle is governed by your LDAP/AD directory service, not by DCS portal policy.
 
 #### Creating a Cloud Credential
 
@@ -73,6 +78,12 @@ If set to `Yes`, the user's password will be forced to change upon first login, 
 
 **Deleting Credentials**: Click **Delete** to remove a credential. Confirm the deletion in the dialog.
 
+:::info
+**Domain user support: YAML only in this version**
+
+The web UI currently only creates `Interface interconnection user` credentials. To create a `Domain user` credential, use the YAML path below and set `.data.userType` to the base64 value of `domain` (for example, `ZG9tYWlu`) in the Secret. The base64 encoding step is shown in the `Example` block further down this page.
+:::
+
 ### Using YAML
 
 Create a Secret resource to store DCS authentication information:
@@ -83,12 +94,35 @@ data:
   authUser: <base64-encoded-auth-user>
   authKey: <base64-encoded-auth-key>
   endpoint: <base64-encoded-endpoint>
+  userType: <base64-encoded-user-type>   # optional; "interconnect" (default) or "domain"
 kind: Secret
 metadata:
   name: <auth-secret-name>
   namespace: cpaas-system
 type: Opaque
 ```
+
+:::tip
+**Skip the manual base64 step with `stringData`**
+
+The example above uses `data:`, which is Kubernetes' standard for Secrets — every value must already be base64-encoded. If you would rather author the Secret in plain text, replace the `data:` block with `stringData:` and provide the values directly. The API server transparently base64-encodes them at write time, so the final stored Secret is byte-identical to the `data:` form and the DCS Provider controller sees the same content either way.
+
+```yaml title="dcs-secret-stringdata.yaml"
+apiVersion: v1
+stringData:
+  authUser: <plain-text-auth-user>
+  authKey: <plain-text-auth-key>
+  endpoint: <plain-text-endpoint>
+  userType: <plain-text-user-type>   # optional; "interconnect" (default) or "domain"
+kind: Secret
+metadata:
+  name: <auth-secret-name>
+  namespace: cpaas-system
+type: Opaque
+```
+
+`stringData:` is write-only — once the Secret is created, `kubectl get secret -o yaml` will only show the `data:` form, which is the canonical representation. The two forms are mutually exclusive at write time; do not set the same key in both blocks.
+:::
 
 **Parameter Descriptions**:
 
@@ -97,6 +131,7 @@ type: Opaque
 | `.data.authUser` | DCS platform API user login name (base64-encoded) |
 | `.data.authKey` | DCS platform API user login password (base64-encoded) |
 | `.data.endpoint` | DCS platform API address with http or https protocol (base64-encoded). **Note**: The default API port for DCS platform is 7443 (not the common 8443). If your environment uses a custom port, confirm with your administrator. |
+| `.data.userType` | Optional. Base64 of the credential user type. Allowed plain-text values (before base64) are `interconnect` (default; used when the key is absent or empty) or `domain`. Matching is case-insensitive (`Domain`, `DOMAIN`, and `domain` all map to the same value). Any other value, including the legacy DCS magic numbers `1` and `2`, is rejected with a configuration error so a `domain` user is never silently authenticated as `interconnect`. |
 
 **Example**:
 
@@ -105,10 +140,24 @@ type: Opaque
 echo -n "admin" | base64
 echo -n "your-password" | base64
 echo -n "https://dcs.example.com:7443" | base64
+echo -n "domain" | base64   # only when using a domain user; omit for interconnect (default)
 
 # Apply the Secret
 kubectl apply -f dcs-secret.yaml -n cpaas-system
 ```
+
+### Credential User Types \{#user-types}
+
+DCS Provider supports two credential user types, selected by the optional Secret key `userType`:
+
+| `userType` value | Maps to DCS user | When to use | DCS-side requirement | Password lifecycle |
+|---|---|---|---|---|
+| `interconnect` (default; equivalent to the key being absent or empty) | `Interface interconnection user` | Existing deployments and the simplest path when an interconnect account is already provisioned in DCS. | DCS portal must keep the policy "Whether to modify the password of an interface interconnection user upon password resetting and first login" set to **No**. | Governed by DCS portal policy. |
+| `domain` | `Domain user` (LDAP/AD-backed) | Customers whose security audit requires LDAP/AD-managed credentials, or deployments that already standardize on directory-service accounts. | DCS must have **domain authentication configured by your DCS administrator**, and the directory user must be **pre-created in the DCS portal with the `administrator` role**. | Governed by your LDAP/AD directory service, not by DCS portal policy. |
+
+**Compatibility**: Existing Secrets without a `userType` key continue to authenticate as before; no migration is required to keep using interconnect-style credentials.
+
+**UI coverage**: The current web UI form does not expose the `userType` field. To use the `domain` value, configure the Secret through YAML.
 
 ---
 
@@ -290,6 +339,85 @@ spec:
 - Treat `format`, `options`, and `pciType` as immutable after creation.
 - Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort platform validation when the pool carries a cluster label.
 - Treat `path` and `mountOptions` changes as guest-side changes that take effect on replacement machines during rolling updates.
+
+---
+
+## DCS Platform Capacity and Placement \{#capacity-and-placement}
+
+Before authoring `DCSMachineTemplate` resources, verify that the target DCS site, datastore, and compute cluster have enough free capacity to host the planned VMs, and that the DCS-side scheduling policy can place new VMs on the available hosts. Skipping these checks is the single most common cause of VMs that appear to hang in `creating` state with no error returned by the DCS API.
+
+### Choosing a datastore \{#choosing-datastore}
+
+Each `DCSMachineDiskSpec` entry binds a disk to a DCS datastore through one of two mutually exclusive fields:
+
+- `datastoreName` — pins the disk to a specific datastore. The DCS scheduler does **not** look at sibling datastores even if they have free space. This is the strictest binding.
+- `datastoreClusterName` — pins the disk to a datastore cluster (a DCS-side group of datastores). The DCS scheduler chooses one specific datastore from the cluster that satisfies capacity. This is the safer default when the platform provides a datastore cluster.
+
+Prefer `datastoreClusterName` whenever the DCS administrator has configured a datastore cluster, so a single near-full datastore does not block deployments while sibling datastores still have free space.
+
+**Capacity preflight**:
+
+Before applying a new `DCSMachineTemplate`, list the existing DCS datastores and confirm that the target has enough free capacity for the worst case of `system disk + ∑(spec disk size) × replica count`. From an environment with DCS API access, the read-only listing looks like this:
+
+```bash
+curl -k -sS "${DCS_BASE}/service/sites/${SITE}/datastores" \
+  -H "X-Auth-Token: ${TOKEN}" -H 'version: 8.1' \
+  | python3 -c "
+import json,sys
+for ds in json.load(sys.stdin).get('datastores',[]) or []:
+  print(f\"{ds.get('name','?'):24} cap={ds.get('capacityGB','?')}GB used={ds.get('usedSizeGB','?')}GB free={ds.get('freeSizeGB','?')}GB state={ds.get('status','?')}\")"
+```
+
+Each `DCSMachineTemplate` cp / worker pair commonly needs the system disk (template-default, often ~80 GB) plus the explicit data disks declared in the spec, so a single control-plane node with `etcd 10G + kubelet 100G + containerd 100G + /var/cpaas 100G` consumes roughly 390 GB before the template's system disk. A datastore used above ~70 % is a strong signal to pick a different datastore — even if the absolute free space looks large, fragmentation and reservations can cause new VM placement to stall.
+
+### Host placement requirements \{#host-placement}
+
+A `DCSMachineTemplate.spec.template.spec.resource` field controls how DCS picks the physical host for the cloned VM:
+
+- `type: cluster` + `name: <cluster-name>` — lets the DCS cluster scheduler pick a host automatically. Requires the DCS cluster to have **DRS enabled** (or an equivalent balancer policy) so the scheduler can place new VMs on under-utilized hosts.
+- `type: host` + `name: <host-name>` — pins every cloned VM to one specific host. Use this when DRS is disabled, or when the platform has uneven host capacity and you must steer new VMs onto a specific host with free CPU and memory.
+
+If the DCS cluster has DRS disabled and the existing hosts are unevenly loaded (for example, one host is severely CPU-over-committed while another is mostly idle), the `type: cluster` mode can leave the deploy task stalled because the scheduler cannot pick a host that simultaneously satisfies the cluster's overcommit and reservation policies. Switching to `type: host` and pointing at a known-healthy host removes that ambiguity.
+
+To check current host load before applying a new template:
+
+```bash
+curl -k -sS "${DCS_BASE}/service/sites/${SITE}/hosts" \
+  -H "X-Auth-Token: ${TOKEN}" -H 'version: 8.1' \
+  | python3 -c "
+import json,sys
+for h in json.load(sys.stdin).get('hosts',[]) or []:
+  print(f\"{h.get('name','?'):10} status={h.get('status','?'):10} cpuUsed/total={h.get('cpuUsedCores','?')}/{h.get('cpuTotalCores','?')}c memUsed={h.get('memUsedSizeMB','?')}MB cpuMuxRatio={h.get('cpuMuxRatio','?')}\")"
+```
+
+A `cpuMuxRatio` (CPU allocation / physical cores) above ~3× on every host in the cluster, combined with DRS disabled, indicates the cluster is already saturated and will likely refuse new placements until either DRS is enabled or the load is rebalanced manually.
+
+### Troubleshooting: VM stuck in `creating` \{#stuck-creating}
+
+If a `DCSMachine` stays in `Provisioning` with `status.cdRomFile` set (so DCS API auth and ISO upload succeeded) but the DCS-side VM never leaves `status=creating` and never gets a `hostName`, the failure is almost always at the DCS placement layer, not in the controller.
+
+Diagnostic ladder, in order:
+
+1. **Confirm it is a placement stall**, not a slow boot. Query the VM and the matching deploy task on DCS:
+
+    ```bash
+    curl -k -sS "${DCS_BASE}/service/sites/${SITE}/vms?name=${VM_NAME}&limit=10" \
+      -H "X-Auth-Token: ${TOKEN}" -H 'version: 8.1'
+    curl -k -sS "${DCS_BASE}/service/sites/${SITE}/tasks?status=running&limit=50" \
+      -H "X-Auth-Token: ${TOKEN}" -H 'version: 8.1'
+    ```
+
+    Symptoms of a placement stall: `status=creating`, `hostName=` (empty / unscheduled), `disks` array empty or unchanging, and the deploy task sitting at the same `progress` value with no errors for more than ~5 minutes.
+
+2. **Check datastore free space** and **host load** using the snippets in [Choosing a datastore](#choosing-datastore) and [Host placement requirements](#host-placement). Datastore above 70 % used, or all hosts at high `cpuMuxRatio`, are the leading causes.
+
+3. **If DRS is disabled on the DCS cluster**, switch the relevant `DCSMachineTemplate.spec.template.spec.resource` to `type: host` + an explicit healthy host name, delete the stuck `Machine`, and let the controller re-derive a fresh `DCSMachine` against the new template.
+
+4. **If the DCS-side deploy task is genuinely deadlocked** (cancellable but unresponsive to ACP-driven `DeleteVm`), escalate to a DCS administrator with portal-admin credentials to cancel the task. The 7443 REST API does not expose a task-cancel endpoint for non-admin users, so the recovery path is owned by the DCS platform team, not by ACP.
+
+5. **Watch out for serialization side-effects**. In environments with a global DeployVM lock, a single stuck task can cause every new deploy to stall at the same progress percentage. Resolving the original stuck task usually unblocks the queue.
+
+A `DCSMachine` whose status conditions show `InfrastructureReady=False reason=WaitingForInfrastructure` for more than 10 minutes, together with the symptoms above, should be treated as a DCS-platform incident and not as a Cluster API or DCS Provider regression.
 
 ---
 
