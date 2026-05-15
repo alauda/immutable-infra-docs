@@ -220,7 +220,7 @@ The example manifests below use `<placeholder>` syntax for values that are envir
 | `<base64-encoded-secret>` in `encryption-provider.conf` | Generated locally; treat as a real cluster secret. | `head -c 32 /dev/urandom \| base64` — store securely and reuse across control-plane replicas of the same cluster. |
 | `<ssh-authorized-keys>` | Operator-supplied. Each entry is a single-line OpenSSH-format public key (`ssh-ed25519 AAAA…` / `ssh-rsa AAAA…`). The field is required by the ignition validator and must be non-empty. For test or PoC clusters that do not need interactive SSH, supply any syntactically valid public key (you do not need to hold the matching private key); for production, use the operator team's signing key. | n/a — generated or sourced from the operator. |
 | `<auth-secret-name>` | The Secret you authored in [Infrastructure → Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). | `kubectl -n cpaas-system get secret <name>` |
-| `<cluster-name>` | Operator-chosen; must satisfy DNS-1123. Reused across `Cluster`, `KubeadmControlPlane`, and the `cluster.x-k8s.io/cluster-name` label on every `Machine`. | n/a |
+| `<cluster-name>` | Operator-chosen; must satisfy DNS-1123. Reused across `Cluster`, `DCSCluster`, and the `cluster.x-k8s.io/cluster-name` label on every `Machine`. The `KubeadmControlPlane` uses the prefixed form `<cluster-name>-kcp`. | n/a |
 | `<load-balancer-ip-or-domain-name>` | Operator-supplied: the IP / hostname clients use to reach the cluster API server. For single-control-plane clusters with no external LB, this is the IP of the sole master node (see [Single-control-plane layout](#single-control-plane-layout)). | n/a |
 | `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the global cluster's CIDRs, or any other CAPI cluster's CIDRs you intend to interconnect. Leaving them empty falls back to the kube-ovn defaults shipped with the global cluster, which is **not recommended** for production: explicit CIDRs avoid silent collisions when multiple workload clusters live on the same global. | n/a |
 
@@ -259,7 +259,7 @@ The example below truncates long configuration files for readability. For the co
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <cluster-name>
+  name: <cluster-name>-kcp
   namespace: cpaas-system
   annotations:
     controlplane.cluster.x-k8s.io/skip-coredns: ""
@@ -424,7 +424,7 @@ spec:
   controlPlaneRef:
     apiVersion: controlplane.cluster.x-k8s.io/v1beta1
     kind: KubeadmControlPlane
-    name: <cluster-name>
+    name: <cluster-name>-kcp
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
     kind: DCSCluster
@@ -482,7 +482,7 @@ Alternatively, verify the cluster using kubectl commands:
 kubectl get cluster -n cpaas-system <cluster-name>
 
 # Verify control plane
-kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>
+kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>-kcp
 
 # Check machine status
 kubectl get machines -n cpaas-system
@@ -512,7 +512,7 @@ Below is the complete `KubeadmControlPlane` configuration, including all default
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <cluster-name>
+  name: <cluster-name>-kcp
   namespace: cpaas-system
   annotations:
     controlplane.cluster.x-k8s.io/skip-coredns: ""
