@@ -231,7 +231,7 @@ The `KubeadmControlPlane` defines the Kubernetes control plane configuration.
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <cluster-name>
+  name: <cluster-name>-kcp
   namespace: cpaas-system
 spec:
   replicas: 3
@@ -476,7 +476,7 @@ spec:
   controlPlaneRef:
     apiVersion: controlplane.cluster.x-k8s.io/v1beta1
     kind: KubeadmControlPlane
-    name: <cluster-name>
+    name: <cluster-name>-kcp
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
     kind: HCSCluster
@@ -503,7 +503,7 @@ After deploying all cluster resources, verify that the cluster has been created 
 kubectl get cluster -n cpaas-system <cluster-name>
 
 # Verify control plane nodes
-kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>
+kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>-kcp
 
 # Check machine status
 kubectl get machines -n cpaas-system
