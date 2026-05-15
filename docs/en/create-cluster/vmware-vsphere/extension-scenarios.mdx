@@ -253,6 +253,29 @@ spec:
   failureDomainSelector: {}
 ```
 
+An empty selector `{}` matches every `VSphereDeploymentZone` that has `controlPlane: true`. Use match labels to restrict the control plane to a subset of zones.
+
+Also add the `[Labels]` block to the CPI `ConfigMap` so the vSphere CPI publishes the matching zone and region labels on workload nodes. The keys must match the `tagCategory` values used in `VSphereFailureDomain.spec.zone.tagCategory` and `VSphereFailureDomain.spec.region.tagCategory`. Update the `vsphere.conf` data in `15-vsphere-cpi-clusterresourceset.yaml`:
+
+```yaml
+      vsphere.conf: |
+        [Global]
+        secret-name = "vsphere-cloud-secret"
+        secret-namespace = "kube-system"
+        service-account = "cloud-controller-manager"
+        port = "443"
+        insecure-flag = "<cpi_insecure_flag>"
+        datacenters = "<cpi_datacenters>"
+
+        [Labels]
+        zone = "k8s-zone"
+        region = "k8s-region"
+
+        [VirtualCenter "<vsphere_server>"]
+```
+
+`failureDomainSelector` and the CPI `[Labels]` block must be enabled together. Adding either one alone leaves the cluster in an inconsistent state: nodes get unresolved zone or region labels, or the control plane cannot select a deployment target.
+
 Set a worker deployment zone when a worker `MachineDeployment` must be pinned to one deployment target. Add `failureDomain` to `spec.template.spec` in `30-workers-md-0.yaml`:
 
 ```yaml
