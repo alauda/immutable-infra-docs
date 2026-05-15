@@ -53,7 +53,7 @@ Before you begin, ensure the following conditions are met:
 
 ### `ClusterResourceSet`
 
-`ClusterResourceSet` is a Cluster API resource in the management cluster. After the workload API server becomes reachable, it applies the referenced `ConfigMap` and `Secret` resources to the workload cluster.
+`ClusterResourceSet` is a Cluster API resource in the `global` cluster. After the workload API server becomes reachable, it applies the referenced `ConfigMap` and `Secret` resources to the workload cluster.
 
 In this workflow, `ClusterResourceSet` is used to deliver the vSphere CPI resources automatically.
 
@@ -129,7 +129,7 @@ cd ./capv-cluster
 <Steps>
 ### Validate the environment
 
-Run the following commands from the management environment to verify the minimum prerequisites:
+Run the following commands from the `global` cluster to verify the minimum prerequisites:
 
 ```bash
 kubectl get ns
@@ -141,7 +141,7 @@ kubectl -n cpaas-system get secret public-registry-credential -o jsonpath='{.dat
 
 Confirm the following results:
 
-- The management cluster is reachable.
+- The `global` cluster is reachable.
 - Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider are running.
 - The controller arguments include `ClusterResourceSet=true`.
 - The public registry credential `data.content` is not empty.
@@ -225,7 +225,7 @@ spec:
   controlPlaneRef:
     apiVersion: controlplane.cluster.x-k8s.io/v1beta1
     kind: KubeadmControlPlane
-    name: <cluster_name>
+    name: <cluster_name>-kcp
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
     kind: VSphereCluster
@@ -256,6 +256,10 @@ kubectl apply -f 10-cluster.yaml
 ### Create the vSphere CPI delivery resources
 
 Create a `ClusterResourceSet` so the workload cluster receives the vSphere CPI configuration and manifests automatically after the workload API server becomes reachable.
+
+<Directive type="info">
+In the baseline workflow `VSphereCluster.spec.failureDomainSelector` is intentionally not set and the CPI `vsphere.conf` does not include a `[Labels]` block. Both are required only after you enable failure domains; configure them together as described in [Extension Scenarios](./extension-scenarios.mdx). Adding `[Labels]` to `vsphere.conf` without matching `VSphereFailureDomain` objects causes the CPI to look up zone and region tags that do not exist.
+</Directive>
 
 <Directive type="warning">
 The CPI `ConfigMap`, `Secret`, and `ClusterResourceSet` resources **must** be created in the same namespace as the `Cluster` resource. In this guide that namespace is `cpaas-system`. A `ClusterResourceSet` can only match clusters within its own namespace; deploying it in a different namespace will silently prevent resource delivery.
@@ -291,10 +295,6 @@ data:
         port = "443"
         insecure-flag = "<cpi_insecure_flag>"
         datacenters = "<cpi_datacenters>"
-
-        [Labels]
-        zone = "k8s-zone"
-        region = "k8s-region"
 
         [VirtualCenter "<vsphere_server>"]
 ---
@@ -429,7 +429,7 @@ data:
           # registry that needs authentication. The platform automatically
           # syncs a dockerconfigjson secret named "global-registry-auth"
           # into every namespace of the workload cluster when the
-          # management-cluster secret "public-registry-credential"
+          # `global` cluster secret "public-registry-credential"
           # (data.content) is configured. If your environment does not
           # use a private registry, remove the imagePullSecrets block.
           imagePullSecrets:
@@ -686,7 +686,7 @@ spec:
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <cluster_name>
+  name: <cluster_name>-kcp
   namespace: <namespace>
 spec:
   rolloutStrategy:
@@ -1155,7 +1155,7 @@ Wait until `KubeadmControlPlane` reports the expected number of ready replicas a
 
 Use the following commands to verify the cluster creation workflow.
 
-1. Check the CPI delivery resources in the management cluster:
+1. Check the CPI delivery resources in the `global` cluster:
    ```bash
    kubectl -n <namespace> get clusterresourceset
    kubectl -n <namespace> get clusterresourcesetbinding
@@ -1168,7 +1168,7 @@ Use the following commands to verify the cluster creation workflow.
    ```bash
    kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig -n kube-system get daemonset
    ```
-4. Check the management-cluster objects:
+4. Check the `global` cluster objects:
    ```bash
    kubectl -n <namespace> get cluster,vspherecluster,kubeadmcontrolplane,machinedeployment,machine,vspheremachine,vspherevm
    ```
@@ -1190,7 +1190,7 @@ Use the following commands first when the workflow fails:
 ```bash
 kubectl -n <namespace> describe cluster <cluster_name>
 kubectl -n <namespace> describe vspherecluster <cluster_name>
-kubectl -n <namespace> describe kubeadmcontrolplane <cluster_name>
+kubectl -n <namespace> describe kubeadmcontrolplane <cluster_name>-kcp
 kubectl -n <namespace> describe machinedeployment <cluster_name>-md-0
 kubectl -n <namespace> get cluster,vspherecluster,kubeadmcontrolplane,machinedeployment,machine,vspheremachine,vspherevm
 kubectl -n cpaas-system logs deploy/capi-controller-manager

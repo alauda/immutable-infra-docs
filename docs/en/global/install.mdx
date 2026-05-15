@@ -36,6 +36,15 @@ The following prerequisites apply to every provider:
 - A platform access address, registry address, and Pod and Service CIDR ranges.
 - For x86_64 nodes that use ACP-provided MicroOS images, the underlying CPUs must support the `x86-64-v2` ISA baseline. See [OS Support Matrix](../overview/os-support-matrix.mdx).
 
+<Directive type="warning" title="Naming Convention (Required)">
+  This rule applies to **every** infrastructure provider supported by this install path — Huawei DCS, Huawei Cloud Stack, VMware vSphere, and any provider added in the future. Every manifest you author in Step 4 must follow it. Misnaming any of these resources can prevent the Cluster API controllers from pairing the objects, leaving the `global` cluster stuck during provisioning or in an inconsistent state after rolling replacement.
+
+  - `clusters.cluster.x-k8s.io` (the CAPI `Cluster`) is named `global`.
+  - The provider's infrastructure cluster resource (for example, `DCSCluster` for Huawei DCS or `HCSCluster` for Huawei Cloud Stack; each provider has its own equivalent) **must** also be named `global` — it pairs with the CAPI `Cluster` by name.
+  - Every other CAPI resource (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`) and every other provider infrastructure resource (machine templates, IP/hostname pools, machine config pools, and any other per-provider resource) **must** use a name with the `global-` prefix.
+  - `Cluster.spec.controlPlaneRef.name` and any other cross-references must match the prefixed names exactly.
+</Directive>
+
 ## Compatibility and Version Inputs
 
 Before installation, record the supported version set for the delivery package:
@@ -385,6 +394,8 @@ Use the provider creation guides as the detailed resource reference:
 - Huawei DCS: [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx)
 - Huawei Cloud Stack: [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx)
 
+Apply the [naming convention from Common Prerequisites](#common-prerequisites) to every resource in the manifest you author below.
+
 <Tabs>
   <Tab label="Huawei DCS">
 
@@ -408,7 +419,7 @@ The DCS `global` manifest must contain the following resources in the `cpaas-sys
 
 Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx) and [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx). For the `global` cluster, keep these additional requirements:
 
-- Set `Cluster.metadata.name`, `DCSCluster.metadata.name`, and the Cluster API references to `global`.
+- Set `Cluster.metadata.name` and `DCSCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kcp`.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: DCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for MicroOS.
@@ -510,7 +521,7 @@ The HCS `global` manifest must contain the following resources in the `cpaas-sys
 
 Use the HCS resource fields from [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx) and [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx). For the `global` cluster, keep these additional requirements:
 
-- Set `Cluster.metadata.name`, `HCSCluster.metadata.name`, and the Cluster API references to `global`.
+- Set `Cluster.metadata.name` and `HCSCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kubeadm-control-plane`.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: HCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for MicroOS.
