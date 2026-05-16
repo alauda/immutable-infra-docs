@@ -6,6 +6,7 @@ queries:
   - microos global cluster installation
   - install platform on huawei dcs huawei cloud stack
   - immutable os global install
+  - global cluster naming convention prefix dr failover
 ---
 
 # Installing the global Cluster
@@ -37,11 +38,10 @@ The following prerequisites apply to every provider:
 - For x86_64 nodes that use ACP-provided MicroOS images, the underlying CPUs must support the `x86-64-v2` ISA baseline. See [OS Support Matrix](../overview/os-support-matrix.mdx).
 
 <Directive type="warning" title="Naming Convention (Required)">
-  This rule applies to **every** infrastructure provider supported by this install path — Huawei DCS, Huawei Cloud Stack, VMware vSphere, and any provider added in the future. Every manifest you author in Step 4 must follow it. Misnaming any of these resources can prevent the Cluster API controllers from pairing the objects, leaving the `global` cluster stuck during provisioning or in an inconsistent state after rolling replacement.
+  This rule applies to **every** infrastructure provider supported by this install path — Huawei DCS, Huawei Cloud Stack, VMware vSphere, and any provider added in the future. Every manifest you author in Step 4 must follow it. Misnaming these resources has two distinct failure modes, both detailed below; one breaks initial provisioning, the other only surfaces during disaster recovery.
 
-  - `clusters.cluster.x-k8s.io` (the CAPI `Cluster`) is named `global`.
-  - The provider's infrastructure cluster resource (for example, `DCSCluster` for Huawei DCS or `HCSCluster` for Huawei Cloud Stack; each provider has its own equivalent) **must** also be named `global` — it pairs with the CAPI `Cluster` by name.
-  - Every other CAPI resource (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`) and every other provider infrastructure resource (machine templates, IP/hostname pools, machine config pools, and any other per-provider resource) **must** use a name with the `global-` prefix.
+  - The CAPI `Cluster` and the provider's infrastructure cluster resource (for example, `DCSCluster` for Huawei DCS or `HCSCluster` for Huawei Cloud Stack; each provider has its own equivalent) **must** be named exactly `global`. `cpaas-installer` looks them up by literal name, and the Huawei Cloud Stack provider only allocates the global ELB listener ports (`11443` for the registry and console, `2379` for DR etcd-sync, `443` for web access) when the infra cluster is named `global`. A different name silently breaks registry pull, DR etcd-sync, and the web console.
+  - Every other CAPI resource (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`) and every other provider infrastructure resource (machine templates, IP/hostname pools, machine config pools, and any other per-provider resource) **must** use a name with the `global-` prefix. The DR (failover) mechanism uses this prefix to identify resources owned by the `global` cluster. **A `global` cluster resource without the `global-` prefix is invisible to DR and causes the standby cluster's machines to be deleted at failover time** — the cluster will provision and run normally, then lose nodes the first time DR is exercised. This is a hard requirement, not a stylistic convention.
   - `Cluster.spec.controlPlaneRef.name` and any other cross-references must match the prefixed names exactly.
 </Directive>
 
@@ -521,7 +521,7 @@ The HCS `global` manifest must contain the following resources in the `cpaas-sys
 
 Use the HCS resource fields from [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx) and [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx). For the `global` cluster, keep these additional requirements:
 
-- Set `Cluster.metadata.name` and `HCSCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kubeadm-control-plane`.
+- Set `Cluster.metadata.name` and `HCSCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kcp`.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: HCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for MicroOS.
@@ -556,7 +556,7 @@ spec:
   controlPlaneRef:
     apiVersion: controlplane.cluster.x-k8s.io/v1beta1
     kind: KubeadmControlPlane
-    name: global-kubeadm-control-plane
+    name: global-kcp
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
     kind: HCSCluster
@@ -565,7 +565,7 @@ spec:
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: global-kubeadm-control-plane
+  name: global-kcp
   namespace: cpaas-system
 spec:
   replicas: 3
