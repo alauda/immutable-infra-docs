@@ -7,6 +7,7 @@ queries:
   - create vmware cluster in global cluster
   - deploy capv cluster from global cluster
   - create vsphere workload cluster
+  - workload cluster naming cluster-name not global
 ---
 
 # Creating a VMware vSphere Cluster in the global Cluster
@@ -102,6 +103,12 @@ The VM template used by this workflow should meet the following minimum requirem
 Static IP configuration, hostname injection, and other initialization settings depend on `cloud-init`. Node IP reporting depends on guest tools.
 
 ## Local File Layout
+
+<Directive type="warning" title="Workload Cluster Naming">
+The workload `cluster_name` **must not** be `global`. That name is reserved for the `global` cluster, and reusing it causes the workload cluster's resources to collide with `global` cluster resources in `cpaas-system`. The `global-` prefix is reserved for resources owned by the `global` cluster's DR workflow; see [Common Prerequisites](../../global/install.mdx#common-prerequisites). Do not use `global-` for workload-cluster resources, because failover operations can select those resources as if they belonged to the `global` cluster.
+
+As a convention, keep the CAPI `Cluster` and provider cluster resource (`VSphereCluster`) named exactly `<cluster_name>`, and prefix non-root CAPI and provider resources (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`, `VSphereMachineTemplate`, `VSphereMachineConfigPool`, etc.) with `<cluster_name>-` — for example, the example manifests use `<cluster_name>-kcp` and `<cluster_name>-md-0`. This is a recommendation rather than a controller-enforced rule, but it prevents same-namespace collisions when multiple workload clusters live in `cpaas-system` and makes resource ownership obvious during operations.
+</Directive>
 
 Create a local working directory and store the manifests with the following layout:
 
@@ -522,7 +529,7 @@ Each node slot declares its NIC layout under `network.primary` (required) and `n
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: VSphereMachineConfigPool
 metadata:
-  name: <cp_pool_name>
+  name: <cluster_name>-cp-pool
   namespace: <namespace>
 spec:
   clusterRef:
@@ -612,7 +619,7 @@ Create the worker machine config pool.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: VSphereMachineConfigPool
 metadata:
-  name: <worker_pool_name>
+  name: <cluster_name>-worker-pool
   namespace: <namespace>
 spec:
   clusterRef:
@@ -680,7 +687,7 @@ spec:
       machineConfigPoolRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: VSphereMachineConfigPool
-        name: <cp_pool_name>
+        name: <cluster_name>-cp-pool
         namespace: <namespace>
 ---
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
@@ -1011,7 +1018,7 @@ spec:
       machineConfigPoolRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: VSphereMachineConfigPool
-        name: <worker_pool_name>
+        name: <cluster_name>-worker-pool
         namespace: <namespace>
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
