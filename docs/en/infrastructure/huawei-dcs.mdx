@@ -25,6 +25,11 @@ On Huawei DCS, the IP pool also carries any disks that must survive VM replaceme
 All infrastructure resources must be deployed in the `cpaas-system` namespace to ensure proper integration with the platform as business clusters.
 :::
 
+:::info
+**DCS platform concepts**
+If terms such as `DCS Cluster`, `DCS Host`, `DCS VM Folder`, or `DCS VM Template` are unfamiliar, or if it is not clear how they relate to the `DCSCluster` and `DCSMachineTemplate` custom resources, read [Huawei DCS Concepts and Terminology](../overview/providers/huawei-dcs.mdx#concepts-and-terminology) first.
+:::
+
 ## Cloud Credentials \{#cloud-credentials}
 
 Cloud credentials store the DCS platform access information required for cluster operations.
@@ -346,6 +351,47 @@ spec:
 
 Before authoring `DCSMachineTemplate` resources, verify that the target DCS site, datastore, and compute cluster have enough free capacity to host the planned VMs, and that the DCS-side scheduling policy can place new VMs on the available hosts. Skipping these checks is the single most common cause of VMs that appear to hang in `creating` state with no error returned by the DCS API.
 
+### Running the diagnostic snippets \{#diagnostic-prereqs}
+
+The capacity and placement checks below use read-only DCS REST calls. Before running any snippet, set the following environment variables in your shell:
+
+| Variable | Meaning | How to obtain |
+|---|---|---|
+| `DCS_BASE` | DCS REST API base URL, including scheme and port. The DCS REST API is published on port 7443 (separate from the 8443 web portal). | Ask the DCS platform administrator for the API endpoint. The same value is stored in the cloud-credential `Secret` under the `endpoint` key. |
+| `SITE` | DCS site ID (uppercase alphanumeric, for example `EC1C108C`). | Stored in the cloud-credential `Secret` under the `site` key, and also visible as `DCSCluster.spec.site`. |
+| `TOKEN` | Short-lived `X-Auth-Token` returned by `POST /service/session`. The token is valid for approximately 30 minutes of idle time. | Run the session command shown below. The DCS user and key are stored in the cloud-credential `Secret` under `authUser` and `authKey`. |
+
+Set the three variables once at the start of the diagnostic session:
+
+```bash
+# Replace the placeholders with values appropriate for your environment.
+export DCS_BASE='https://<dcs-api-host>:7443'
+export SITE='<site-id>'
+
+# Read the user and key from the cloud-credential Secret without printing them.
+DCS_USER="$(kubectl -n cpaas-system get secret <credential-secret-name> -o jsonpath='{.data.authUser}' | base64 -d)"
+DCS_KEY="$(kubectl -n cpaas-system get secret <credential-secret-name> -o jsonpath='{.data.authKey}' | base64 -d)"
+
+# Acquire a session token. The response header X-AUTH-TOKEN carries the value used by subsequent calls.
+HEADERS="$(mktemp)"
+curl -k -sS -D "$HEADERS" -o /dev/null -X POST "${DCS_BASE}/service/session" \
+  -H "X-Auth-User: $DCS_USER" \
+  -H "X-Auth-Key: $DCS_KEY" \
+  -H 'X-ENCRYPT-ALGORITHM: 1' \
+  -H 'X-Auth-UserType: 2' \
+  -H 'version: 8.1'
+export TOKEN="$(grep -i '^X-AUTH-TOKEN:' "$HEADERS" | tail -n1 | cut -d' ' -f2- | tr -d '\r\n ')"
+rm -f "$HEADERS"
+unset DCS_USER DCS_KEY
+```
+
+:::warning
+**Token handling**
+Do not log the token to a file or to shell history. The session token grants the same privileges as the underlying DCS user, which is typically an administrator.
+:::
+
+Reuse `$DCS_BASE`, `$SITE`, and `$TOKEN` in every subsequent diagnostic snippet on this page. Refresh the token by re-running the `POST /service/session` command when the API begins returning `errorCode: 10000002` (session expired or not logged in).
+
 ### Choosing a datastore \{#choosing-datastore}
 
 Each `DCSMachineDiskSpec` entry binds a disk to a DCS datastore through one of two mutually exclusive fields:
@@ -370,14 +416,14 @@ for ds in json.load(sys.stdin).get('datastores',[]) or []:
 
 Each `DCSMachineTemplate` cp / worker pair commonly needs the system disk (template-default, often ~80 GB) plus the explicit data disks declared in the spec, so a single control-plane node with `etcd 10G + kubelet 100G + containerd 100G + /var/cpaas 100G` consumes roughly 390 GB before the template's system disk. A datastore used above ~70 % is a strong signal to pick a different datastore — even if the absolute free space looks large, fragmentation and reservations can cause new VM placement to stall.
 
-### Host placement requirements \{#host-placement}
+### Host placement and high availability \{#host-placement}
 
-A `DCSMachineTemplate.spec.template.spec.resource` field controls how DCS picks the physical host for the cloned VM:
+Host placement on the DCS platform is performed by the DCS scheduler. The DCS Provider does not expose a way to pin a virtual machine to a specific DCS Host through `DCSMachineTemplate`. Virtual machines cloned from the same template can therefore land on the same physical host.
 
-- `type: cluster` + `name: <cluster-name>` — lets the DCS cluster scheduler pick a host automatically. Requires the DCS cluster to have **DRS enabled** (or an equivalent balancer policy) so the scheduler can place new VMs on under-utilized hosts.
-- `type: host` + `name: <host-name>` — pins every cloned VM to one specific host. Use this when DRS is disabled, or when the platform has uneven host capacity and you must steer new VMs onto a specific host with free CPU and memory.
+Two consequences follow from this:
 
-If the DCS cluster has DRS disabled and the existing hosts are unevenly loaded (for example, one host is severely CPU-over-committed while another is mostly idle), the `type: cluster` mode can leave the deploy task stalled because the scheduler cannot pick a host that simultaneously satisfies the cluster's overcommit and reservation policies. Switching to `type: host` and pointing at a known-healthy host removes that ambiguity.
+- **Capacity hot spots**: If the DCS cluster has uneven host load (for example, one host is severely CPU-over-committed while another is mostly idle), the DCS scheduler may refuse new placements on the over-committed host. The deploy task can stall until the load is rebalanced on the DCS side or DRS is enabled. Use the snippet below to confirm whether host load is the cause.
+- **No automatic spread for control plane**: Control-plane virtual machines from a single `DCSMachineTemplate` are not automatically distributed across multiple physical hosts. For high-availability deployments, configure VM-VM anti-affinity on the DCS platform side as described in [Cross-Host High Availability for Control Plane](#cross-host-ha) below.
 
 To check current host load before applying a new template:
 
@@ -390,7 +436,15 @@ for h in json.load(sys.stdin).get('hosts',[]) or []:
   print(f\"{h.get('name','?'):10} status={h.get('status','?'):10} cpuUsed/total={h.get('cpuUsedCores','?')}/{h.get('cpuTotalCores','?')}c memUsed={h.get('memUsedSizeMB','?')}MB cpuMuxRatio={h.get('cpuMuxRatio','?')}\")"
 ```
 
-A `cpuMuxRatio` (CPU allocation / physical cores) above ~3× on every host in the cluster, combined with DRS disabled, indicates the cluster is already saturated and will likely refuse new placements until either DRS is enabled or the load is rebalanced manually.
+A `cpuMuxRatio` (CPU allocation / physical cores) above ~3× on every host in the cluster indicates the cluster is already saturated and will likely refuse new placements until the load is rebalanced on the DCS side.
+
+### Cross-Host High Availability for Control Plane \{#cross-host-ha}
+
+The DCS Provider does not currently implement host pinning or Cluster API `FailureDomain` spreading. As a result, the three control-plane virtual machines of a Kubernetes cluster created through this provider can be placed on the same physical DCS Host. If that host fails, the entire Kubernetes control plane is unavailable until the host recovers.
+
+To force control-plane virtual machines onto different physical hosts, configure a VM-VM anti-affinity rule on the DCS platform side. The DCS platform calls this feature 互斥虚拟机 (Mutually Exclusive Virtual Machines). The rule is configured under the DCS Cluster's compute resource scheduling settings, lists the control-plane virtual machines by name, and instructs the DCS scheduler to keep those virtual machines on different hosts.
+
+A full operational runbook for this configuration is being prepared and will be published as a separate document. Until it is available, follow the DCS / FusionCompute platform documentation, or contact the DCS platform support team. Two prerequisites apply on the DCS side: the target cluster must have enough healthy hosts (typically at least one host per control-plane virtual machine), and the cluster must have DRS enabled if the rule should also be honoured during runtime rebalancing.
 
 ### Troubleshooting: VM stuck in `creating` \{#stuck-creating}
 
@@ -411,7 +465,7 @@ Diagnostic ladder, in order:
 
 2. **Check datastore free space** and **host load** using the snippets in [Choosing a datastore](#choosing-datastore) and [Host placement requirements](#host-placement). Datastore above 70 % used, or all hosts at high `cpuMuxRatio`, are the leading causes.
 
-3. **If DRS is disabled on the DCS cluster**, switch the relevant `DCSMachineTemplate.spec.template.spec.resource` to `type: host` + an explicit healthy host name, delete the stuck `Machine`, and let the controller re-derive a fresh `DCSMachine` against the new template.
+3. **Rebalance load on the DCS side**. If a single host is saturated while others have free capacity, ask the DCS platform team to rebalance the load (manual `Migrate` or DRS-driven rebalance) before retrying. The DCS Provider does not expose a per-template host pin, so this remediation is owned by the DCS platform team.
 
 4. **If the DCS-side deploy task is genuinely deadlocked** (cancellable but unresponsive to ACP-driven `DeleteVm`), escalate to a DCS administrator with portal-admin credentials to cancel the task. The 7443 REST API does not expose a task-cancel endpoint for non-admin users, so the recovery path is owned by the DCS platform team, not by ACP.
 
@@ -470,8 +524,7 @@ metadata:
 | Name | text | Yes | Unique identifier for the template (1-63 characters, lowercase letters, numbers, and hyphens only) |
 | Type | dropdown | Yes | Control Plane or Worker Node |
 | VM Template Name | dropdown | Yes | From ConfigMap, shows OS Version and Kubernetes Version |
-| Location | dropdown | No | DCS platform location (datacenter, rack, etc.) |
-| Resource | dropdown | No | DCS platform resource pool or cluster |
+| Location | dropdown | No | DCS VM Folder used to group the cloned virtual machines on the DCS platform. See [Huawei DCS Concepts and Terminology](../overview/providers/huawei-dcs.mdx#concepts-and-terminology) for the VM Folder definition. The folder must be created on the DCS platform first. |
 | Specs | - | Yes | CPU and memory specifications |
 | Specs.CPU | number | Yes | CPU cores (integer) |
 | Specs.Mem | number | Yes | Memory size in MB (displayed as GB in list view) |
@@ -523,7 +576,7 @@ If multiple VM templates have the same Kubernetes version, select the template w
 
 #### Managing Machine Templates
 
-**Viewing Templates**: Navigate to Clusters → Virtual Machine → Machine Templates to view all templates with their VM Template Name, Resource, Location, Specs, and IP Pool.
+**Viewing Templates**: Navigate to Clusters → Virtual Machine → Machine Templates to view all templates with their VM Template Name, Location, Specs, and IP Pool.
 
 **Updating Templates**: Click **Update** to modify specifications. Note that the Name field cannot be changed after creation.
 
@@ -546,9 +599,6 @@ spec:
       location:
         type: folder
         name: <folder-name>
-      resource: # Optional, if not specified, uses template defaults
-        type: cluster # cluster | host
-        name: <cluster-name>
       vmConfig:
         dvSwitchName: <dv-switch-name> # Optional
         portGroupName: <port-group-name> # Optional
@@ -580,13 +630,10 @@ spec:
 
 | Parameter | Type | Description | Required |
 |-----------|------|-------------|----------|
-| `.spec.template.spec.vmTemplateName` | string | DCS virtual machine template name | Yes |
-| `.spec.template.spec.location` | object | Location where the VM will be created (auto-selected if not specified) | No |
-| `.spec.template.spec.location.type` | string | VM creation location type (currently only supports "folder") | Yes* |
-| `.spec.template.spec.location.name` | string | VM creation folder name | Yes* |
-| `.spec.template.spec.resource` | object | Compute resource selection for VM creation (auto-selected if not specified) | No |
-| `.spec.template.spec.resource.type` | string | Compute resource type: cluster or host | Yes* |
-| `.spec.template.spec.resource.name` | string | Compute resource name | Yes* |
+| `.spec.template.spec.vmTemplateName` | string | DCS VM Template name as registered on the DCS platform. | Yes |
+| `.spec.template.spec.location` | object | Places the cloned virtual machine under a DCS VM Folder for organizational grouping. If omitted, the virtual machine is not placed in any folder. See [Huawei DCS Concepts and Terminology](../overview/providers/huawei-dcs.mdx#concepts-and-terminology) for the VM Folder definition. | No |
+| `.spec.template.spec.location.type` | string | Set to `folder` for the standard workflow. The folder must already exist on the DCS platform. | Yes* |
+| `.spec.template.spec.location.name` | string | Name of the existing DCS VM Folder. | Yes* |
 | `.spec.template.spec.vmConfig` | object | Virtual machine configuration | Yes |
 | `.spec.template.spec.vmConfig.dvSwitchName` | string | Virtual machine switch name (uses template default if not specified) | No |
 | `.spec.template.spec.vmConfig.portGroupName` | string | Port group name (must belong to the specified switch, uses template default if not specified) | No |
@@ -601,6 +648,19 @@ spec:
 | `.spec.template.spec.ipHostPoolRef.name` | string | Referenced DCSIpHostnamePool name | Yes |
 
 \*Required when parent object is specified
+
+### Advanced: Multi-Cluster Deployment with Shared Storage \{#advanced-multi-cluster}
+
+The default workflow assumes that the DCS VM Template (`vmTemplateName`) and the cloned virtual machines live in the same DCS Cluster. For most deployments, this assumption is correct and the `spec.template.spec.location` field is set to a VM Folder for organizational grouping only.
+
+Deployments that span multiple DCS Clusters and want to clone from a single shared DCS VM Template into a different target DCS Cluster require the following conditions:
+
+- The DCS Datastore that holds the DCS VM Template must be visible to the target DCS Cluster. This is the case for SAN, IPSAN, NAS, or FusionStorage datastores configured for cross-cluster access; it is not the case for datastores backed by host-local disk.
+- The DCS-side network resources (distributed virtual switches and port groups) referenced by the `vmConfig` must also be visible to the target DCS Cluster.
+
+When both conditions are met, the cloned virtual machine can be placed under the target DCS Cluster by setting `spec.template.spec.location.type: cluster` and `spec.template.spec.location.name: <target-cluster-name>` instead of the default `type: folder` form. If the datastore is not shared across DCS Clusters, the clone task fails at the DCS platform side. The recommended alternative is to prepare a separate DCS VM Template inside each target DCS Cluster, so each `DCSMachineTemplate` references a template that already lives in the cluster where the virtual machines will run.
+
+Confirm cross-cluster datastore visibility with the DCS platform administrator before using this configuration.
 
 :::warning
 **Storage Requirements**
