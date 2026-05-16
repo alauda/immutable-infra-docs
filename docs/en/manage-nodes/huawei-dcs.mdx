@@ -110,6 +110,8 @@ spec:
 
 The DCSMachineTemplate defines the specifications for worker node virtual machines, including VM templates, compute resources, storage configuration, and network settings.
 
+The fields in this resource reference several Huawei DCS platform concepts (DCS VM Template, DCS VM Folder, DCS Datastore, and related items). For the definitions of those concepts and how they map to Cluster API resources, see [Huawei DCS Concepts and Terminology](../overview/providers/huawei-dcs.mdx#concepts-and-terminology).
+
 :::warning
 **Required Disk Configurations**
 The following disk mount points are mandatory. Do not remove them:
@@ -139,9 +141,6 @@ spec:
       location:
         type: folder
         name: <folder-name>
-      resource: # Optional, if not specified, uses template defaults
-        type: cluster # cluster | host. Optional
-        name: <cluster-name> # Optional
       vmConfig:
         dvSwitchName: <dv-switch-name> # Optional
         portGroupName: <port-group-name> # Optional
@@ -169,13 +168,10 @@ spec:
 
 | Parameter | Type | Description | Required |
 |-----------|------|-------------|----------|
-| `.spec.template.spec.vmTemplateName` | string | DCS virtual machine template name | Yes |
-| `.spec.template.spec.location` | object | VM creation location (auto-selected if not specified) | No |
-| `.spec.template.spec.location.type` | string | Location type (currently supports "folder" only) | Yes* |
-| `.spec.template.spec.location.name` | string | Folder name for VM creation | Yes* |
-| `.spec.template.spec.resource` | object | Compute resource selection (auto-selected if not specified) | No |
-| `.spec.template.spec.resource.type` | string | Resource type: `cluster` or `host` | Yes* |
-| `.spec.template.spec.resource.name` | string | Compute resource name | Yes* |
+| `.spec.template.spec.vmTemplateName` | string | DCS VM Template name as registered on the DCS platform. | Yes |
+| `.spec.template.spec.location` | object | Places the cloned virtual machine under a DCS VM Folder for organizational grouping. If omitted, the virtual machine is not placed in any folder. See [Huawei DCS Concepts and Terminology](../overview/providers/huawei-dcs.mdx#concepts-and-terminology) for the VM Folder definition and [Infrastructure → Advanced: Multi-Cluster Deployment](../infrastructure/huawei-dcs.mdx#advanced-multi-cluster) for the multi-cluster use of this field. | No |
+| `.spec.template.spec.location.type` | string | Set to `folder` for the standard workflow. The folder must already exist on the DCS platform. | Yes* |
+| `.spec.template.spec.location.name` | string | Name of the existing DCS VM Folder. | Yes* |
 | `.spec.template.spec.vmConfig` | object | Virtual machine configuration | Yes |
 | `.spec.template.spec.vmConfig.dvSwitchName` | string | Virtual switch name (uses template default if not specified) | No |
 | `.spec.template.spec.vmConfig.portGroupName` | string | Port group name (must belong to the specified switch) | No |
@@ -960,8 +956,10 @@ See [Infrastructure → Troubleshooting: VM stuck in `creating`](../infrastructu
 - Confirming the symptom is a placement stall (not a slow boot).
 - Checking datastore free space.
 - Checking host CPU / memory utilisation and overcommit ratios.
-- Switching `DCSMachineTemplate.spec.template.spec.resource` from `type: cluster` to `type: host` when the DCS cluster has DRS disabled.
+- Coordinating with the DCS platform team to rebalance load when a single DCS Host is saturated.
 - Escalation path when the deploy task is genuinely deadlocked.
+
+For control-plane high availability across multiple physical hosts, see [Infrastructure → Cross-Host High Availability for Control Plane](../infrastructure/huawei-dcs.mdx#cross-host-ha).
 
 The same diagnostic applies whether the stuck node is the first control-plane node of a fresh cluster, a new worker added through `MachineDeployment` scaling, or a replacement worker created during a rolling update.
 
