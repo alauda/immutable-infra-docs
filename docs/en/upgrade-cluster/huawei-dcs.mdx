@@ -71,6 +71,23 @@ If your existing cluster still keeps preserved data in the old template-disk lay
 
 YAML-based upgrades do not depend on Fleet Essentials.
 
+### Required Values From the OS Support Matrix \{#required-values}
+
+The authoritative mapping between an ACP release, its MicroOS image, the Kubernetes version, and the matching CoreDNS and etcd image tags lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the YAML steps below need.
+
+The four cells you read from that row map to the upgrade manifests as follows:
+
+| OS Support Matrix column | Used to set | Where it lands |
+|---|---|---|
+| **MicroOS Image Version** | `DCSMachineTemplate.spec.template.spec.vmTemplateName` (new VM template the cloned nodes are built from) | Control plane and worker `DCSMachineTemplate` |
+| **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
+| **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
+| **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
+
+The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags.
+
+Confirm with the cluster's platform owner that the target MicroOS image has already been uploaded to the DCS platform under the same name as the **MicroOS Image Version** value in the matrix row. The upgrade fails if that VM template is not present on DCS when the `DCSMachineTemplate` is applied.
+
 ### Upgrade Control Plane Infrastructure
 
 Upgrading the control plane machine template lets you roll out updated VM specifications, system patches, and infrastructure settings.
@@ -119,45 +136,69 @@ Upgrading the control plane machine template lets you roll out updated VM specif
 
 ### Upgrade Control Plane Kubernetes Version
 
-Upgrading the control plane Kubernetes version requires both a compatible VM template and an updated `KubeadmControlPlane` version.
+Upgrading the control plane Kubernetes version on immutable OS is a delete-recreate workflow. The control plane VMs are replaced one by one from a new `DCSMachineTemplate` that points at the target MicroOS VM template, and the `KubeadmControlPlane` resource is patched to carry the matching Kubernetes version, CoreDNS image tag, and etcd image tag.
+
+Before you start, collect the four required values from the target ACP row in the OS Support Matrix as described in [Required Values From the OS Support Matrix](#required-values).
 
 #### Procedure
 
-1. **Prepare a compatible VM template**
+1. **Create a new `DCSMachineTemplate` for the target Kubernetes version**
 
-   Ensure the referenced `DCSMachineTemplate` uses a `vmTemplateName` that matches the target Kubernetes version.
-
-2. **Update the control plane version**
-
-   Modify `spec.version` in the `KubeadmControlPlane` resource. Optionally update related rollout settings or the referenced infrastructure template at the same time to match your upgrade policy.
-
-3. **Monitor the upgrade**
+   Copy the existing control-plane template and update `metadata.name` to a new name and `spec.template.spec.vmTemplateName` to the **MicroOS Image Version** value read from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx). Keep pool-managed persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` rather than reintroducing them as template disks.
 
    ```bash
-   kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system
+   kubectl get dcsmachinetemplate <current-cp-template-name> -n cpaas-system -o yaml > new-cp-template.yaml
+   # edit metadata.name and spec.template.spec.vmTemplateName
+   kubectl apply -f new-cp-template.yaml -n cpaas-system
+   ```
+
+2. **Patch the `KubeadmControlPlane` with all four target values**
+
+   Update the `KubeadmControlPlane` resource in a single edit to keep `spec.version`, the CoreDNS image tag, the etcd image tag, and the infrastructure template reference consistent with the same MicroOS release:
+
+   - `spec.version` ← **Kubernetes Version** from the OS Support Matrix row
+   - `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` ← **coredns** column from the same row
+   - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← **etcd** column from the same row
+   - `spec.machineTemplate.infrastructureRef.name` ← the new `DCSMachineTemplate` name created in step 1
+
+   ```bash
+   kubectl edit kubeadmcontrolplane <kcp-name> -n cpaas-system
+   ```
+
+   Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same MicroOS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
+
+3. **Monitor the rolling update**
+
+   ```bash
+   kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system -w
    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/control-plane
    kubectl get nodes
    ```
 
+   `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge` must remain `0` when the cluster relies on pool-managed persistent disks, so the control plane VMs are replaced one at a time.
+
 ### Upgrade Worker Nodes
 
-Worker node Kubernetes upgrades are managed through `MachineDeployment` resources.
+Worker node Kubernetes upgrades are managed through `MachineDeployment` resources. Worker upgrades carry fewer fields than the control plane: the CoreDNS and etcd image tags are part of `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration`, which `MachineDeployment` does not have. Worker nodes inherit Kubernetes component versions from the new VM template; the `MachineDeployment` only needs the target Kubernetes version and the new template reference.
+
+Before you start, read the **MicroOS Image Version** and **Kubernetes Version** cells from the target ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx) as described in [Required Values From the OS Support Matrix](#required-values).
 
 #### Procedure
 
-1. **Create an updated machine template**
-   - Create a new `DCSMachineTemplate` with a `vmTemplateName` that supports the target Kubernetes version
-   - Ensure the VM template includes the correct Kubernetes binaries and dependencies
-   - Keep `/var/cpaas` and any other upgrade-preserved disks in the IP pool rather than reintroducing them as template disks
+1. **Create a new `DCSMachineTemplate` for worker nodes**
+   - Create a new `DCSMachineTemplate` with a `vmTemplateName` set to the **MicroOS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx)
+   - Keep `/var/cpaas` and any other upgrade-preserved disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` rather than reintroducing them as template disks
 
-2. **Update the MachineDeployment**
-   - Update `spec.template.spec.version` to the target Kubernetes version
-   - Update `spec.template.spec.infrastructureRef.name` to reference the new machine template
-   - Optionally update `spec.template.spec.bootstrap.configRef.name` if bootstrap configuration changes are required
+2. **Update the `MachineDeployment`**
+   - Set `spec.template.spec.version` to the **Kubernetes Version** value from the same OS Support Matrix row
+   - Set `spec.template.spec.infrastructureRef.name` to the new `DCSMachineTemplate` name created in step 1
+   - Optionally update `spec.template.spec.bootstrap.configRef.name` if bootstrap configuration changes are required for this release
 
 3. **Monitor the rolling update**
    - Verify that the rolling update completes successfully
    - Verify that the new worker nodes join the cluster with the target Kubernetes version
+
+   `MachineDeployment.spec.strategy.rollingUpdate.maxSurge` must remain `0` when the cluster relies on pool-managed persistent disks, so the worker nodes are replaced one at a time.
 
 ---
 
