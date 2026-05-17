@@ -861,6 +861,19 @@ For Kubernetes upgrades on Huawei DCS, see [Upgrading Kubernetes on Huawei DCS](
 
 ## Managing Node Pools Using the Web UI
 
+:::warning
+**Fleet Essentials UI does not support ACP 4.3 cluster upgrades**
+
+The Fleet Essentials UI workflow has not been adapted to the Cluster Version Operator (CVO) mechanism introduced in ACP 4.3. Do not use the Fleet Essentials UI to upgrade DCS clusters on ACP 4.3.
+
+Two supported alternatives:
+
+- **YAML path** — Follow the YAML-based upgrade procedure in [Upgrading Kubernetes on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx).
+- **ACP Core cluster management UI** — Use the two-step upgrade flow built into the ACP Core platform; see <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html#request-the-upgrade" children="Request the upgrade for the global cluster" /> or <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
+
+Adding, deleting, and viewing node pools through the Fleet Essentials UI are unaffected by this limitation.
+:::
+
 Node pools provide a declarative way to manage groups of nodes with identical configurations. You can view, add, and delete worker node pools through the web UI.
 
 **Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use the YAML-based node pool workflows in this document. If the node-pool workflow relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the `persistentDisk` declaration on `DCSIpHostnamePool` remains YAML-only and is not exposed in the node-pool UI.
