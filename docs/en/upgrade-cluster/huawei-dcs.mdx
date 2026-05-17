@@ -14,6 +14,19 @@ queries:
 This guide explains how to complete Phase 2 of the upgrade workflow for clusters on Huawei DCS. Before you upgrade Kubernetes, complete the Distribution Version upgrade described in [Upgrading Clusters](index.mdx).
 
 :::info
+**Where this page fits in the full ACP upgrade flow**
+
+This page covers only the Kubernetes step of the upgrade. The full ACP upgrade flow — including pre-upgrade artifact preparation, ACP Core upgrade through CVO, Aligned plugin upgrades, and Agnostic plugin upgrades from Marketplace — is documented in the ACP product documentation. Complete those steps before you start the Kubernetes step on this page:
+
+- <ExternalSiteLink name="acp" href="/upgrade/overview.html" children="Upgrade Overview (scope and sequencing)" />
+- <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />
+- <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster (Core, Aligned, Agnostic)" />
+- <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html" children="Upgrade workload clusters (Core, Aligned, Agnostic)" />
+
+Use this page when the same cluster runs on an immutable operating system, because the Kubernetes step on immutable OS replaces nodes from a new MicroOS-based VM template rather than upgrading binaries in place.
+:::
+
+:::info
 **Version**
 
 DCS provider `v1.0.16` is the first release that supports pool-managed persistent disks.
