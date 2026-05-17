@@ -13,6 +13,19 @@ queries:
 
 This document explains how to upgrade Kubernetes clusters on VMware vSphere after the platform-side distribution upgrade is complete. The documented workflow focuses on updating the control plane and worker nodes through Cluster API resources.
 
+:::info
+**Where this page fits in the full ACP upgrade flow**
+
+This page covers only the Kubernetes step of the upgrade. The full ACP upgrade flow — including pre-upgrade artifact preparation, ACP Core upgrade through CVO, Aligned plugin upgrades, and Agnostic plugin upgrades from Marketplace — is documented in the ACP product documentation. Complete those steps before you start the Kubernetes step on this page:
+
+- <ExternalSiteLink name="acp" href="/upgrade/overview.html" children="Upgrade Overview (scope and sequencing)" />
+- <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />
+- <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster (Core, Aligned, Agnostic)" />
+- <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html" children="Upgrade workload clusters (Core, Aligned, Agnostic)" />
+
+Use this page when the same cluster runs on an immutable operating system, because the Kubernetes step on immutable OS replaces nodes from a new VM template rather than upgrading binaries in place.
+:::
+
 ## Upgrade Sequence
 
 Upgrade VMware vSphere clusters in the following order:
