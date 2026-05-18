@@ -202,7 +202,7 @@ The template should also meet the following requirements:
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| Control plane pool name | `<cp_pool_name>` | Yes | machine config pool name for control plane nodes. | `demo-cluster-control-plane-pool` | - |
+| Control plane pool name | `<cluster_name>-cp-pool` | Yes | Machine config pool name for control plane nodes. Recommended convention is `<cluster_name>-cp-pool` to keep all per-cluster resources visually grouped. | `demo-cluster-cp-pool` | - |
 | Control plane node 1 hostname | `<cp_node_name_1>` | Yes | Node name and kubelet serving cert SAN for the first control plane node. Must be a valid DNS-1123 subdomain. | `cp-01` | - |
 | Control plane node 1 datacenter | `<master_01_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
 | Control plane node 1 IP address | `<master_01_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.11` | - |
@@ -217,7 +217,7 @@ The template should also meet the following requirements:
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| Worker pool name | `<worker_pool_name>` | Yes | machine config pool name for worker nodes. | `demo-cluster-worker-pool` | - |
+| Worker pool name | `<cluster_name>-worker-pool` | Yes | Machine config pool name for worker nodes. Recommended convention is `<cluster_name>-worker-pool` to keep all per-cluster resources visually grouped. | `demo-cluster-worker-pool` | - |
 | Worker node 1 hostname | `<worker_node_name_1>` | Yes | Node name and kubelet serving cert SAN for the first worker node. Must be a valid DNS-1123 subdomain. | `worker-01` | - |
 | Worker node 1 datacenter | `<worker_01_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
 | Worker node 1 IP address | `<worker_01_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.21` | - |

@@ -7,6 +7,7 @@ queries:
   - create hcs cluster
   - huawei cloud stack kubernetes
   - hcs cluster creation
+  - workload cluster naming cluster-name not global
 ---
 
 # Creating Clusters on Huawei Cloud Stack
@@ -47,6 +48,14 @@ Before you write any YAML in this page, complete the preparation checklist in [I
 **Important Namespace Requirement**
 
 To ensure proper integration with the <Term name="product" textCase="capitalize" /> as business clusters, all resources must be deployed in the `cpaas-system` namespace. Deploying resources in other namespaces may result in integration issues.
+:::
+
+:::warning
+**Workload Cluster Naming**
+
+The workload `cluster-name` **must not** be `global`. That name is reserved for the `global` cluster, and reusing it causes the workload cluster's resources to collide with `global` cluster resources in `cpaas-system`. The `global-` prefix is reserved for resources owned by the `global` cluster's DR workflow; see [Common Prerequisites](../global/install.mdx#common-prerequisites). Do not use `global-` for workload-cluster resources, because failover operations can select those resources as if they belonged to the `global` cluster.
+
+As a convention, keep the CAPI `Cluster` and provider cluster resource (`HCSCluster`) named exactly `<cluster-name>`, and prefix non-root CAPI and provider resources (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`, machine templates, machine config pools, etc.) with `<cluster-name>-` — for example, the example manifests use `<cluster-name>-kcp`. This is a recommendation rather than a controller-enforced rule, but it prevents same-namespace collisions when multiple workload clusters live in `cpaas-system` and makes resource ownership obvious during operations.
 :::
 
 The cluster creation process follows this order:
@@ -120,7 +129,7 @@ For the initial cluster create flow, listing an existing subnet by name is enoug
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: HCSMachineConfigPool
 metadata:
-  name: <cluster-name>
+  name: <cluster-name>-cp-pool
   namespace: cpaas-system
 spec:
   configs:
@@ -183,7 +192,7 @@ spec:
         type: SSD
         size: 100
       configPoolRef:
-        name: <cluster-name>
+        name: <cluster-name>-cp-pool
       dataVolumes:
         - size: 10
           type: SSD
@@ -231,7 +240,7 @@ The `KubeadmControlPlane` defines the Kubernetes control plane configuration.
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <cluster-name>
+  name: <cluster-name>-kcp
   namespace: cpaas-system
 spec:
   replicas: 3
@@ -476,7 +485,7 @@ spec:
   controlPlaneRef:
     apiVersion: controlplane.cluster.x-k8s.io/v1beta1
     kind: KubeadmControlPlane
-    name: <cluster-name>
+    name: <cluster-name>-kcp
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
     kind: HCSCluster
@@ -503,7 +512,7 @@ After deploying all cluster resources, verify that the cluster has been created 
 kubectl get cluster -n cpaas-system <cluster-name>
 
 # Verify control plane nodes
-kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>
+kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>-kcp
 
 # Check machine status
 kubectl get machines -n cpaas-system

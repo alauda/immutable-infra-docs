@@ -54,7 +54,7 @@ If you use `subnetName` for worker nodes, include the same subnet name in the pa
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: HCSMachineConfigPool
 metadata:
-  name: <worker-pool-name>
+  name: <cluster-name>-worker-pool
   namespace: cpaas-system
 spec:
   configs:
@@ -99,7 +99,7 @@ Use the provider-recognized `flavorName` and `availabilityZone` API values when 
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: HCSMachineTemplate
 metadata:
-  name: <worker-machine-template>
+  name: <cluster-name>-worker-template
   namespace: cpaas-system
 spec:
   template:
@@ -111,7 +111,7 @@ spec:
         type: SSD
         size: 100
       configPoolRef:
-        name: <worker-pool-name>
+        name: <cluster-name>-worker-pool
       dataVolumes:
         - size: 20
           type: SSD
@@ -155,7 +155,7 @@ The `KubeadmConfigTemplate` defines the bootstrap configuration for worker nodes
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
 kind: KubeadmConfigTemplate
 metadata:
-  name: <worker-config-template>
+  name: <cluster-name>-worker-kct
   namespace: cpaas-system
 spec:
   template:
@@ -195,7 +195,7 @@ The `MachineDeployment` orchestrates the creation and management of worker nodes
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: MachineDeployment
 metadata:
-  name: <worker-machine-deployment>
+  name: <cluster-name>-md-0
   namespace: cpaas-system
 spec:
   clusterName: <cluster-name>
@@ -215,11 +215,11 @@ spec:
         configRef:
           apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
           kind: KubeadmConfigTemplate
-          name: <worker-config-template>
+          name: <cluster-name>-worker-kct
       infrastructureRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: HCSMachineTemplate
-        name: <worker-machine-template>
+        name: <cluster-name>-worker-template
 ```
 
 | Parameter | Type | Required | Description |
@@ -253,7 +253,7 @@ Increase the number of worker nodes to handle increased workload.
    kubectl get machines -n cpaas-system
 
    # List machines for a specific MachineDeployment
-   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment>
+   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<cluster-name>-md-0
    ```
 
 2. **Extend Configuration Pool**
@@ -261,7 +261,7 @@ Increase the number of worker nodes to handle increased workload.
    Add new IP configurations to the pool for the additional nodes.
 
    ```bash
-   kubectl get hcsmachineconfigpool <worker-pool-name> -n cpaas-system -o yaml
+   kubectl get hcsmachineconfigpool <cluster-name>-worker-pool -n cpaas-system -o yaml
    ```
 
    Modify the pool to include new IP entries, then apply:
@@ -275,7 +275,7 @@ Increase the number of worker nodes to handle increased workload.
    Update the `replicas` field to the desired number of nodes:
 
    ```bash
-   kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
+   kubectl patch machinedeployment <cluster-name>-md-0 -n cpaas-system \
      --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
    ```
 
@@ -286,7 +286,7 @@ Increase the number of worker nodes to handle increased workload.
    kubectl get machines -n cpaas-system -w
 
    # Check MachineDeployment status
-   kubectl get machinedeployment <worker-machine-deployment> -n cpaas-system
+   kubectl get machinedeployment <cluster-name>-md-0 -n cpaas-system
    ```
 
 #### Removing Worker Nodes
@@ -307,7 +307,7 @@ Scaling down removes nodes and their associated disks. Ensure:
 1. **Scale Down the MachineDeployment**
 
    ```bash
-   kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
+   kubectl patch machinedeployment <cluster-name>-md-0 -n cpaas-system \
      --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
    ```
 
@@ -361,7 +361,7 @@ To upgrade worker machine specifications (CPU, memory, disk, VM image), follow t
    Modify the `MachineDeployment` to reference the new template:
 
    ```bash
-   kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
+   kubectl patch machinedeployment <cluster-name>-md-0 -n cpaas-system \
      --type='merge' -p='{"spec":{"template":{"spec":{"infrastructureRef":{"name":"<new-template>"}}}}}'
    ```
 
@@ -390,7 +390,7 @@ Kubernetes version upgrades require coordinated updates to both the `MachineDepl
    - `spec.template.spec.infrastructureRef.name` - New machine template name
 
      ```bash
-     kubectl patch machinedeployment <worker-machine-deployment> -n cpaas-system \
+     kubectl patch machinedeployment <cluster-name>-md-0 -n cpaas-system \
        --type='merge' -p='{"spec":{"template":{"spec":{"version":"<kubernetes-version>","infrastructureRef":{"name":"<new-template>"}}}}}'
      ```
 

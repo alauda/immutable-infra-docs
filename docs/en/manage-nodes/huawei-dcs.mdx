@@ -46,13 +46,13 @@ The pool must include at least as many entries as the number of worker nodes you
 
 **Example:**
 
-Create a `DCSIpHostnamePool` named `<worker-iphostname-pool-name>`:
+Create a `DCSIpHostnamePool` named `<cluster-name>-worker-pool`:
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: DCSIpHostnamePool
 metadata:
-  name: <worker-iphostname-pool-name>
+  name: <cluster-name>-worker-pool
   namespace: cpaas-system
 spec:
   pool:
@@ -126,13 +126,13 @@ You may add additional template disks, but these essential template disks must b
 
 **Example:**
 
-Create a `DCSMachineTemplate` named `<worker-dcs-machine-template-name>`:
+Create a `DCSMachineTemplate` named `<cluster-name>-worker-template`:
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: DCSMachineTemplate
 metadata:
-  name: <worker-dcs-machine-template-name>
+  name: <cluster-name>-worker-template
   namespace: cpaas-system
 spec:
   template:
@@ -161,7 +161,7 @@ spec:
           path: /var/lib/containerd
           format: xfs
       ipHostPoolRef:
-        name: <worker-iphostname-pool-name>
+        name: <cluster-name>-worker-pool
 ```
 
 **Key parameters:**
@@ -203,7 +203,7 @@ Declare any upgrade-preserved disk in the matching `DCSIpHostnamePool.spec.pool[
 To inspect the runtime state of persistent disks during node operations, check `status.persistentDiskStatus` on the pool:
 
 ```bash
-kubectl get dcsiphostnamepool <worker-iphostname-pool-name> -n cpaas-system -o yaml
+kubectl get dcsiphostnamepool <cluster-name>-worker-pool -n cpaas-system -o yaml
 ```
 
 ### Step 3: Configure Bootstrap Template
@@ -221,7 +221,7 @@ The template includes pre-optimized configurations for security and performance.
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
 kind: KubeadmConfigTemplate
 metadata:
-  name: <worker-kubeadm-config-template>
+  name: <cluster-name>-worker-kct
   namespace: cpaas-system
 spec:
   template:
@@ -296,7 +296,7 @@ The MachineDeployment orchestrates the creation and management of worker nodes b
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: MachineDeployment
 metadata:
-  name: <worker-machine-deployment-name>
+  name: <cluster-name>-md-0
   namespace: cpaas-system
 spec:
   strategy:
@@ -312,7 +312,7 @@ spec:
     metadata:
       labels:
         cluster.x-k8s.io/cluster-name: <cluster-name>
-        pool.name: <worker-machine-deployment-name>
+        pool.name: <cluster-name>-md-0
     spec:
       nodeDrainTimeout: 1m
       nodeDeletionTimeout: 5m
@@ -320,13 +320,13 @@ spec:
         configRef:
           apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
           kind: KubeadmConfigTemplate
-          name: <worker-kubeadm-config-template-name>
+          name: <cluster-name>-worker-kct
           namespace: cpaas-system
       clusterName: <cluster-name>
       infrastructureRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: DCSMachineTemplate
-        name: <worker-dcs-machine-template-name>
+        name: <cluster-name>-worker-template
         namespace: cpaas-system
       version: <worker-kubernetes-version>
 ```
@@ -377,7 +377,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
    kubectl get machines -n cpaas-system
 
    # List machines for a specific MachineDeployment
-   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment-name>
+   kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<cluster-name>-md-0
    ```
 
 2. **Extend IP Pool**
@@ -394,13 +394,13 @@ Increase the number of worker nodes to handle increased workload or add new capa
    First, export the current pool configuration to preserve existing entries:
 
    ```bash
-   kubectl get dcsiphostnamepool <worker-iphostname-pool-name> -n cpaas-system -o yaml
+   kubectl get dcsiphostnamepool <cluster-name>-worker-pool -n cpaas-system -o yaml
    ```
 
    Then use the following command to add new IP configurations. The `pool` array must include **all existing entries** plus the new entries:
 
    ```bash
-   kubectl patch dcsiphostnamepool <worker-iphostname-pool-name> -n cpaas-system \
+   kubectl patch dcsiphostnamepool <cluster-name>-worker-pool -n cpaas-system \
      --type='merge' -p='
    {
      "spec": {
@@ -591,7 +591,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
    After extending the IP pool, verify it has sufficient entries for the desired replica count:
 
    ```bash
-   kubectl get dcsiphostnamepool -n cpaas-system <worker-iphostname-pool-name> -o yaml
+   kubectl get dcsiphostnamepool -n cpaas-system <cluster-name>-worker-pool -o yaml
    ```
 
    Check that the pool contains at least as many entries as the desired replica count.
@@ -601,7 +601,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
    Update the `replicas` field to the desired number of nodes:
 
    ```bash
-   kubectl patch machinedeployment <worker-machine-deployment-name> -n cpaas-system \
+   kubectl patch machinedeployment <cluster-name>-md-0 -n cpaas-system \
      --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
    ```
 
@@ -621,7 +621,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
    kubectl get machines -n cpaas-system -w
 
    # Check MachineDeployment status
-   kubectl get machinedeployment <worker-machine-deployment-name> -n cpaas-system
+   kubectl get machinedeployment <cluster-name>-md-0 -n cpaas-system
    ```
 
    The Cluster API controller will automatically create new machines based on the MachineDeployment template.
@@ -678,7 +678,7 @@ Declared persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` are 
     View the current machines in the MachineDeployment:
 
     ```bash
-    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment-name>
+    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<cluster-name>-md-0
     ```
 
 2. **Scale Down the MachineDeployment**
@@ -686,7 +686,7 @@ Declared persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` are 
     Update the `replicas` field to reduce the node count:
 
     ```bash
-    kubectl patch machinedeployment <worker-machine-deployment-name> -n cpaas-system \
+    kubectl patch machinedeployment <cluster-name>-md-0 -n cpaas-system \
       --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
     ```
 
@@ -734,7 +734,7 @@ Declared persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` are 
     View the current machines:
 
     ```bash
-    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<worker-machine-deployment-name>
+    kubectl get machines -n cpaas-system -l cluster.x-k8s.io/deployment-name=<cluster-name>-md-0
     ```
 
     Note the `<machine-name>` of the machines you want to remove.
@@ -772,7 +772,7 @@ Declared persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` are 
     :::
 
     ```bash
-    kubectl patch machinedeployment <worker-machine-deployment-name> -n cpaas-system \
+    kubectl patch machinedeployment <cluster-name>-md-0 -n cpaas-system \
       --type='json' -p='[{"op": "replace", "path": "/spec/replicas", "value": <new-replica-count>}]'
     ```
 
