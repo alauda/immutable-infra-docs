@@ -67,17 +67,30 @@ Before you start, ensure all of the following prerequisites are met:
 - If you rely on pool-managed persistent disks, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`
 
 :::warning
-**What Is Preserved During Upgrades**
+**Disk Preservation Model**
 
-Upgrades rely on Cluster API's rolling update mechanism.
+Upgrades rely on Cluster API's rolling update mechanism. Each cluster has four disk classes; only the pool-managed class survives a delete-recreate.
 
-- Disks declared in `DCSIpHostnamePool.spec.pool[].persistentDisk` are detached from old VMs and reattached to replacement VMs.
-- This is the supported way to preserve node-local data such as the platform-required `/var/cpaas` disk.
-- Template disks in `DCSMachineTemplate` and any undeclared disks are not preserved across delete-recreate replacement.
-- The system disk is never treated as preserved state.
-- This preservation path requires one-by-one replacement, so keep `maxSurge = 0` on the control plane and worker rollout strategies.
+| Disk class | Declared in | Survives upgrade? | Use for |
+|---|---|---|---|
+| System disk (root volume) | The VM template image used for `vmTemplateName` | ❌ Never | OS + kubelet/kubeadm/containerd. Rebuilt from the new template every replacement. |
+| Template-local disks | `DCSMachineTemplate.spec.template.spec.vmConfig.dcsMachineDiskSpec` | ❌ Never | Ephemeral cache. Destroyed with the old VM. |
+| Pool-managed persistent disks | `DCSIpHostnamePool.spec.pool[].persistentDisk` | ✅ Detached from old VM and reattached to the new VM at the same IP slot | Platform state such as `/var/cpaas`. |
+| External CSI volumes (cinder, etc.) | Workload PVCs / CSI driver | ✅ Unrelated to node lifecycle | Application data. |
+
+**"Preserved" means the same disk identity is reattached** — it does not mean the disk's contents are time-traveled. Anything written to a pool-managed disk during the upgrade window stays after the upgrade and stays after a rollback.
+
+Pool-managed preservation requires one-by-one replacement, so keep `maxSurge = 0` on both `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate` and `MachineDeployment.spec.strategy.rollingUpdate`.
 
 If your existing cluster still keeps preserved data in the old template-disk layout, migrate it first by following [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx).
+:::
+
+:::warning
+**Templates Cannot Be Modified In Place**
+
+`DCSMachineTemplate` is a Cluster API infrastructure template. Cluster API only triggers rolling replacement when `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` or `MachineDeployment.spec.template.spec.infrastructureRef.name` points at a **different** template name. Editing the existing template in place changes the manifest but does not produce a new rollout — the running VMs continue to use the in-memory snapshot of the previous template.
+
+Every upgrade step on this page therefore creates a new `DCSMachineTemplate` with a new `metadata.name`, applies it, and then patches the controlling resource's `infrastructureRef.name` to the new template. The previous template should be kept until the new rollout is healthy in case rollback is required.
 :::
 
 ## Using YAML
@@ -124,6 +137,8 @@ Upgrading the control plane machine template lets you roll out updated VM specif
    - Update `spec.template.spec.vmConfig.dcsMachineCpuSpec.quantity`
    - Update `spec.template.spec.vmConfig.dcsMachineMemorySpec.quantity`
    - Update `spec.template.spec.vmConfig.dcsMachineDiskSpec` for system and template-local disks only
+   - Strip server-generated metadata (`resourceVersion`, `uid`, `generation`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration` annotation) and the entire `status` field from the copied manifest.
+   - Leave `spec.template.spec.providerID` unset. The DCS provider sets `providerID` to `dcs://<machine-name>` once the VM is created; pre-filling it in the template breaks the controller's identity binding.
 
    Keep pool-managed persistent disks, including `/var/cpaas`, in `DCSIpHostnamePool.spec.pool[].persistentDisk`.
 
@@ -237,6 +252,29 @@ Before you start, read the **MicroOS Image Version** and **Kubernetes Version** 
    - Verify that the new worker nodes join the cluster with the target Kubernetes version
 
    `MachineDeployment.spec.strategy.rollingUpdate.maxSurge` must remain `0` when the cluster relies on pool-managed persistent disks, so the worker nodes are replaced one at a time.
+
+### Rolling Back a Failed Upgrade
+
+If the rolling update fails — new VMs fail to boot, nodes do not become `Ready`, or the new Kubernetes minor version surfaces an incompatibility — revert the template reference and Kubernetes-version fields back to the previous values. Cluster API treats the reversion as a new spec drift and rolls the v2 machines back to the previous template, one at a time.
+
+Three facts to internalize before rolling back:
+
+- **The old VMs are gone.** They were destroyed during the upgrade. Rollback uses the old template to build a fresh set of replacement machines; it does not restore the original VMs.
+- **The old `DCSMachineTemplate` resource must still exist.** Do not delete the previous template until the new rollout is healthy. If you already deleted it, recreate it from version control or backup before rolling back.
+- **Pool-managed disk identity is preserved, but data state is not.** Disks declared in `DCSIpHostnamePool.spec.pool[].persistentDisk` reattach to the rolled-back machines at the same IP slot, but any data written to those disks during the upgrade window (for example, etcd entries in the new Kubernetes minor format) stays. If the new format is unreadable by the older Kubernetes minor version, the rollback may still fail and require manual etcd restoration.
+
+Procedure:
+
+- **Control plane**: patch `KubeadmControlPlane` to restore the previous `spec.machineTemplate.infrastructureRef.name`, `spec.version`, `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag`, and `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag`.
+- **Workers**: patch each `MachineDeployment` to restore the previous `spec.template.spec.infrastructureRef.name` and `spec.template.spec.version`.
+- **Kube-OVN**: if the kube-ovn annotation was changed, restore the previous value on the `Cluster` resource:
+
+  ```bash
+  kubectl annotate cluster <cluster-name> -n cpaas-system \
+    cpaas.io/kube-ovn-version=<previous-kube-ovn-version> --overwrite
+  ```
+
+If the new control plane never reached etcd quorum, the `KubeadmControlPlane` controller may refuse to roll back any machine because its preflight checks block on an unhealthy etcd. Recover etcd quorum first (operator intervention) before retrying the rollback.
 
 ---
 
