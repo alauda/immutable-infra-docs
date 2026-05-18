@@ -186,9 +186,9 @@ The CoreDNS and etcd image tags are control-plane-only because `clusterConfigura
    - Strip server-generated metadata (`resourceVersion`, `uid`, `generation`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration` annotation) and the entire `status` field.
    - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`. The HCS provider sets `providerID` to `hcs://<cluster-name>/<machine-name>` and `serverId` to the HCS ECS instance ID after the VM is created; pre-filling them in the template breaks the controller's identity binding.
 
-   ```bash
-   kubectl apply -f new-cp-template.yaml -n cpaas-system
-   ```
+     ```bash
+     kubectl apply -f new-cp-template.yaml -n cpaas-system
+     ```
 
 2. **Patch the `KubeadmControlPlane` with the target Kubernetes values**
 
@@ -199,9 +199,9 @@ The CoreDNS and etcd image tags are control-plane-only because `clusterConfigura
    - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← **etcd** column from the same row
    - `spec.machineTemplate.infrastructureRef.name` ← the new `HCSMachineTemplate` name created in step 1
 
-   ```bash
-   kubectl edit kubeadmcontrolplane <kcp-name> -n cpaas-system
-   ```
+     ```bash
+     kubectl edit kubeadmcontrolplane <kcp-name> -n cpaas-system
+     ```
 
    Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same MicroOS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
