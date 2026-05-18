@@ -53,11 +53,18 @@ For details on the Kubernetes components included in each VM image, see [OS Supp
 
 ### 4. Network Connectivity
 
-Ensure that all nodes in the `global` cluster can access the DCS platform on:
-- **Port 7443** (DCS API)
-- **Port 8443** (DCS Web Console)
+Global cluster nodes must be able to reach the DCS platform at two distinct destinations:
 
-**Requirement**: Connectivity to both ports is mandatory for cluster creation and management.
+| From | To | Port | Purpose |
+|---|---|---|---|
+| Global cluster node | DCS VRM virtual IP | TCP/7443 | DCS REST API. Covers cluster lifecycle calls and the first step of file uploads (`applyUpload`). |
+| Global cluster node | DCS physical host MGMT IP (every host that may receive a clone) | DCS-returned port; typically TCP/8443; confirm with the DCS administrator | File-stream upload of the Ignition ISO. The provider streams the file to the URL returned by the `applyUpload` response. |
+
+File upload is a two-step flow: the provider calls `applyUpload` on the VRM virtual IP (TCP/7443); the DCS platform responds with a URL that points to a specific physical host's management IP and port; the provider then streams the file to that URL. Both destinations must be reachable end-to-end before cluster creation.
+
+If global cluster nodes use a multi-NIC layout (for example, one NIC on the ACP cluster network and another NIC on the customer's management network where DCS is deployed), ensure that **both** destinations — the VRM virtual IP and every DCS physical host MGMT IP — are routable from the appropriate NIC.
+
+**Requirement**: Connectivity to both destinations is mandatory for cluster creation and management.
 
 ### 5. LoadBalancer Configuration
 
@@ -72,6 +79,19 @@ Configure the public registry credentials. This includes:
 ---
 
 ## Using the Web UI
+
+:::warning
+**Fleet Essentials UI does not support ACP 4.3 cluster upgrades**
+
+The Fleet Essentials UI workflow has not been adapted to the Cluster Version Operator (CVO) mechanism introduced in ACP 4.3. Do not use the Fleet Essentials UI to upgrade DCS clusters on ACP 4.3.
+
+Two supported alternatives:
+
+- **YAML path** — Follow the YAML-based upgrade procedure documented later on this page.
+- **ACP Core cluster management UI** — Use the two-step upgrade flow built into the ACP Core platform; see <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html#request-the-upgrade" children="Request the upgrade for the global cluster" /> or <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
+
+Cluster creation and node-pool management through the Fleet Essentials UI are unaffected by this limitation.
+:::
 
 **Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests. If you use pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, configure `DCSIpHostnamePool.spec.pool[].persistentDisk` through YAML because the web UI does not expose that field.
 
