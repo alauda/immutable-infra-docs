@@ -7,6 +7,7 @@ queries:
   - create dcs cluster
   - deploy kubernetes on huawei dcs
   - dcs cluster creation guide
+  - workload cluster naming cluster-name not global
 ---
 
 # Creating Clusters on Huawei DCS
@@ -121,7 +122,7 @@ Step 5: Review
 | Infrastructure Credential | dropdown | Yes | Select an existing Cloud Credential |
 | Name | text | Yes | Unique cluster identifier (lowercase letters, numbers, hyphens) |
 | Display Name | text | No | Custom description for easy identification |
-| Distribution Version | readonly | - | ACP version (matches global cluster) |
+| Distribution Version | readonly | - | ACP version (matches the `global` cluster) |
 | Kubernetes Version | readonly | - | Determined by Distribution Version |
 | Cluster API Address | text | Yes | Format: `https://<load-balancer-address>:6443` |
 
@@ -214,6 +215,16 @@ When using YAML, you create Cluster API resources in the `global` cluster to pro
 To ensure proper integration as business clusters, all resources must be deployed in the `cpaas-system` namespace. Deploying resources in other namespaces may result in integration issues.
 :::
 
+<a id="workload-cluster-naming"></a>
+
+:::warning
+**Workload Cluster Naming**
+
+The workload `cluster-name` **must not** be `global`. That name is reserved for the `global` cluster, and reusing it causes the workload cluster's resources to collide with `global` cluster resources in `cpaas-system`. The `global-` prefix is reserved for resources owned by the `global` cluster's DR workflow; see [Common Prerequisites](../global/install.mdx#common-prerequisites). Do not use `global-` for workload-cluster resources, because failover operations can select those resources as if they belonged to the `global` cluster.
+
+As a convention, keep the CAPI `Cluster` and provider cluster resource (`DCSCluster`) named exactly `<cluster-name>`, and prefix non-root CAPI and provider resources (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`, machine templates, IP/hostname pools, etc.) with `<cluster-name>-` — for example, the example manifests use `<cluster-name>-kcp`. This is a recommendation rather than a controller-enforced rule, but it prevents same-namespace collisions when multiple workload clusters live in `cpaas-system` and makes resource ownership obvious during operations.
+:::
+
 ### Configuration Workflow
 
 Follow these steps in order to provision a functional cluster (control plane **and** worker nodes):
@@ -240,9 +251,9 @@ The example manifests below use `<placeholder>` syntax for values that are envir
 | `<base64-encoded-secret>` in `encryption-provider.conf` | Generated locally; treat as a real cluster secret. | `head -c 32 /dev/urandom \| base64` — store securely and reuse across control-plane replicas of the same cluster. |
 | `<ssh-authorized-keys>` | Operator-supplied. Each entry is a single-line OpenSSH-format public key (`ssh-ed25519 AAAA…` / `ssh-rsa AAAA…`). The field is required by the ignition validator and must be non-empty. For test or PoC clusters that do not need interactive SSH, supply any syntactically valid public key (you do not need to hold the matching private key); for production, use the operator team's signing key. | n/a — generated or sourced from the operator. |
 | `<auth-secret-name>` | The Secret you authored in [Infrastructure → Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). | `kubectl -n cpaas-system get secret <name>` |
-| `<cluster-name>` | Operator-chosen; must satisfy DNS-1123. Reused across `Cluster`, `KubeadmControlPlane`, and the `cluster.x-k8s.io/cluster-name` label on every `Machine`. | n/a |
+| `<cluster-name>` | Operator-chosen; must satisfy DNS-1123 and **must not** be `global` (that name is reserved for the `global` cluster). Reused across `Cluster`, `DCSCluster`, and the `cluster.x-k8s.io/cluster-name` label on every `Machine`. The `KubeadmControlPlane` uses the prefixed form `<cluster-name>-kcp`. See [Workload Cluster Naming](#workload-cluster-naming) for the full convention. | n/a |
 | `<load-balancer-ip-or-domain-name>` | Operator-supplied: the IP / hostname clients use to reach the cluster API server. For single-control-plane clusters with no external LB, this is the IP of the sole master node (see [Single-control-plane layout](#single-control-plane-layout)). | n/a |
-| `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the global cluster's CIDRs, or any other CAPI cluster's CIDRs you intend to interconnect. Leaving them empty falls back to the kube-ovn defaults shipped with the global cluster, which is **not recommended** for production: explicit CIDRs avoid silent collisions when multiple workload clusters live on the same global. | n/a |
+| `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the `global` cluster's CIDRs, or any other CAPI cluster's CIDRs you intend to interconnect. Leaving them empty falls back to the kube-ovn defaults shipped with the `global` cluster, which is **not recommended** for production: explicit CIDRs avoid silent collisions when multiple workload clusters live on the same `global` cluster. | n/a |
 
 ### Magic-Token Placeholders \{#magic-tokens}
 
@@ -279,7 +290,7 @@ The example below truncates long configuration files for readability. For the co
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <cluster-name>
+  name: <cluster-name>-kcp
   namespace: cpaas-system
   annotations:
     controlplane.cluster.x-k8s.io/skip-coredns: ""
@@ -444,7 +455,7 @@ spec:
   controlPlaneRef:
     apiVersion: controlplane.cluster.x-k8s.io/v1beta1
     kind: KubeadmControlPlane
-    name: <cluster-name>
+    name: <cluster-name>-kcp
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
     kind: DCSCluster
@@ -470,8 +481,8 @@ The example above shows three annotations, but a complete `Cluster` resource car
 | `capi.cpaas.io/resource-kind` | Yes | Literal `DCSCluster` | Tells the CAPI infrastructure binding which kind to bind to. |
 | `capi.cpaas.io/kubernetes` | Yes | Same value as `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version`. | Display label, also consumed by some upgrade and inventory tooling. Source-of-truth is the `cpaas.io/dcs-vm-template` ConfigMap's `kubernetesVersion`. |
 | `cpaas.io/kube-ovn-join-cidr` | Yes | Operator-chosen `/16` CIDR, must not overlap with pod / service CIDRs or any other cluster's join CIDR. | Kube-OVN inter-node tunnel network. |
-| `cpaas.io/kube-ovn-version` | Yes | The kube-ovn release the global cluster ships with. Read it from the `cpaas.io/kube-ovn-version` annotation on the `global` CAPI Cluster (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/kube-ovn-version}'`). The same value lives on every healthy workload cluster on the same global, so you can also read it from any of those if they exist. | Pin the kube-ovn version installed into the workload cluster. |
-| `cpaas.io/registry-address` | Yes | The image registry the global cluster uses (typically `<global-cluster-ip>:11443`). Read it from the `cpaas.io/registry-address` annotation on the `global` CAPI Cluster (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'`). | Workload cluster pulls platform images (CoreDNS, kube-proxy, kube-ovn) from this registry. |
+| `cpaas.io/kube-ovn-version` | Yes | The kube-ovn release the `global` cluster ships with. Read it from the `cpaas.io/kube-ovn-version` annotation on the `global` CAPI `Cluster` (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/kube-ovn-version}'`). The same value lives on every healthy workload cluster on the same `global` cluster, so you can also read it from any of those if they exist. | Pin the kube-ovn version installed into the workload cluster. |
+| `cpaas.io/registry-address` | Yes | The image registry the `global` cluster uses (typically `<registry-host>:11443`). Read it from the `cpaas.io/registry-address` annotation on the `global` CAPI `Cluster` (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'`). | Workload cluster pulls platform images (CoreDNS, kube-proxy, kube-ovn) from this registry. |
 | `cpaas.io/nodes-mode` | Yes | Literal `self-managed` for clusters that DCS Provider provisions. | Marks the cluster as having its node lifecycle managed by CAPI + this provider. |
 
 ACP controllers may write additional read-only annotations (`cpaas.io/cpu-cores-number`, `cpaas.io/memories`, `cpaas.io/nodes-number`, and so on) after the cluster is up — these are computed and **must not** be pre-set in the YAML you apply.
@@ -502,7 +513,7 @@ Alternatively, verify the cluster using kubectl commands:
 kubectl get cluster -n cpaas-system <cluster-name>
 
 # Verify control plane
-kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>
+kubectl get kubeadmcontrolplane -n cpaas-system <cluster-name>-kcp
 
 # Check machine status
 kubectl get machines -n cpaas-system
@@ -532,7 +543,7 @@ Below is the complete `KubeadmControlPlane` configuration, including all default
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
-  name: <cluster-name>
+  name: <cluster-name>-kcp
   namespace: cpaas-system
   annotations:
     controlplane.cluster.x-k8s.io/skip-coredns: ""
