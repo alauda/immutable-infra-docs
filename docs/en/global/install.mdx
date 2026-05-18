@@ -785,12 +785,35 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
 
 ### Step 9 — Monitor the Installation
 
-Monitor the installer progress and the installer log.
+After the installer accepts the request, the install runs through several phases that are observable from the KIND host. A typical immutable-OS `global` cluster takes 30–60 minutes; total time depends on IaaS provisioning speed, image pull time, and the number of plugins selected.
+
+#### Phases You Will Observe
+
+| Phase | What is happening | First place to watch |
+|---|---|---|
+| Bootstrap | The bootstrap KIND, embedded registry, and Cluster API providers are running on the KIND host. Completed in Step 2 and Step 3. | KIND host terminal; `kubectl get pods -n cpaas-system` |
+| Infrastructure provisioning | The Cluster API provider creates VMs from the MicroOS template on the target IaaS platform. | `kubectl get machines -n cpaas-system` |
+| Control plane bootstrap | `KubeadmControlPlane` bootstraps the first control plane node, etcd starts, and additional control plane nodes join. | `kubectl get kubeadmcontrolplane -n cpaas-system` |
+| Network and core add-ons | The CAPI provider reconciles Kube-OVN, CoreDNS, and kube-proxy on the new cluster. | `kubectl --kubeconfig <global-kubeconfig> get pods -n kube-system` |
+| Platform installation | The installer imports Cluster API resources into the new `global` cluster, deploys the base operator, and installs the selected plugins. | Installer progress API; installer log |
+| Completion | The installer marks the request as `Success` and writes the final cluster state into `ClusterModule/global`. | Installer progress API; `kubectl get clustermodule global` |
+
+#### Signals During Installation
+
+Watch the installer progress API and the installer log together. If one appears stalled, check the underlying Cluster API resources directly on the bootstrap KIND host.
 
 ```shell
+# Installer progress and live log
 curl "http://${INSTALLER_IP}:8080/cpaas-installer/api/progress"
 tail -f /var/cpaas/data/installer.log
+
+# Cluster API resources on the bootstrap KIND host
+kubectl get clusters.cluster.x-k8s.io -A
+kubectl get kubeadmcontrolplane -A
+kubectl get machines -A
 ```
+
+The installer log records every phase transition. Transient errors retry on a short interval; persistent errors stay visible in the log and surface in the progress API as a stalled stage.
 
 Check the `global` cluster after the installer reports success.
 
@@ -799,6 +822,18 @@ kubectl --kubeconfig <global-kubeconfig> get nodes
 kubectl --kubeconfig <global-kubeconfig> get pods -n cpaas-system
 kubectl --kubeconfig <global-kubeconfig> get clustermodule global
 ```
+
+#### Common Stalls and Where to Look
+
+| Symptom | First place to look | What you are looking for |
+|---|---|---|
+| Machines stay in `Pending` or do not appear | `kubectl describe machine -n cpaas-system <machine>` | The provider-specific failure reason on the machine `Bootstrap` and `Infrastructure` conditions. IaaS quota, network, and credential issues surface here. |
+| `KubeadmControlPlane` does not reach `Ready` | `kubectl get nodes` with the new cluster kubeconfig and `kubectl describe kubeadmcontrolplane -n cpaas-system` | etcd health on the first control plane node and join progress for the remaining nodes. |
+| Pods in `kube-system` stay `Pending` or fail to pull images | `kubectl --kubeconfig <global-kubeconfig> describe pod -n kube-system <pod>` | Image pull errors usually mean the node-facing registry address is not reachable from the new cluster's subnet. |
+| Installer progress API shows a stalled stage | `/var/cpaas/data/installer.log` | The most recent phase line and the most recent error message. Retried errors repeat on a short interval; persistent errors do not advance. |
+| `ClusterModule/global` does not reach a healthy phase | `kubectl --kubeconfig <global-kubeconfig> describe clustermodule global` | The `Status.conditions` describe which module is blocking the cluster from completing. |
+
+Issues that are not listed here usually point to environment-specific causes. Capture the installer log, the progress API response, and the relevant `kubectl describe` output, then escalate.
 
 ## Optional Disaster Recovery Deployment \{#optional-disaster-recovery-deployment}
 
