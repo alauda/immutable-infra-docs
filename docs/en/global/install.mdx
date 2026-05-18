@@ -796,7 +796,7 @@ After the installer accepts the request, the install runs through several phases
 | Control plane bootstrap | `KubeadmControlPlane` bootstraps the first control plane node, etcd starts, and additional control plane nodes join. | `kubectl get kubeadmcontrolplane -n cpaas-system` |
 | Network and core add-ons | The CAPI provider reconciles Kube-OVN, CoreDNS, and kube-proxy on the new cluster. | `kubectl --kubeconfig <global-kubeconfig> get pods -n kube-system` |
 | Platform installation | The installer imports Cluster API resources into the new `global` cluster, deploys the base operator, and installs the selected plugins. | Installer progress API; installer log |
-| Completion | The installer marks the request as `Success` and writes the final cluster state into `ClusterModule/global`. | Installer progress API; `kubectl get clustermodule global` |
+| Completion | The installer marks the request as `Success` and writes the final cluster state into `ClusterModule/global`. | Installer progress API; `kubectl --kubeconfig <global-kubeconfig> get clustermodule global` |
 
 #### Signals During Installation
 
