@@ -51,6 +51,22 @@ Before you begin, ensure the following conditions are met:
 `VSphereMachineTemplate` resources cannot be modified in-place. Each upgrade that changes VM specifications or the VM template name requires creating a new `VSphereMachineTemplate` with a new name and updating the reference in `KubeadmControlPlane` or `MachineDeployment`.
 :::
 
+## Required Values From the OS Support Matrix \{#required-values}
+
+The authoritative mapping between an ACP release, its VM template, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the steps below need.
+
+The cells you read from that row map to the upgrade manifests as follows:
+
+| OS Support Matrix column | Used to set | Where it lands |
+|---|---|---|
+| **MicroOS Image Version** | `VSphereMachineTemplate.spec.template.spec.template` (target VM template name) | Control plane and worker `VSphereMachineTemplate` |
+| **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
+| **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
+| **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
+| **kube-ovn** | `Cluster.metadata.annotations["cpaas.io/kube-ovn-version"]` | Cluster scope; the vSphere provider reconciles the Kube-OVN AppRelease from this annotation |
+
+The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags. The Kube-OVN annotation lives on the `Cluster` resource, not on `KubeadmControlPlane`, because the vSphere provider watches it independently of the Kubernetes control plane rollout.
+
 ## Steps
 
 <Steps>
@@ -93,40 +109,53 @@ Before you start the rolling upgrade, create new `VSphereMachineTemplate` resour
 
 ### Upgrade the control plane
 
-Update the `KubeadmControlPlane` resource to reference the new control plane template and the target Kubernetes version.
+Before you start, collect every required value from the target ACP row in the OS Support Matrix as described in [Required Values From the OS Support Matrix](#required-values).
 
-Typical changes include:
+1. **Patch the `KubeadmControlPlane` with the target Kubernetes values**
 
-- `spec.version` — the target Kubernetes version
-- `spec.machineTemplate.infrastructureRef.name` — the new `VSphereMachineTemplate` name
-- Related image tags such as `dns.imageTag` and `etcd.local.imageTag` when the target release requires them
+   Update the `KubeadmControlPlane` resource in a single edit to keep `spec.version`, the CoreDNS image tag, the etcd image tag, and the infrastructure template reference consistent with the same VM template:
 
-Apply the changes:
+   - `spec.version` ← **Kubernetes Version** from the OS Support Matrix row
+   - `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` ← **coredns** column from the same row
+   - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← **etcd** column from the same row
+   - `spec.machineTemplate.infrastructureRef.name` ← the new `VSphereMachineTemplate` name created above
 
-```bash
-kubectl patch kubeadmcontrolplane <cluster_name> -n <namespace> \
-  --type='merge' -p='{
-    "spec": {
-      "version": "<target_kubernetes_version>",
-      "machineTemplate": {
-        "infrastructureRef": {
-          "name": "<new-cp-template-name>"
-        }
-      }
-    }
-  }'
-```
+   ```bash
+   kubectl edit kubeadmcontrolplane <cluster_name> -n <namespace>
+   ```
 
-:::tip
-If the target Kubernetes release also requires updated image tags (for example, `dns.imageTag` or `etcd.local.imageTag`), include them in the patch payload or apply a complete manifest with `kubectl apply -f`.
-:::
+   Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
-Monitor the control plane rollout:
+2. **Update the Kube-OVN version annotation on the `Cluster` resource**
 
-```bash
-kubectl -n <namespace> get kubeadmcontrolplane <cluster_name> -w
-kubectl -n <namespace> get machine -l cluster.x-k8s.io/control-plane
-```
+   If the target ACP row in the OS Support Matrix shows a different **kube-ovn** value than the current cluster, patch the annotation on the `Cluster` resource so the vSphere provider reconciles the new Kube-OVN AppRelease.
+
+   ```bash
+   kubectl annotate cluster <cluster_name> -n <namespace> \
+     cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+   ```
+
+   Kube-OVN is a Core lifecycle component, but on immutable OS the vSphere provider drives its delivery from this annotation; the annotation does not update automatically when `spec.version` changes.
+
+   The vSphere provider reconciles a single Kube-OVN `AppRelease` named `cni-kube-ovn` in the `cpaas-system` namespace of the workload cluster. Confirm the reconciliation has completed against the new target version before you move on. Run the following on the workload cluster (not the bootstrap KIND or the `global` cluster):
+
+   ```bash
+   # Overall AppRelease state — the Sync and Health columns must report a Success-equivalent reason
+   kubectl get apprelease cni-kube-ovn -n cpaas-system
+
+   # Confirm the installed revision matches the target version and the chart phase is Success
+   kubectl get apprelease cni-kube-ovn -n cpaas-system \
+     -o jsonpath='Installed: {.status.charts.cpaas-kube-ovn.installedRevision}{"\n"}Phase: {.status.charts.cpaas-kube-ovn.phase}{"\n"}'
+   ```
+
+   The Kube-OVN upgrade is complete when `installedRevision` equals the **kube-ovn** value from the OS Support Matrix row and `phase` is `Success`. Any other `phase` value (`Downloading`, `Installing`, `Upgrading`, `Syncing`, `HealthChecking`) means the reconciliation is still in progress; the failure phases are `DownloadFailed`, `DeployFailed`, and `NotReady`.
+
+3. **Monitor the control plane rollout**
+
+   ```bash
+   kubectl -n <namespace> get kubeadmcontrolplane <cluster_name> -w
+   kubectl -n <namespace> get machine -l cluster.x-k8s.io/control-plane
+   ```
 
 ### Upgrade the worker nodes
 

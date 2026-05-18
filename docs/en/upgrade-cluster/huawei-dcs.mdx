@@ -86,9 +86,9 @@ YAML-based upgrades do not depend on Fleet Essentials.
 
 ### Required Values From the OS Support Matrix \{#required-values}
 
-The authoritative mapping between an ACP release, its MicroOS image, the Kubernetes version, and the matching CoreDNS and etcd image tags lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the YAML steps below need.
+The authoritative mapping between an ACP release, its MicroOS image, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the YAML steps below need.
 
-The four cells you read from that row map to the upgrade manifests as follows:
+The cells you read from that row map to the upgrade manifests as follows:
 
 | OS Support Matrix column | Used to set | Where it lands |
 |---|---|---|
@@ -96,8 +96,9 @@ The four cells you read from that row map to the upgrade manifests as follows:
 | **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
 | **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
 | **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
+| **kube-ovn** | `Cluster.metadata.annotations["cpaas.io/kube-ovn-version"]` | Cluster scope; the DCS provider reconciles the Kube-OVN AppRelease from this annotation |
 
-The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags.
+The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags. The Kube-OVN annotation lives on the `Cluster` resource, not on `KubeadmControlPlane`, because the DCS provider watches it independently of the Kubernetes control plane rollout.
 
 Confirm with the cluster's platform owner that the target MicroOS image has already been uploaded to the DCS platform under the same name as the **MicroOS Image Version** value in the matrix row. The upgrade fails if that VM template is not present on DCS when the `DCSMachineTemplate` is applied.
 
@@ -151,7 +152,7 @@ Upgrading the control plane machine template lets you roll out updated VM specif
 
 Upgrading the control plane Kubernetes version on immutable OS is a delete-recreate workflow. The control plane VMs are replaced one by one from a new `DCSMachineTemplate` that points at the target MicroOS VM template, and the `KubeadmControlPlane` resource is patched to carry the matching Kubernetes version, CoreDNS image tag, and etcd image tag.
 
-Before you start, collect the four required values from the target ACP row in the OS Support Matrix as described in [Required Values From the OS Support Matrix](#required-values).
+Before you start, collect every required value from the target ACP row in the OS Support Matrix as described in [Required Values From the OS Support Matrix](#required-values).
 
 #### Procedure
 
@@ -165,7 +166,7 @@ Before you start, collect the four required values from the target ACP row in th
    kubectl apply -f new-cp-template.yaml -n cpaas-system
    ```
 
-2. **Patch the `KubeadmControlPlane` with all four target values**
+2. **Patch the `KubeadmControlPlane` with the target Kubernetes values**
 
    Update the `KubeadmControlPlane` resource in a single edit to keep `spec.version`, the CoreDNS image tag, the etcd image tag, and the infrastructure template reference consistent with the same MicroOS release:
 
@@ -180,7 +181,31 @@ Before you start, collect the four required values from the target ACP row in th
 
    Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same MicroOS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
-3. **Monitor the rolling update**
+3. **Update the Kube-OVN version annotation on the `Cluster` resource**
+
+   If the target ACP row in the OS Support Matrix shows a different **kube-ovn** value than the current cluster, patch the annotation on the `Cluster` resource so the DCS provider reconciles the new Kube-OVN AppRelease.
+
+   ```bash
+   kubectl annotate cluster <cluster-name> -n cpaas-system \
+     cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+   ```
+
+   Kube-OVN is a Core lifecycle component, but on immutable OS the DCS provider drives its delivery from this annotation; the annotation does not update automatically when `spec.version` changes.
+
+   The DCS provider reconciles a single Kube-OVN `AppRelease` named `cni-kube-ovn` in the `cpaas-system` namespace of the workload cluster. Confirm the reconciliation has completed against the new target version before you move on. Run the following on the workload cluster (not the bootstrap KIND or the `global` cluster):
+
+   ```bash
+   # Overall AppRelease state — the Sync and Health columns must report a Success-equivalent reason
+   kubectl get apprelease cni-kube-ovn -n cpaas-system
+
+   # Confirm the installed revision matches the target version and the chart phase is Success
+   kubectl get apprelease cni-kube-ovn -n cpaas-system \
+     -o jsonpath='Installed: {.status.charts.cpaas-kube-ovn.installedRevision}{"\n"}Phase: {.status.charts.cpaas-kube-ovn.phase}{"\n"}'
+   ```
+
+   The Kube-OVN upgrade is complete when `installedRevision` equals the **kube-ovn** value from the OS Support Matrix row and `phase` is `Success`. Any other `phase` value (`Downloading`, `Installing`, `Upgrading`, `Syncing`, `HealthChecking`) means the reconciliation is still in progress; the failure phases are `DownloadFailed`, `DeployFailed`, and `NotReady`.
+
+4. **Monitor the rolling update**
 
    ```bash
    kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system -w
