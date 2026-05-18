@@ -36,15 +36,27 @@ Cluster upgrades on HCS encompass multiple components and follow a structured ap
 
 Cluster API orchestrates declarative rolling updates with built-in safety mechanisms.
 
-:::info
-**Prerequisites**
+## Upgrade Sequence
 
-Before you start, ensure:
-- The control plane is reachable
-- All nodes are healthy (Ready)
+Upgrade HCS clusters in the following order:
+
+1. **(Prerequisite)** Upgrade the ACP platform on the management cluster first. This brings the `cluster-api-provider-hcs` controller and the related CAPI components to versions that understand the new schema. Trigger workload-cluster upgrades only after the management-side controllers have rolled out and become Ready.
+2. Upgrade the Distribution Version on the workload cluster. See [Upgrading Clusters](index.mdx).
+3. Upgrade the control plane Kubernetes version.
+4. Upgrade worker nodes to the target Kubernetes version.
+
+## Prerequisites
+
+Before you start, ensure all of the following prerequisites are met:
+
+- The Distribution Version upgrade is complete.
+- The control plane is reachable.
+- All nodes are healthy and in `Ready` state.
+- The target VM image is present in the HCS environment under the same name as the **MicroOS Image Version** value in the OS Support Matrix row. The upgrade fails if the image is not present when the new `HCSMachineTemplate` is applied.
+- The target Kubernetes version is compatible with your workloads and add-ons.
+- Review the Kubernetes upgrade path and version skew policy.
 
 For initial deployment, see the [Create Cluster](../create-cluster/huawei-cloud-stack.mdx) guide.
-:::
 
 :::warning
 **Single-Control-Plane Clusters**
@@ -53,9 +65,32 @@ The upgrade workflow in this document applies to HCS clusters with a highly avai
 :::
 
 :::warning
-**Data Loss During Upgrades**
+**Disk Preservation Model**
 
-Upgrades rely on Cluster API's rolling replacement mechanism. The current HCS provider does not preserve or reattach data disks during node replacement. When a node is replaced, the old VM and its attached volumes may be deleted together. Do not treat node-local data on HCS data disks as preserved state. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
+Upgrades rely on Cluster API's rolling replacement mechanism. The HCS provider currently has four disk classes, and **none of the HCS-side classes survives a delete-recreate**:
+
+| Disk class | Declared in | Survives upgrade? | Use for |
+|---|---|---|---|
+| System disk (root volume) | `HCSMachineTemplate.spec.template.spec.rootVolume` | ❌ Never | OS + kubelet/kubeadm/containerd. Rebuilt from the new VM image every replacement. |
+| Data volumes | `HCSMachineTemplate.spec.template.spec.dataVolumes` | ❌ Never | The HCS provider does not detach/reattach these. Volumes attached to the old VM may be deleted together with it. |
+| Pool-managed persistent disks | (not implemented for HCS) | — | Not available. DCS and vSphere have an equivalent; HCS does not. |
+| External CSI volumes (HCS EVS CSI, etc.) | Workload PVCs / CSI driver | ✅ Unrelated to node lifecycle | Application data. Use this path for any state that must survive upgrades. |
+
+Do not treat node-local data on HCS data volumes as preserved state. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
+:::
+
+:::warning
+**Templates Cannot Be Modified In Place**
+
+`HCSMachineTemplate` is a Cluster API infrastructure template. Cluster API only triggers rolling replacement when `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` or `MachineDeployment.spec.template.spec.infrastructureRef.name` points at a **different** template name. Editing the existing template in place changes the manifest but does not produce a new rollout — the running VMs continue to use the in-memory snapshot of the previous template.
+
+Every upgrade step on this page therefore creates a new `HCSMachineTemplate` with a new `metadata.name`, applies it, and then patches the controlling resource's `infrastructureRef.name` to the new template. Keep the previous template until the new rollout is healthy in case rollback is required.
+:::
+
+:::info
+**Fleet Essentials UI does not support ACP 4.3 cluster upgrades**
+
+The Fleet Essentials UI workflow has not been adapted to the Cluster Version Operator (CVO) mechanism introduced in ACP 4.3. HCS clusters do not currently expose a Fleet Essentials UI upgrade path; use the YAML procedure documented below, or the two-step upgrade flow built into the ACP Core platform — see <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
 :::
 
 ## Control Plane Upgrades
@@ -135,17 +170,25 @@ The cells you read from that row map to the upgrade manifests as follows:
 
 The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags. The Kube-OVN annotation lives on the `Cluster` resource, not on `KubeadmControlPlane`, because the HCS provider watches it independently of the Kubernetes control plane rollout.
 
-#### Prerequisites
-
-- Verify compatibility between the target Kubernetes version and existing workloads
-- Ensure the VM template supports the target Kubernetes version. See [OS Support Matrix](../overview/os-support-matrix.mdx) for version mapping.
-- Review the Kubernetes upgrade path and version skew policy
-
 #### Procedure
 
-1. **Update VM Template Reference**
+1. **Create a new `HCSMachineTemplate` for the target Kubernetes version**
 
-   Update `spec.template.spec.imageName` in the referenced `HCSMachineTemplate` to the **MicroOS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
+   Copy the existing control-plane template and apply it under a new `metadata.name` with the target `imageName`:
+
+   ```bash
+   kubectl get hcsmachinetemplate <current-cp-template-name> -n cpaas-system -o yaml > new-cp-template.yaml
+   ```
+
+   In `new-cp-template.yaml`:
+   - Set `metadata.name` to `<new-template-name>`.
+   - Set `spec.template.spec.imageName` to the **MicroOS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
+   - Strip server-generated metadata (`resourceVersion`, `uid`, `generation`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration` annotation) and the entire `status` field.
+   - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`. The HCS provider sets `providerID` to `hcs://<cluster-name>/<machine-name>` and `serverId` to the HCS ECS instance ID after the VM is created; pre-filling them in the template breaks the controller's identity binding.
+
+   ```bash
+   kubectl apply -f new-cp-template.yaml -n cpaas-system
+   ```
 
 2. **Patch the `KubeadmControlPlane` with the target Kubernetes values**
 
@@ -210,6 +253,29 @@ Worker node upgrades are managed via `MachineDeployment` resources.
 :::info
 For detailed worker node procedures, see the [Managing Nodes](../manage-nodes/huawei-cloud-stack.mdx#upgrading-kubernetes-version) section.
 :::
+
+## Rolling Back a Failed Upgrade
+
+If the rolling update fails — new VMs fail to boot, nodes do not become `Ready`, or the new Kubernetes minor version surfaces an incompatibility — revert the template reference and Kubernetes-version fields back to the previous values. Cluster API treats the reversion as a new spec drift and rolls the v2 machines back to the previous template, one at a time.
+
+Three facts to internalize before rolling back:
+
+- **The old VMs are gone.** They were destroyed during the upgrade. Rollback uses the old template to build a fresh set of replacement machines; it does not restore the original VMs.
+- **The old `HCSMachineTemplate` resource must still exist.** Do not delete the previous template until the new rollout is healthy. If you already deleted it, recreate it from version control or backup before rolling back.
+- **HCS has no pool-managed persistent disks.** Anything written to a node's local data volumes during the upgrade window is lost when that VM is replaced. Application data must live on external persistent storage (HCS EVS CSI or equivalent) to survive the rollback.
+
+Procedure:
+
+- **Control plane**: patch `KubeadmControlPlane` to restore the previous `spec.machineTemplate.infrastructureRef.name`, `spec.version`, `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag`, and `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag`.
+- **Workers**: patch each `MachineDeployment` to restore the previous `spec.template.spec.infrastructureRef.name` and `spec.template.spec.version`.
+- **Kube-OVN**: if the kube-ovn annotation was changed, restore the previous value on the `Cluster` resource:
+
+  ```bash
+  kubectl annotate cluster <cluster-name> -n cpaas-system \
+    cpaas.io/kube-ovn-version=<previous-kube-ovn-version> --overwrite
+  ```
+
+If the new control plane never reached etcd quorum, the `KubeadmControlPlane` controller may refuse to roll back any machine because its preflight checks block on an unhealthy etcd. Recover etcd quorum first (operator intervention) before retrying the rollback.
 
 ## Additional Resources
 
