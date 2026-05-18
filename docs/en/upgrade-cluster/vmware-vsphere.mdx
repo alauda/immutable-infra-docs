@@ -145,9 +145,9 @@ Before you start, collect every required value from the target ACP row in the OS
    - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← **etcd** column from the same row
    - `spec.machineTemplate.infrastructureRef.name` ← the new `VSphereMachineTemplate` name created above
 
-   ```bash
-   kubectl edit kubeadmcontrolplane <cluster_name> -n <namespace>
-   ```
+     ```bash
+     kubectl edit kubeadmcontrolplane <cluster_name> -n <namespace>
+     ```
 
    Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 

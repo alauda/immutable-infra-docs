@@ -190,9 +190,9 @@ Before you start, collect every required value from the target ACP row in the OS
    - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← **etcd** column from the same row
    - `spec.machineTemplate.infrastructureRef.name` ← the new `DCSMachineTemplate` name created in step 1
 
-   ```bash
-   kubectl edit kubeadmcontrolplane <kcp-name> -n cpaas-system
-   ```
+     ```bash
+     kubectl edit kubeadmcontrolplane <kcp-name> -n cpaas-system
+     ```
 
    Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same MicroOS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
