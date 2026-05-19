@@ -549,3 +549,9 @@ For instructions on adding worker nodes to the cluster, refer to [Managing Nodes
 ## Upgrading Clusters
 
 For instructions on upgrading cluster components, refer to [Upgrading Clusters](../upgrade-cluster/huawei-cloud-stack.mdx).
+
+## Troubleshooting
+
+If the cluster reaches `Provisioned` but never becomes Ready — for example, workload nodes stay `NotReady` because the CNI is not deployed — start with the provider-agnostic [Troubleshoot a Workload Cluster Stuck in Provisioned](../how-to/troubleshoot-cluster-not-ready.mdx).
+
+For HCS-specific failure patterns (for example, `kubeadm init` never completes because a dotted `HCSMachineConfigPool` hostname produced a POSIX hostname containing dots), see [Troubleshoot Huawei Cloud Stack Workload Clusters](../how-to/troubleshoot-workload-cluster-huawei-cloud-stack.mdx).
