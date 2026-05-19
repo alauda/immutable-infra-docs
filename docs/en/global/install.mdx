@@ -511,7 +511,7 @@ The HCS `global` manifest must contain the following resources in the `cpaas-sys
 
 | Resource | Purpose |
 |----------|---------|
-| `Secret` | Stores `accessKey`, `secretKey`, `projectID`, `region`, and `externalGlobalDomain`. |
+| `Secret` | Stores `accessKey`, `secretKey`, `projectID`, `region`, `externalGlobalDomain`, and optional `schema`. |
 | `HCSMachineConfigPool` for control plane nodes | Assigns static hostnames, IP addresses, and any pool-managed persistent disks. |
 | `Cluster` | Connects the Cluster API `Cluster` to `HCSCluster` and `KubeadmControlPlane`. |
 | `HCSCluster` | Defines VPC, subnet, security group, ELB, and identity references. |

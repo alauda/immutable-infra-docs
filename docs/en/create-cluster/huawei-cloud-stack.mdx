@@ -97,6 +97,7 @@ data:
   projectID: <base64-encoded-project-id>
   region: <base64-encoded-region>
   externalGlobalDomain: <base64-encoded-domain>
+  schema: <base64-encoded-schema>
 ```
 
 | Parameter | Description |
@@ -106,6 +107,7 @@ data:
 | `.data.projectID` | Resource Space ID from **My Settings** > **Resource Spaces** (base64-encoded) |
 | `.data.region` | HCS region API value used by the provider (base64-encoded). Tenant administrators cannot retrieve this value from the HCS UI; get it from the HCS administrator |
 | `.data.externalGlobalDomain` | HCS platform access domain used by the provider (base64-encoded) |
+| `.data.schema` | Optional API scheme for the HCS IAM endpoint, usually `https` (base64-encoded). If omitted, the provider uses `https` |
 
 You can reuse an existing HCS credential Secret. Its name does not need to match the cluster name, but `HCSCluster.spec.identityRef.name` must reference this Secret.
 
