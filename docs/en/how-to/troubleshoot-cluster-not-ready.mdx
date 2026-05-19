@@ -145,6 +145,48 @@ The diagnostics indicate a failed import when **all** of the following are true 
 
 When this pattern holds, the workload cluster's initial import on the `global` cluster failed and the import controller does not currently retry from scratch.
 
+## Pattern: kubeadm init Never Completes Because the Hostname Is Wrong (HCS)
+
+Symptoms — all true at the same time:
+
+- `Cluster.status.phase=Provisioned`, `HCSCluster.status.ready=true`, the ELB is up.
+- `HCSMachine.status.instanceState=ACTIVE` with an `InternalIP` populated, but `Machine.status.nodeRef` never becomes set.
+- `KubeadmControlPlane.status.initialized` stays empty and `status.readyReplicas=0` past the usual init window of about 5 to 10 minutes.
+- The `cluster-api-provider-hcs` controller logs (in `cpaas-system`) repeatedly print `connect: connection refused` against the control plane ELB VIP on port 6443.
+- The `HCSMachineConfigPool.spec.configs[].hostname` value chosen for the node contains a dot (FQDN style, for example `master-1.example.org`).
+
+This pattern is the failure mode of the AIT-70656 hostname/FQDN bug that is fixed in `cluster-api-provider-hcs` v1.0.1+. The buggy controller renders cloud-init with the full FQDN string as `hostname` and enables `prefer_fqdn_over_hostname: true`; the resulting node has a POSIX hostname containing dots, which kubeadm init does not handle, so kube-apiserver never starts.
+
+### Diagnose
+
+If you can reach the node (HCS console, jump host, or an in-cluster debug pod):
+
+```bash
+# On the affected node
+hostname
+hostname -f
+cat /etc/hosts
+sudo cat /var/lib/cloud/instance/user-data.txt | head -40
+sudo journalctl -u cloud-init -b 0 | grep -E "hostname|fqdn|update_etc_hosts"
+```
+
+Indicators that you are hitting this pattern:
+
+- `hostname` returns the full dotted string instead of just the short label.
+- `hostname -f` returns `Name or service not known` or `Temporary failure in name resolution`.
+- `/etc/hosts` does **not** contain a line of the form `<node-ip> <fqdn> <short>`.
+- The cloud-init user-data on the node shows `prefer_fqdn_over_hostname: true` and does not set `manage_etc_hosts`.
+
+### Mitigate
+
+Path A (recommended) — finish upgrading the `cluster-api-provider-hcs` plugin to v1.0.1+, then trigger a rolling replacement of the affected control plane and worker machines so the new cloud-init runs on freshly booted VMs. The procedure is documented in [Plugin Behavior Upgrades](/upgrade-cluster/huawei-cloud-stack#plugin-behavior-upgrades) on the HCS upgrade page.
+
+Path B (manual mitigation per node) is described in the same upgrade section. It does not survive `transactional-update -c reboot` on immutable OSes (MicroOS / SLE Micro), so it is acceptable only as a one-off intervention on a single node where rolling replacement is genuinely blocked.
+
+### Prevent
+
+Re-running the cluster create with the fixed plugin already installed avoids the pattern entirely. New manifests for HCS should follow [Hostname behavior on the node](/create-cluster/huawei-cloud-stack#hostname-behavior-on-the-node) on the cluster create page when picking dotted versus short hostnames in `HCSMachineConfigPool`.
+
 ## What Does Not Resolve This Pattern
 
 :::warning

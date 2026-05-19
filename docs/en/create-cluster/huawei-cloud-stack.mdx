@@ -136,21 +136,21 @@ spec:
     - hostname: master-1
       networks:
         - subnetName: <subnet-name>
-          ipAddress: 192.168.1.11
+          ipAddress: 192.0.2.11
     - hostname: master-2
       networks:
         - subnetName: <subnet-name>
-          ipAddress: 192.168.1.12
+          ipAddress: 192.0.2.12
     - hostname: master-3
       networks:
         - subnetName: <subnet-name>
-          ipAddress: 192.168.1.13
+          ipAddress: 192.0.2.13
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `.spec.configs[]` | array | Yes | Non-empty list of machine configurations |
-| `.spec.configs[].hostname` | string | Yes | VM hostname. Use lowercase letters, numbers, hyphens (`-`), or dots (`.`); the value must start and end with a lowercase letter or number and must not exceed 253 characters |
+| `.spec.configs[].hostname` | string | Yes | VM hostname. Use lowercase letters, numbers, hyphens (`-`), or dots (`.`); the value must start and end with a lowercase letter or number and must not exceed 253 characters (per the DNS name length limit in [RFC 1035](https://datatracker.ietf.org/doc/html/rfc1035#section-2.3.4)). Leading or trailing dots, all-dot strings, and uppercase letters are rejected and the controller surfaces the error on the owning `Machine` and `Cluster` status. See the **Hostname behavior on the node** subsection below for what `hostname` and `hostname -f` return when the value contains a dot. |
 | `.spec.configs[].networks[]` | array | Yes | Non-empty list of network configurations for the VM |
 | `.spec.configs[].networks[].subnetName` | string | No* | Recommended subnet name field for new manifests |
 | `.spec.configs[].networks[].subnetId` | string | No* | Subnet ID. Use this field instead of `subnetName` when the subnet name is ambiguous |
@@ -161,6 +161,19 @@ spec:
 **Note:** The CRD schema lists `subnetName`, `subenetName`, and `subnetId` as optional fields and does not express their allowed combinations. Follow the provider-level rules above when writing manifests.
 
 **Note:** To attach multiple NICs to one node, add multiple `networks[]` entries. The provider only uses these entries to attach NICs and assign subnet selectors plus static IPs. It does not support declaring per-NIC roles, default gateways, static routes, or per-NIC DNS settings.
+
+#### Hostname behavior on the node
+
+The provider derives the node's POSIX hostname and FQDN from `hostname` as follows:
+
+| Pool `hostname` value | Node `hostname` | Node `hostname -f` | `/etc/hosts` entry written |
+|---|---|---|---|
+| `master-1` (no dot) | `master-1` | `master-1` (resolver returns the short name) | none added by the provider |
+| `master-1.example.org` (dotted) | `master-1` (short label, dot and everything after it stripped) | `master-1.example.org` | `<node-ip> master-1.example.org master-1` |
+
+The dotted form is the path to set up applications that depend on FQDN resolution (`hostname -f`, certificates with SAN entries, log labels). The provider sets `prefer_fqdn_over_hostname: false` and enables cloud-init `manage_etc_hosts` only when a dotted hostname is supplied, so POSIX tools continue to see the short name and `hostname -f` returns the full FQDN.
+
+Invalid hostnames (leading dot, trailing dot, all-dot strings, uppercase letters, or anything that violates the field constraint) are rejected before the VM boots. The error is set on the owning `Machine.status` and surfaced on the `Cluster.status.conditions` so it shows up under `kubectl describe cluster <name>` and `kubectl get machines -n cpaas-system -o wide`.
 
 ### Configure Machine Template
 
@@ -214,7 +227,7 @@ spec:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `.spec.template.spec.imageName` | string | Yes | HCS image name such as `microos-4.2.1-new` |
+| `.spec.template.spec.imageName` | string | Yes | HCS image name. Use the image identifier published in the current release's OS support matrix; placeholder shown as `<microos-version>` in the manifest above. The exact name moves with each MicroOS release, so do not hardcode the example value across versions. |
 | `.spec.template.spec.flavorName` | string | Yes | Provider-recognized HCS API value matched against `Flavor.Name`. Do not use the tenant UI display name |
 | `.spec.template.spec.availabilityZone` | string | No | Provider-recognized HCS API value matched against `ZoneName`. Do not use the tenant UI display name |
 | `.spec.template.spec.rootVolume.type` | string | Yes | Volume type (`SSD` or `SATA`) |
