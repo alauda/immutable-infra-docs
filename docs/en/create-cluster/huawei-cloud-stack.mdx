@@ -162,7 +162,7 @@ spec:
 
 **Note:** To attach multiple NICs to one node, add multiple `networks[]` entries. The provider only uses these entries to attach NICs and assign subnet selectors plus static IPs. It does not support declaring per-NIC roles, default gateways, static routes, or per-NIC DNS settings.
 
-#### Hostname behavior on the node
+#### Hostname behavior on the node \{#hostname-behavior-on-the-node}
 
 The provider derives the node's POSIX hostname and FQDN from `hostname` as follows:
 

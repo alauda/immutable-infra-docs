@@ -144,7 +144,7 @@ For a node whose pool config was `hostname: master-1.example.org`, expect:
 
 If a new node reports the FQDN-style string from `hostname`, or `hostname -f` returns `Name or service not known`, the cloud-init log on the node (`/var/log/cloud-init.log` and `/var/lib/cloud/instance/user-data.txt`) is the first thing to inspect, then confirm the controller is actually at v1.0.1 or later.
 
-## Storage and data caveats
+## Storage and data caveats \{#storage-and-data-caveats}
 
 Rolling replacement destroys each old VM and builds a fresh replacement from the new template. On HCS:
 
