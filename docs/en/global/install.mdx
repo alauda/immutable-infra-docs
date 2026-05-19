@@ -5,6 +5,7 @@ queries:
   - install global cluster on immutable infrastructure
   - microos global cluster installation
   - install platform on huawei dcs huawei cloud stack
+  - install global cluster on vmware vsphere immutable infrastructure
   - immutable os global install
   - global cluster naming convention prefix dr failover
 ---
@@ -556,6 +557,10 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 - Keep `/var/cpaas` as platform state. If you need the disk to survive rolling replacement, declare it in `DCSIpHostnamePool.spec.pool[].persistentDisk`; do not rely on `DCSMachineTemplate` template disks as preserved state.
 - Use concrete `datastoreName` values for DCS local storage unless you have verified that the selected datastore cluster can place volumes on hosts that can run the target VM.
 
+<Directive type="warning" title="Fragment Scope">
+  The following YAML is a differential fragment, not a complete manifest that you can apply directly. Merge these `global`-specific changes into the manifest that you prepare from the DCS create-cluster references, then apply the complete manifest file.
+</Directive>
+
 The following fragment shows the `global`-specific Cluster API wiring. Fill the provider resource fields by using the DCS create-cluster references above.
 
 ```yaml
@@ -641,17 +646,20 @@ The VMware vSphere `global` manifest must contain the following resources in the
 | `ClusterResourceSet`, `ConfigMap`, and `Secret` for the vSphere CPI | Delivers the vSphere CPI resources to the `global` cluster after the API server becomes reachable. |
 | `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` for workers | Creates worker nodes. |
 
-Use the VMware vSphere resource fields from [Creating a VMware vSphere Cluster in the global Cluster](../create-cluster/vmware-vsphere/create-cluster-in-global.mdx) and [VMware vSphere Provider](../overview/providers/vmware-vsphere.mdx). For the `global` cluster, keep these additional requirements:
+Prepare the vSphere input values by using [Preparing Parameters for a VMware vSphere Cluster](../create-cluster/vmware-vsphere/parameter-checklist.mdx). Prepare the `global` cluster manifest by using [Creating a VMware vSphere Cluster in the global Cluster](../create-cluster/vmware-vsphere/create-cluster-in-global.mdx) and [VMware vSphere Provider](../overview/providers/vmware-vsphere.mdx) as the base references. The create-cluster guide is written for workload clusters that are created from the `global` cluster, but most vSphere YAML in that guide can be reused for the `global` cluster after you apply the following additional requirements:
 
 - Set `Cluster.metadata.name` and `VSphereCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kcp`.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: VSphere`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Keep the VMware vSphere annotations required by the platform controllers, including the network and CPI annotations from the VMware vSphere create-cluster guide.
-- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for MicroOS.
-- Keep the release manifest's non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries.
-- For a normal non-DR deployment, do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
-- Keep `/var/cpaas` as platform state. If the data disk must survive node replacement, declare it in `VSphereMachineConfigPool` instead of treating `VSphereMachineTemplate` alone as the state-preservation mechanism.
-- Use the vCenter network or port group name for `networkName`, and use the guest NIC name for `deviceName` when you need deterministic guest-network metadata.
+- Set `VSphereMachineTemplate.spec.template.spec.folder` to `/<datacenter>/vm/global` so operators can identify the `global` cluster VMs in vCenter. In a DR deployment, use distinct child folders such as `/<datacenter>/vm/global/primary` and `/<datacenter>/vm/global/standby` for the primary and standby clusters.
+- Set `VSphereCluster.spec.identityRef.name` to `global-vsphere-credentials`. This fixed Secret name is required only for the VMware vSphere `global` installation path; non-`global` VMware vSphere clusters follow the generic create-cluster guide.
+- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-init`, or leave the field unset because `cloud-init` is the default for VMware vSphere.
+- Keep the release manifest's kubeadm files, including the VMware vSphere `/etc/kubernetes/encryption-provider.conf` file entry, kubelet patches, audit policy, and installer RBAC entries. VMware vSphere delivers this file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`; do not follow the DCS `DCSCluster.spec.encryptionProviderConfigRef` pattern.
+
+<Directive type="warning" title="Fragment Scope">
+  The following YAML is a differential fragment, not a complete manifest that you can apply directly. Merge these `global`-specific changes into the manifest that you prepare from the VMware vSphere create-cluster guide, then apply the complete manifest file.
+</Directive>
 
 The following fragment shows the `global`-specific Cluster API wiring. Fill the provider resource fields by using the VMware vSphere create-cluster reference above.
 
@@ -708,7 +716,7 @@ spec:
       kind: VSphereMachineTemplate
       name: global-master-machine-template
   kubeadmConfigSpec:
-    format: ignition
+    format: cloud-init
     clusterConfiguration:
       etcd:
         local:
@@ -743,11 +751,15 @@ Use the HCS resource fields from [Creating Clusters on Huawei Cloud Stack](../cr
 - Set `Cluster.metadata.name` and `HCSCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kcp`.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: HCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
-- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for MicroOS.
+- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-init`, or leave the field unset because `cloud-init` is the default for HCS.
 - Keep the release manifest's non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries.
 - For a normal non-DR deployment, do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Keep `/var/cpaas` as platform state. HCS `dataVolumes` are used during creation, but they are not a guaranteed state-preservation mechanism during node replacement.
 - Use a highly available control plane for the `global` cluster. Single-control-plane HCS clusters are creation-only topologies and are not the recommended `global` upgrade path.
+
+<Directive type="warning" title="Fragment Scope">
+  The following YAML is a differential fragment, not a complete manifest that you can apply directly. Merge these `global`-specific changes into the manifest that you prepare from the HCS create-cluster references, then apply the complete manifest file.
+</Directive>
 
 The following fragment shows the `global`-specific Cluster API wiring. Fill the provider resource fields by using the HCS create-cluster references above.
 
@@ -801,7 +813,7 @@ spec:
       kind: HCSMachineTemplate
       name: global-master-machine-template
   kubeadmConfigSpec:
-    format: ignition
+    format: cloud-init
     clusterConfiguration:
       etcd:
         local:
@@ -863,11 +875,101 @@ kubectl get machines -n cpaas-system
 
 The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` and the `Cluster` reports `Phase: Provisioned`.
 
-### Step 7 — Import Additional Resources When Required
+### Step 7 — Import Provider Resources
 
-Before triggering the installer, create the `dcs-import-extra-resources` ConfigMap when required by your deployment scenario.
+Before triggering the installer, create the `dcs-import-extra-resources` ConfigMap in the `cpaas-system` namespace for providers that require extra resource import. The ConfigMap name keeps the `dcs` prefix for historical installer compatibility, even when the provider is not Huawei DCS.
 
-This ConfigMap is mandatory for HCS DR standby installations (to import HCS infrastructure resources) and optional for DCS when you need to preserve additional resources beyond the default installation flow.
+VMware vSphere and Huawei Cloud Stack require this ConfigMap for both normal and disaster recovery `global` installations. Huawei DCS does not require it for the default installation because DCS provider resources are migrated by the built-in flow; create it for DCS only when you need to import additional resources beyond the built-in provider resource migration.
+
+<Tabs>
+  <Tab label="Huawei DCS">
+
+Do not create the DCS `dcs-import-extra-resources` ConfigMap for the default DCS installation path. DCS provider resources are migrated by the built-in flow. Create this ConfigMap only when your DCS deployment needs to import additional resources beyond the built-in provider resource migration, and keep the ConfigMap name exactly `dcs-import-extra-resources`.
+
+  </Tab>
+  <Tab label="VMware vSphere">
+
+Create and apply the VMware vSphere import ConfigMap before you trigger the installer. This ConfigMap is required for both normal and disaster recovery `global` installations. The `global-vsphere-credentials` Secret stores the vCenter username and password and must be the same Secret name referenced by `VSphereCluster.spec.identityRef.name` in the VMware vSphere `global` manifest.
+
+```shell
+mkdir -p /root/yamls
+cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+    - resource: "vsphereclusters.infrastructure.cluster.x-k8s.io"
+      names: ["global"]
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/vsphereclusters/cpaas-system/"
+      method: etcdctl
+    - resource: "vspheremachinetemplates.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/vspheremachinetemplates/cpaas-system/"
+      method: etcdctl
+    - resource: "vspheremachines.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/vspheremachines/cpaas-system/"
+      method: etcdctl
+    - resource: "vspherevms.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/vspherevms/cpaas-system/"
+      method: etcdctl
+    - resource: "vspheremachineconfigpools.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/vspheremachineconfigpools/cpaas-system/"
+      method: etcdctl
+    - resource: "secrets"
+      names: ["global-vsphere-credentials"]
+      method: kubectl
+EOF
+
+kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+```
+
+  </Tab>
+  <Tab label="Huawei Cloud Stack">
+
+Create and apply the HCS import ConfigMap before you trigger the installer. This ConfigMap is required for both normal and disaster recovery `global` installations. Set `HCS_SECRET_NAME` to the same Secret name used by `HCSCluster.spec.identityRef.name`.
+
+```shell
+mkdir -p /root/yamls
+cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+    - resource: "secrets"
+      names: ["${HCS_SECRET_NAME}"]
+      method: kubectl
+    - resource: "hcsclusters.infrastructure.cluster.x-k8s.io"
+      names: ["global"]
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsclusters/cpaas-system/"
+      method: etcdctl
+    - resource: "hcsmachinetemplates.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsmachinetemplates/cpaas-system/"
+      method: etcdctl
+    - resource: "hcsmachineconfigpools.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsmachineconfigpools/cpaas-system/"
+      method: etcdctl
+    - resource: "hcsmachines.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsmachines/cpaas-system/"
+      method: etcdctl
+EOF
+
+kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+```
+
+  </Tab>
+  <Tab label="Bare Metal">
+    <Directive type="info" title="Status: Planned">
+      Bare-metal provider resource import for the `global` cluster on Immutable Infrastructure is planned.
+    </Directive>
+  </Tab>
+</Tabs>
 
 ### Step 8 — Trigger the Platform Installation
 
@@ -882,16 +984,16 @@ export INSTALLER_IP=$(kubectl get pods -n cpaas-system -l service_name=cpaas-ins
   `INSTALLER_IP` is the Pod IP of the embedded installer in `minialauda`. The endpoint is used only during installation.
 </Directive>
 
-Create the provider-specific installer configuration JSON file on the current KIND host, then submit it to the installer endpoint. DCS and HCS use the same endpoint path, but their request bodies are different.
+Create the provider-specific installer configuration JSON file on the current KIND host, then submit it to the installer endpoint. DCS, VMware vSphere, and HCS use the same endpoint path, but their request bodies are different.
 
-| Field | Huawei DCS | Huawei Cloud Stack |
-|-------|------------|--------------------|
-| Endpoint path | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` |
-| `console.host` | Local `global` HA VIP list | Empty list, `[]` |
-| `console.globalHost` | Platform access address | Platform access address |
-| `cluster.clusterCIDR` and `cluster.serviceCIDR` | Required | Not set |
-| `cluster.features.ha` | Required, points to the local HA VIP with `isThirdParty: true` | Not set; HCS ELB is declared in `HCSCluster` |
-| `hostIP` | Current KIND host IP | Current KIND host IP |
+| Field | Huawei DCS | VMware vSphere | Huawei Cloud Stack |
+|-------|------------|----------------|--------------------|
+| Endpoint path | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` |
+| `console.host` | Local `global` HA VIP list | Empty list, `[]` | Empty list, `[]` |
+| `console.globalHost` | Platform access address | Platform access address | Platform access address |
+| `cluster.clusterCIDR` and `cluster.serviceCIDR` | Required | Not set; cluster CIDRs are declared in the VMware vSphere `Cluster` manifest | Not set |
+| `cluster.features.ha` | Required, points to the local HA VIP with `isThirdParty: true` | Not set; the control plane endpoint is declared in `VSphereCluster.spec.controlPlaneEndpoint.host` | Not set; HCS ELB is declared in `HCSCluster` |
+| `hostIP` | Current KIND host IP | Current KIND host IP | Current KIND host IP |
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -954,9 +1056,47 @@ Set `console.host` and `cluster.features.ha.vip` to the local `global` HA VIP. D
   </Tab>
   <Tab label="VMware vSphere">
 
-<Directive type="info" title="Status: Planned">
-  VMware vSphere installer request details for the `global` cluster on Immutable Infrastructure are planned.
-</Directive>
+VMware vSphere uses the same installer endpoint path as DCS, but its request body does not include `cluster.features.ha`. The control plane endpoint is declared in `VSphereCluster.spec.controlPlaneEndpoint.host`, and the cluster CIDRs are declared in the VMware vSphere `Cluster` manifest.
+
+```shell
+mkdir -p /root/yamls
+export INSTALLER_CONFIG_JSON="/root/yamls/installer-config-vsphere.json"
+
+cat > "${INSTALLER_CONFIG_JSON}" <<EOF
+{
+  "basic": {
+    "username": "admin@cpaas.io",
+    "password": "<base64-platform-admin-password>"
+  },
+  "registry": {
+    "domain": "${REGISTRY_DOMAIN}",
+    "username": "<registry-username>",
+    "password": "<base64-registry-password>"
+  },
+  "console": {
+    "host": [],
+    "globalHost": "${PLATFORM_HOST}",
+    "httpPort": 80,
+    "httpsPort": 443,
+    "cert": {
+      "selfSigned": {}
+    }
+  },
+  "product": [
+    "base",
+    "acp"
+  ],
+  "deployMode": "normal",
+  "hostIP": "${HOST_IP}"
+}
+EOF
+
+curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
+  -H 'Content-Type: application/json' \
+  -d @"${INSTALLER_CONFIG_JSON}"
+```
+
+Keep `console.host` as an empty list because the VMware vSphere control plane endpoint is already set in the `global` manifest. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address.
 
   </Tab>
   <Tab label="Huawei Cloud Stack">
@@ -1069,7 +1209,7 @@ Issues that are not listed here usually point to environment-specific causes. Ca
 
 Use this section when you deploy primary and standby `global` clusters for disaster recovery. Complete these additions before you apply the provider-specific manifest for each `global` cluster.
 
-Primary and standby clusters must use the same encryption provider configuration. Normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`; for DCS, normal non-DR deployments also do not set `DCSCluster.spec.encryptionProviderConfigRef`.
+Primary and standby clusters must use the same encryption provider configuration. For DCS and HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`; for DCS, normal non-DR deployments also do not set `DCSCluster.spec.encryptionProviderConfigRef`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
 
 ### Prepare Shared DR Variables
 
@@ -1078,7 +1218,6 @@ Set the same encryption key value on both the primary and standby installation e
 ```shell
 export ENCRYPTION_PROVIDER_CONF="/root/yamls/encryption-provider.conf"
 export ENCRYPTION_PROVIDER_SECRET_B64="<base64-shared-etcd-encryption-key>"
-export DR_VIP="<disaster-recovery-vip>"
 export PRIMARY_CLUSTER_VIP="<primary-ha-vip>"
 export STANDBY_CLUSTER_VIP="<standby-ha-vip>"
 export ETCD_SYNC_VERSION="<global-etcd-sync-version>"
@@ -1105,13 +1244,13 @@ EOF_CONF
 
 ### Add DR Certificate SANs to KubeadmControlPlane
 
-In the manifest generated in Step 4, include the local control plane VIP, platform access address, and DR VIP in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`.
+In the manifest generated in Step 4, include both the primary and standby control plane VIPs and the platform access address in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`. Use the same SAN list on both the primary and standby installation environments.
 
 ```yaml
 serverCertSANs:
-  - "${CONTROL_PLANE_VIP}"
+  - "${PRIMARY_CLUSTER_VIP}"
+  - "${STANDBY_CLUSTER_VIP}"
   - "${PLATFORM_HOST}"
-  - "${DR_VIP}"
 ```
 
 ### Add Provider-Specific DR Fields
@@ -1142,7 +1281,7 @@ If you created `dcs-import-extra-resources`, keep the ConfigMap on both the prim
   </Tab>
   <Tab label="VMware vSphere">
 
-No `VSphereCluster` encryption Secret reference is required. For VMware vSphere, append this file entry to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` on both the primary and standby installation environments. Render the manifest so that `${ENCRYPTION_PROVIDER_SECRET_B64}` is replaced with the same base64 key value on both sides.
+No `VSphereCluster` encryption Secret reference is required. For VMware vSphere, keep this file entry in `KubeadmControlPlane.spec.kubeadmConfigSpec.files` on both the primary and standby installation environments. The rendered `/etc/kubernetes/encryption-provider.conf` content must be identical on both sides, including the provider order, key name, and base64 key value. Also create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments so the installer imports the vSphere infrastructure resources and the `global-vsphere-credentials` Secret.
 
 ```yaml
 - path: /etc/kubernetes/encryption-provider.conf
@@ -1162,12 +1301,12 @@ No `VSphereCluster` encryption Secret reference is required. For VMware vSphere,
             secret: ${ENCRYPTION_PROVIDER_SECRET_B64}
 ```
 
-Keep the same `serverCertSANs` on both the primary and standby installation environments.
+Keep the same DR `serverCertSANs` list on both the primary and standby installation environments.
 
   </Tab>
   <Tab label="Huawei Cloud Stack">
 
-No `HCSCluster` encryption Secret reference is required. For HCS, append this file entry to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` on both the primary and standby installation environments. Render the manifest so that `${ENCRYPTION_PROVIDER_SECRET_B64}` is replaced with the same base64 key value on both sides.
+No `HCSCluster` encryption Secret reference is required. For HCS, append this file entry to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` on both the primary and standby installation environments. The rendered `/etc/kubernetes/encryption-provider.conf` content must be identical on both sides, including the provider order, key name, and base64 key value.
 
 ```yaml
 - path: /etc/kubernetes/encryption-provider.conf
@@ -1187,43 +1326,9 @@ No `HCSCluster` encryption Secret reference is required. For HCS, append this fi
             secret: ${ENCRYPTION_PROVIDER_SECRET_B64}
 ```
 
-Keep the same `serverCertSANs` on both the primary and standby installation environments.
+Keep the same DR `serverCertSANs` list on both the primary and standby installation environments.
 
-Create and apply `dcs-import-extra-resources` on the HCS standby installation environment before the HCS DR installer import. The ConfigMap name is shared by the installer and remains `dcs-import-extra-resources` even for HCS.
-
-```shell
-mkdir -p /root/yamls
-cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: dcs-import-extra-resources
-  namespace: cpaas-system
-data:
-  resources.yaml: |
-    resources:
-    - resource: "secrets"
-      names: ["${HCS_SECRET_NAME}"]
-      method: kubectl
-    - resource: "hcsclusters.infrastructure.cluster.x-k8s.io"
-      names: ["global"]
-      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsclusters/cpaas-system/"
-      method: etcdctl
-    - resource: "hcsmachinetemplates.infrastructure.cluster.x-k8s.io"
-      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsmachinetemplates/cpaas-system/"
-      method: etcdctl
-    - resource: "hcsmachineconfigpools.infrastructure.cluster.x-k8s.io"
-      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsmachineconfigpools/cpaas-system/"
-      method: etcdctl
-    - resource: "hcsmachines.infrastructure.cluster.x-k8s.io"
-      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/hcsmachines/cpaas-system/"
-      method: etcdctl
-EOF
-
-kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
-```
-
-Set `HCS_SECRET_NAME` to the same Secret name used by `HCSCluster.spec.identityRef.name`.
+Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. Set `HCS_SECRET_NAME` to the same Secret name used by `HCSCluster.spec.identityRef.name`.
 
   </Tab>
   <Tab label="Bare Metal">
@@ -1242,8 +1347,8 @@ Use the provider-specific installer configuration differences for both sides:
 | Provider | Primary installation | Standby installation |
 |----------|----------------------|----------------------|
 | Huawei DCS | Set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. | Set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. |
-| VMware vSphere | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the primary HA VIP used by the primary manifest. | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the standby HA VIP used by the standby manifest. |
-| Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. |
+| VMware vSphere | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the primary HA VIP used by the primary manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the standby HA VIP used by the standby manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. |
+| Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
 
 For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB.
 
