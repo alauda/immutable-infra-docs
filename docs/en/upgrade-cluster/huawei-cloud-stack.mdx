@@ -27,6 +27,18 @@ This page covers only the Kubernetes step of the upgrade. The full ACP upgrade f
 Use this page when the same cluster runs on an immutable operating system, because the Kubernetes step on immutable OS replaces nodes from a new VM template rather than upgrading binaries in place.
 :::
 
+:::info
+**Version**
+
+HCS provider `v1.0.1` is the first release that supports pool-managed persistent disks.
+:::
+
+:::info
+**Existing Cluster Migration**
+
+If your cluster runs ACP `v4.3.1` or later and you are moving to HCS provider `v1.0.1` or later, complete the migration procedure in [Migrate Existing Huawei Cloud Stack Clusters to Pool-Managed Persistent Disks](../how-to/hcs_persistent_disk_upgrade.mdx) before you rely on upgrade-time disk preservation.
+:::
+
 ## Overview
 
 Cluster upgrades on HCS encompass multiple components and follow a structured approach to ensure system reliability:
@@ -45,6 +57,12 @@ Upgrade HCS clusters in the following order:
 2. Upgrade the Distribution Version on the workload cluster. See [Upgrading Clusters](index.mdx).
 3. Upgrade the control plane Kubernetes version.
 4. Upgrade worker nodes to the target Kubernetes version.
+
+Cluster API orchestrates rolling updates with built-in safety mechanisms to reduce service disruption.
+
+:::warning
+Skipping step 1 risks two failure modes: the old controller silently ignores new schema fields written to `HCSMachineConfigPool` / `HCSMachineTemplate`; or a controller image swap mid-rollout interrupts persistent-disk state-machine progression. Always settle the management-side upgrade before touching workload rollout.
+:::
 
 ## Prerequisites
 

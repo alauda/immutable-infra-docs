@@ -11,12 +11,12 @@ queries:
 
 Use this guide when you upgrade an existing Huawei Cloud Stack (HCS) cluster from the older `HCSMachineTemplate` data-volume layout to the pool-managed persistent-disk model.
 
-In HCS provider `TODO: <Provider Version>` or later, disks that must survive node replacement are declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`. This includes the platform-required `/var/cpaas` disk.
+In HCS provider `v1.0.1` or later, disks that must survive node replacement are declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`. This includes the platform-required `/var/cpaas` disk.
 
 :::info
 **Version**
 
-Use this procedure when the cluster runs ACP `TODO: <ACP Version>` or later and the target HCS provider version is `TODO: <Provider Version>` or later.
+Use this procedure when the cluster runs ACP `v4.3.1` or later and the target HCS provider version is `v1.0.1` or later.
 :::
 
 ## Overview
@@ -36,7 +36,7 @@ The pool-managed model moves upgrade-preserved disks into `HCSMachineConfigPool.
 
 Verify all of the following before you begin:
 
-- The management cluster has HCS provider `TODO: <Provider Version>` or later.
+- The management cluster has HCS provider `v1.0.1` or later.
 - The workload cluster is healthy and all nodes are `Ready`.
 - The cluster uses `HCSMachineConfigPool` to assign fixed hostnames and IP addresses.
 - The preserved disks have non-empty mount paths in the old `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
