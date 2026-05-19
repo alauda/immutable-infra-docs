@@ -19,12 +19,15 @@ The Huawei Cloud Stack Infrastructure Provider enables Immutable Infrastructure 
 
 Huawei Cloud Stack is a hybrid cloud solution that extends public cloud capabilities to private data centers. The HCS Provider leverages HCS APIs to manage infrastructure resources including virtual machines, networks, storage, and load balancers.
 
+HCS provider `v1.0.1` or later supports pool-managed persistent disks. Declare disks that must survive node replacement in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`, not in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
+
 ## Key Features
 
 - **Kube-OVN Integration**: Native support for Kube-OVN container network interface
 - **ELB Load Balancer**: Built-in elastic load balancer support for control plane high availability
 - **Static IP Configuration**: Static IP address allocation for enterprise network environments
-- **Machine Configuration Pools**: Pre-defined hostnames and IP address pools for predictable VM provisioning
+- **Machine Configuration Pools**: Pre-defined hostnames, static IP addresses, and persistent disk slots for predictable VM provisioning
+- **Pool-Managed Persistent Disks**: EVS disks can be detached from an old ECS and attached to the replacement ECS during rolling upgrades
 - **Control Plane Security Bootstrap**: Supports kube-apiserver audit, admission, encryption provider, and kubelet certificate configuration through kubeadm bootstrap data
 - **Availability Zone Selection**: Supports specifying the target availability zone for HCS machines
 
@@ -35,7 +38,7 @@ Huawei Cloud Stack is a hybrid cloud solution that extends public cloud capabili
 | `HCSCluster` | Represents HCS infrastructure including VPC, subnets, and load balancer configuration |
 | `HCSMachine` | Represents a virtual machine instance in HCS |
 | `HCSMachineTemplate` | Template for creating HCS machines with instance specifications |
-| `HCSMachineConfigPool` | Pool of pre-defined hostnames and static IP addresses |
+| `HCSMachineConfigPool` | Pool of pre-defined hostnames, static IP addresses, and persistent disk slots |
 
 ## Documentation
 
@@ -43,4 +46,5 @@ Huawei Cloud Stack is a hybrid cloud solution that extends public cloud capabili
 - [Creating Clusters](../../create-cluster/huawei-cloud-stack.mdx)
 - [Managing Nodes](../../manage-nodes/huawei-cloud-stack.mdx)
 - [Upgrading Clusters](../../upgrade-cluster/huawei-cloud-stack.mdx)
+- [Migrate Existing Clusters to Pool-Managed Persistent Disks](../../how-to/hcs_persistent_disk_upgrade.mdx)
 - [Provider APIs](../../apis/providers/huawei-cloud-stack/)

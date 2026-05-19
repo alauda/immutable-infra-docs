@@ -131,6 +131,8 @@ kind: HCSMachineConfigPool
 metadata:
   name: <cluster-name>-cp-pool
   namespace: cpaas-system
+  labels:
+    cluster.x-k8s.io/cluster-name: <cluster-name>
 spec:
   configs:
     - hostname: master-1
@@ -139,7 +141,7 @@ spec:
           ipAddress: 192.168.1.11
       persistentDisks:
         - slot: 0
-          size: 40
+          size: 100
           type: SSD
           mountPath: /var/cpaas
           format: xfs
@@ -149,7 +151,7 @@ spec:
           ipAddress: 192.168.1.12
       persistentDisks:
         - slot: 0
-          size: 40
+          size: 100
           type: SSD
           mountPath: /var/cpaas
           format: xfs
@@ -159,7 +161,7 @@ spec:
           ipAddress: 192.168.1.13
       persistentDisks:
         - slot: 0
-          size: 40
+          size: 100
           type: SSD
           mountPath: /var/cpaas
           format: xfs
@@ -175,7 +177,7 @@ spec:
 | `.spec.configs[].networks[].ipAddress` | string | Yes | Static IP address for the VM |
 | `.spec.configs[].persistentDisks[]` | array | No | EVS disks that survive HCSMachine delete-recreate replacement |
 | `.spec.configs[].persistentDisks[].slot` | int | Yes* | Disk slot within one machine configuration. Slots must be unique and contiguous from `0` for the same hostname |
-| `.spec.configs[].persistentDisks[].size` | int | Yes* | EVS disk size in GB |
+| `.spec.configs[].persistentDisks[].size` | int | Yes* | EVS disk size in GB. For newly created EVS data disks, use `10` to `32768` GB. Existing claimed disks must match their current size |
 | `.spec.configs[].persistentDisks[].type` | string | Yes* | EVS disk type name available in the target availability zone |
 | `.spec.configs[].persistentDisks[].mountPath` | string | No | Guest mount path. Use `/var/cpaas` for platform state that must survive VM replacement |
 | `.spec.configs[].persistentDisks[].format` | string | No | File system format. If omitted, the provider uses `xfs` |

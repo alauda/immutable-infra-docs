@@ -146,7 +146,7 @@ Prepare the following before you create `HCSMachineConfigPool` resources:
 - Enough entries to cover the initial replica count
 - Any pool-managed persistent disks that must be bound to each fixed hostname
 
-For static IP control planes with at least three replicas, the recommended upgrade path uses `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0`. This scale-down-then-scale-up approach usually does not require extra control plane IPs. If you plan a single-control-plane create-only topology (`replicas: 1`), do not copy that rollout setting into the create manifest. Prepare additional hostname and IP slots only when you plan to increase control plane replicas or set `maxSurge` greater than `0`.
+For static IP control planes with at least three replicas, the recommended upgrade path uses `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0`. This scale-down-then-scale-up approach usually does not require extra control plane IPs. If you plan a single-control-plane create-only topology (`replicas: 1`), do not copy that rollout setting into the create manifest. For pools that use persistent disks, keep `maxSurge: 0` because each disk is bound to one fixed hostname and slot.
 
 ### Pool-Managed Persistent Disks
 
@@ -170,7 +170,7 @@ spec:
           ipAddress: <node-ip>
       persistentDisks:
         - slot: 0
-          size: 40
+          size: 100
           type: SSD
           mountPath: /var/cpaas
           format: xfs
@@ -184,15 +184,16 @@ spec:
 | Field | Description |
 |-------|-------------|
 | `slot` | Disk position within one machine configuration. Slots must be unique and contiguous from `0` for the same hostname. |
-| `size` | EVS disk size in GB. For newly created EVS data disks, use a size supported by the target HCS EVS service. |
+| `size` | EVS disk size in GB. For newly created EVS data disks, use `10` to `32768` GB. Existing claimed disks must match their current size. |
 | `type` | EVS disk type name that is available in the target availability zone. |
-| `mountPath` | Mount path inside the guest OS. Use `/var/cpaas` for platform state that must survive VM replacement. |
+| `mountPath` | Mount path inside the guest OS. Use `/var/cpaas` for platform state that must survive VM replacement. Size this disk for platform monitoring, log, and plug-in data. |
 | `format` | File system used when a new disk is initialized. If omitted, the provider uses `xfs`. Existing file systems are not reformatted during reattachment. |
 | `mountOptions` | Mount options applied when the replacement VM mounts the disk. If omitted, the provider uses `defaults,noatime`. |
 
 **Update rules:**
 
 - Do not declare the same `mountPath` in both `HCSMachineConfigPool.spec.configs[].persistentDisks[]` and `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
+- You can append new `persistentDisks[]` entries to an existing machine configuration. The provider creates or claims the EVS disk, but it does not hot-mount the disk into the running ECS. Trigger a rolling replacement with `maxSurge: 0` before you expect the new disk to be formatted and mounted inside the guest OS.
 - Do not remove or change `slot`, `size`, `type`, `format`, or `mountPath` after the provider has accepted a persistent disk entry. These fields define the disk identity and claim contract.
 - You can update `mountOptions`. The change takes effect when the node is replaced and the replacement VM renders its disk mounts.
 - Keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` and `MachineDeployment.spec.strategy.rollingUpdate.maxSurge: 0` for pools that use persistent disks.

@@ -47,8 +47,6 @@ Cluster upgrades on HCS encompass multiple components and follow a structured ap
 - **Worker Node Upgrades**: Upgrade worker nodes with new machine images and Kubernetes versions
 - **Infrastructure Updates**: Modify virtual machine specifications, storage, and network configurations
 
-Cluster API orchestrates declarative rolling updates with built-in safety mechanisms.
-
 ## Upgrade Sequence
 
 Upgrade HCS clusters in the following order:
@@ -117,7 +115,7 @@ The Fleet Essentials UI workflow has not been adapted to the Cluster Version Ope
 
 Control plane upgrades update the Kubernetes API server, etcd, scheduler, and controller manager, along with the underlying VM infrastructure.
 
-For HCS control planes backed by a fixed-size `HCSMachineConfigPool`, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` during upgrades. This default scale-down-then-scale-up path usually does not require additional control plane IPs. Only prepare extra hostname and static IP entries in the control plane pool if you plan to increase control plane replicas or intentionally set `maxSurge` greater than `0`.
+For HCS control planes backed by an `HCSMachineConfigPool` that uses pool-managed persistent disks, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` during upgrades. Persistent disks are bound to fixed `(hostname, slot)` identities, so the rollout must remove the old machine before the replacement machine can reuse the same disk.
 
 ### Infrastructure Image Updates
 
@@ -226,7 +224,7 @@ The CoreDNS and etcd image tags are control-plane-only because `clusterConfigura
 
    Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same MicroOS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
-   Keep `spec.rolloutStrategy.rollingUpdate.maxSurge: 0` for the default static IP control plane path. Only adjust rollout settings beyond this after you extend the control plane `HCSMachineConfigPool` with extra hostname and IP slots.
+   Keep `spec.rolloutStrategy.rollingUpdate.maxSurge: 0` when the referenced control plane pool uses persistent disks. The replacement machine must reuse the same fixed hostname and disk slot after the old machine is removed.
 
 3. **Update the Kube-OVN version annotation on the `Cluster` resource**
 

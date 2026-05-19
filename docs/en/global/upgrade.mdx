@@ -127,6 +127,8 @@ kind: HCSMachineConfigPool
 metadata:
   name: <global-pool-name>
   namespace: cpaas-system
+  labels:
+    cluster.x-k8s.io/cluster-name: global
 spec:
   configs:
     - hostname: <node-hostname>
@@ -135,7 +137,7 @@ spec:
           ipAddress: <node-ip>
       persistentDisks:
         - slot: 0
-          size: 40
+          size: 100
           type: SSD
           mountPath: /var/cpaas
           format: xfs
