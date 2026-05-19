@@ -21,6 +21,7 @@ That deployment procedure is the authoritative source for the installation-time 
 - Primary and standby clusters use the same Kubernetes API server encryption provider configuration.
 - The etcd server certificate SAN list includes the local control plane VIP, Platform Access Address, and DR VIP.
 - Huawei DCS deployments reference the shared encryption provider Secret from `DCSCluster.spec.encryptionProviderConfigRef`.
+- VMware vSphere deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Huawei Cloud Stack deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - The primary cluster installs `global-etcd-sync` with the standby cluster connection values after both installations succeed.
 
@@ -44,9 +45,7 @@ Follow the DCS steps in [Optional Disaster Recovery Deployment](./install.mdx#op
   </Tab>
   <Tab label="VMware vSphere">
 
-<Directive type="info" title="Status: Planned">
-  VMware vSphere disaster recovery support for the `global` cluster on Immutable Infrastructure is planned.
-</Directive>
+Follow the VMware vSphere steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The VMware vSphere installation uses the same `KubeadmControlPlane` encryption file entry and etcd SAN configuration as the primary installation. No `VSphereCluster` encryption Secret reference is required.
 
   </Tab>
   <Tab label="Huawei Cloud Stack">
