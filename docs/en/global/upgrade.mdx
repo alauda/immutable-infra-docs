@@ -106,18 +106,45 @@ For HCS, create new immutable infrastructure templates instead of editing templa
 Update the control plane resources:
 
 - Create a new `HCSMachineTemplate` for the target image and set `spec.template.spec.imageName` to the MicroOS image that matches the target Kubernetes version.
+- Keep preserved node-local data, including `/var/cpaas`, in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`. Do not move preserved disks back into `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
 - Leave runtime identity fields unset in the new template, including `spec.template.spec.providerID` and `spec.template.spec.serverId`.
 - Set `KubeadmControlPlane.spec.version` to the target Kubernetes version.
 - Point `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` to the new `HCSMachineTemplate`.
-- Keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` for the fixed-size `HCSMachineConfigPool` path unless you have prepared extra hostname and static IP entries.
+- Keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` when the control plane pool uses pool-managed persistent disks.
 
 Update worker node resources:
 
 - Create a new worker `HCSMachineTemplate` with the target `imageName`.
 - Set each `MachineDeployment.spec.template.spec.version` to the target Kubernetes version.
 - Point each `MachineDeployment.spec.template.spec.infrastructureRef.name` to the new worker `HCSMachineTemplate`.
+- Keep each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge: 0` when the worker pool uses pool-managed persistent disks.
 
-Do not treat HCS `dataVolumes` as preserved state during node replacement. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade. This rolling upgrade workflow supports highly available control planes that can replace `HCSMachineTemplate` and `KubeadmControlPlane` references while `HCSMachineConfigPool` retains enough fixed identities for the rollout. Single-control-plane HCS clusters, including a `global` cluster with one control plane node, are not supported by this rolling upgrade workflow. Use an alternative documented procedure, recreate the control plane with immutable templates, or consult the out-of-band migration guide or support before proceeding.
+Pool-managed persistent disks are declared on the machine configuration pool, not on the machine template:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: HCSMachineConfigPool
+metadata:
+  name: <global-pool-name>
+  namespace: cpaas-system
+spec:
+  configs:
+    - hostname: <node-hostname>
+      networks:
+        - subnetName: <subnet-name>
+          ipAddress: <node-ip>
+      persistentDisks:
+        - slot: 0
+          size: 40
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
+          mountOptions:
+            - defaults
+            - noatime
+```
+
+Do not treat HCS `dataVolumes[]` as preserved state during node replacement. This rolling upgrade workflow supports highly available control planes that can replace `HCSMachineTemplate` and `KubeadmControlPlane` references while `HCSMachineConfigPool` retains enough fixed identities and persistent disk slots for the rollout. Single-control-plane HCS clusters, including a `global` cluster with one control plane node, are not supported by this rolling upgrade workflow. Use an alternative documented procedure, recreate the control plane with immutable templates, or consult the out-of-band migration guide or support before proceeding.
 
   </Tab>
   <Tab label="Bare Metal">
@@ -185,7 +212,7 @@ Keep `maxSurge: 0` while reverting to the previous machine templates so replacem
   </Tab>
   <Tab label="Huawei Cloud Stack">
 
-For HCS, rollback depends on platform and etcd backups. Node-local data on HCS `dataVolumes` is not a reliable rollback source because node replacement may delete the old VM and attached volumes. If the control plane was already replaced, restore from the verified etcd backup, then reapply the previous manifest with the previous `HCSMachineTemplate` references and Kubernetes versions.
+For HCS, rollback depends on platform and etcd backups. Node-local data on HCS `dataVolumes[]` is not a reliable rollback source because node replacement may delete the old VM and attached volumes. Data declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` is reattached during replacement. If the control plane was already replaced, restore from the verified etcd backup, then reapply the previous manifest with the previous `HCSMachineTemplate` references and Kubernetes versions.
 
   </Tab>
   <Tab label="Bare Metal">

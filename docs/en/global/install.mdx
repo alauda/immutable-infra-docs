@@ -512,11 +512,11 @@ The HCS `global` manifest must contain the following resources in the `cpaas-sys
 | Resource | Purpose |
 |----------|---------|
 | `Secret` | Stores `accessKey`, `secretKey`, `projectID`, `region`, and `externalGlobalDomain`. |
-| `HCSMachineConfigPool` for control plane nodes | Assigns static hostnames and IP addresses. |
+| `HCSMachineConfigPool` for control plane nodes | Assigns static hostnames, IP addresses, and any pool-managed persistent disks. |
 | `Cluster` | Connects the Cluster API `Cluster` to `HCSCluster` and `KubeadmControlPlane`. |
 | `HCSCluster` | Defines VPC, subnet, security group, ELB, and identity references. |
 | `KubeadmControlPlane` | Bootstraps the Kubernetes control plane. Set `spec.version` to `${K8S_VERSION}`. |
-| `HCSMachineTemplate` for control plane nodes | Defines image, flavor, availability zone, root volume, and data volumes. |
+| `HCSMachineTemplate` for control plane nodes | Defines image, flavor, availability zone, root volume, and temporary data volumes. |
 | `HCSMachineConfigPool`, `HCSMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` for workers | Creates worker nodes. |
 
 Use the HCS resource fields from [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx) and [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx). For the `global` cluster, keep these additional requirements:
@@ -527,7 +527,7 @@ Use the HCS resource fields from [Creating Clusters on Huawei Cloud Stack](../cr
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for MicroOS.
 - Keep the release manifest's non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries.
 - For a normal non-DR deployment, do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
-- Keep `/var/cpaas` as platform state. HCS `dataVolumes` are used during creation, but they are not a guaranteed state-preservation mechanism during node replacement.
+- Keep `/var/cpaas` as platform state. Declare it in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` when it must survive node replacement; do not rely on `HCSMachineTemplate.spec.template.spec.dataVolumes[]` as preserved state.
 - Use a highly available control plane for the `global` cluster. Single-control-plane HCS clusters are creation-only topologies and are not the recommended `global` upgrade path.
 
 The following fragment shows the `global`-specific Cluster API wiring. Fill the provider resource fields by using the HCS create-cluster references above.

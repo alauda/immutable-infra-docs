@@ -7,6 +7,7 @@ queries:
   - hcs worker nodes
   - hcs node management
   - hcs machine deployment
+  - hcs worker persistent disks
 ---
 
 # Managing Nodes on Huawei Cloud Stack
@@ -38,7 +39,7 @@ Before you prepare worker YAML, complete the HCS input checklist in [Infrastruct
 
 ### Step 1: Configure Machine Configuration Pool
 
-The `HCSMachineConfigPool` defines the network configuration for worker node VMs. You must plan and configure the IP addresses, hostnames, and other network parameters before deployment.
+The `HCSMachineConfigPool` defines the network configuration and any pool-managed persistent disks for worker node VMs. You must plan and configure the IP addresses, hostnames, persistent disk slots, and other parameters before deployment.
 
 :::warning
 **Pool Size Requirement**
@@ -62,14 +63,32 @@ spec:
       networks:
         - subnetName: <subnet-name>
           ipAddress: <worker-1-ip>
+      persistentDisks:
+        - slot: 0
+          size: 40
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
     - hostname: <worker-2-hostname>
       networks:
         - subnetName: <subnet-name>
           ipAddress: <worker-2-ip>
+      persistentDisks:
+        - slot: 0
+          size: 40
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
     - hostname: <worker-3-hostname>
       networks:
         - subnetName: <subnet-name>
           ipAddress: <worker-3-ip>
+      persistentDisks:
+        - slot: 0
+          size: 40
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
 ```
 
 | Parameter | Type | Required | Description |
@@ -80,8 +99,19 @@ spec:
 | `.spec.configs[].networks[].subnetName` | string | No* | Recommended subnet name field for new manifests |
 | `.spec.configs[].networks[].subnetId` | string | No* | Subnet ID. Use this field instead of `subnetName` when the subnet name is ambiguous |
 | `.spec.configs[].networks[].ipAddress` | string | Yes | Static IP address for the worker VM |
+| `.spec.configs[].persistentDisks[]` | array | No | EVS disks that survive HCSMachine delete-recreate replacement |
+| `.spec.configs[].persistentDisks[].slot` | int | Yes* | Disk slot within one machine configuration. Slots must be unique and contiguous from `0` for the same hostname |
+| `.spec.configs[].persistentDisks[].size` | int | Yes* | EVS disk size in GB |
+| `.spec.configs[].persistentDisks[].type` | string | Yes* | EVS disk type name available in the target availability zone |
+| `.spec.configs[].persistentDisks[].mountPath` | string | No | Guest mount path. Use `/var/cpaas` for platform state that must survive VM replacement |
+| `.spec.configs[].persistentDisks[].format` | string | No | File system format. If omitted, the provider uses `xfs` |
+| `.spec.configs[].persistentDisks[].mountOptions` | array | No | Mount options. If omitted, the provider uses `defaults,noatime` |
 
 *For new manifests, set either `subnetName` or `subnetId`. Existing manifests may continue to use `subenetName`, and may add `subnetName` only if both fields use the same value. Do not provide conflicting subnet selector values.
+
+**Persistent disk fields are required when `persistentDisks` is specified.**
+
+Use `persistentDisks[]` for node-local state that must survive worker replacement. Do not declare the same mount path in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
 
 **Note:** The CRD schema lists `subnetName`, `subenetName`, and `subnetId` as optional fields and does not express their allowed combinations. Follow the provider-level rules above when writing manifests.
 
@@ -91,7 +121,7 @@ spec:
 
 The `HCSMachineTemplate` defines the VM specifications for worker nodes.
 
-Configure worker nodes with a system volume and data volumes for `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/cpaas`. You may add more data volumes, but preserve these paths so node bootstrap and platform components can use the expected runtime directories. These paths do not imply that data volumes will be preserved when nodes are replaced.
+Configure worker nodes with a system volume and temporary data volumes for paths that may be recreated with each ECS, such as `/var/lib/kubelet` and `/var/lib/containerd`. Put `/var/cpaas` in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` when platform state must survive worker replacement.
 
 Use the provider-recognized `flavorName` and `availabilityZone` API values when you prepare the worker template. These values are not the tenant UI display names.
 
@@ -121,10 +151,6 @@ spec:
           type: SSD
           mountPath: /var/lib/containerd
           format: xfs
-        - size: 10
-          type: SSD
-          mountPath: /var/cpaas
-          format: xfs
 ```
 
 | Parameter | Type | Required | Description |
@@ -142,6 +168,8 @@ spec:
 | `.spec.template.spec.dataVolumes[].format` | string | Yes* | File system format |
 
 *Required when dataVolumes is specified.
+
+`dataVolumes[]` are recreated with the ECS. Do not use them for `/var/cpaas` or any other path that must survive rolling replacement.
 
 **Note:** Do not set runtime identity fields such as `providerID` or `serverId` in `HCSMachineTemplate` manifests. The provider assigns these values when it creates HCS instances.
 
@@ -326,7 +354,7 @@ Scaling down removes nodes and their associated disks. Ensure:
 
 To upgrade worker machine specifications (CPU, memory, disk, VM image), follow these steps:
 
-**Note:** Worker infrastructure upgrades rely on Cluster API rolling replacement. The current HCS provider does not preserve or reattach data disks during node replacement. When a worker node is replaced, the old VM and its attached volumes may be deleted together. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
+**Note:** Worker infrastructure upgrades rely on Cluster API rolling replacement. HCS `dataVolumes[]` are not preserved during replacement. To preserve node-local state such as `/var/cpaas`, declare it in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` before the rollout and keep `MachineDeployment.spec.strategy.rollingUpdate.maxSurge: 0`.
 
 1. **Create New Machine Template**
 
