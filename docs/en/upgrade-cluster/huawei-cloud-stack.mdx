@@ -93,59 +93,6 @@ Every upgrade step on this page therefore creates a new `HCSMachineTemplate` wit
 The Fleet Essentials UI workflow has not been adapted to the Cluster Version Operator (CVO) mechanism introduced in ACP 4.3. HCS clusters do not currently expose a Fleet Essentials UI upgrade path; use the YAML procedure documented below, or the two-step upgrade flow built into the ACP Core platform — see <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
 :::
 
-## Plugin Behavior Upgrades
-
-Plugin behavior upgrades change what the `cluster-api-provider-hcs` controller renders into cloud-init at VM-create time. They do **not** change the Kubernetes version, etcd image, or coredns image, so the procedure on this page for Kubernetes version upgrades does not apply to them; they need their own walk-through because their effect on running clusters depends on whether nodes are replaced.
-
-A representative example is the `host-a.example.org` style hostname rendering change shipped in `cluster-api-provider-hcs` v1.0.1+ (AIT-70656). Before the fix, supplying a dotted `HCSMachineConfigPool.spec.configs[].hostname` produced a node whose POSIX `hostname` returned the full FQDN string and whose `hostname -f` failed. After the fix the controller writes the short label as `hostname`, the FQDN as `fqdn`, and an `/etc/hosts` entry so applications that expect `hostname -f` to return the FQDN start working.
-
-### Effect on existing nodes
-
-Cloud-init only runs on first boot. A plugin behavior change does not retroactively rewrite `hostname` or `/etc/hosts` on a VM that has already booted with the previous user-data. Pick one of three paths.
-
-| Path | What you do | What happens to existing nodes | When to pick it |
-|---|---|---|---|
-| **A — Rolling replacement (recommended)** | Use the same procedure as an [infrastructure image update](#infrastructure-image-updates): make a fresh `HCSMachineTemplate` with a new `metadata.name` and patch the `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` (and the `MachineDeployment` `infrastructureRef`) so Cluster API replaces every machine one at a time. New cloud-init runs on the new VMs. | Every node ends up on the new behavior. Storage is preserved according to the [Volume Persistence Across Rolling Replacement](#volume-persistence-across-rolling-replacement) rules — `KubeadmControlPlane`'s `nodeDrainTimeout`/`nodeDeletionTimeout` and the standard rollout strategy apply. | When the cluster can tolerate a normal CAPI rolling upgrade. This is the only path the provider validates end-to-end. |
-| **B — Node-level manual fix** | SSH into each existing node and edit `/etc/hostname` and `/etc/hosts` by hand. | **Does not persist on MicroOS / SLE Micro.** Verified 2026-05-19 in the AIT-70656 release test on hcslab: the controller's fix sets cloud-init `manage_etc_hosts: true`, which causes cloud-init to re-render `/etc/hosts` from `/etc/cloud/templates/hosts.suse.tmpl` on every boot. Manual `/etc/hosts` edits are wiped on the next reboot. The kubelet's reported node name also does not change until a kubelet restart, so existing `Node` objects keep the old name and ACP load balancer routing / monitoring labels can drift. | **Not viable on MicroOS** for plugin-behavior upgrades that use `manage_etc_hosts: true`. Even for short-window emergency intervention, expect the change to be lost at next reboot. |
-| **C — DaemonSet that mutates the host** | Run a privileged DaemonSet that mounts `/host` and rewrites `/etc/hostname` and `/etc/hosts` on every node. | Same root-cause failure as path B (cloud-init wins on every boot), multiplied by the number of nodes. | Discouraged. Use path A. |
-
-For immutable OSes (MicroOS / SLE Micro) **with** `manage_etc_hosts: true` (which the AIT-70656 fix sets for dotted-hostname pools), **only path A is durable**. cloud-init re-renders `/etc/hosts` on every boot — including reboots triggered by `transactional-update`, OS patching, manual `systemctl reboot`, or unplanned node restarts. Edits made by paths B / C live only until the next reboot of that node.
-
-If you must intervene out-of-band on a single node and have it survive reboots, the correct lever is to **change the cloud-init user-data** (i.e., adjust the upstream `HCSMachineConfigPool` / `HCSMachineTemplate` / `KubeadmControlPlane` spec the provider renders from) — which is precisely what path A does by replacing the machine.
-
-### Procedure for a plugin behavior upgrade (path A)
-
-1. Confirm the plugin is upgraded on the management cluster before you replace any workload node. The new `cluster-api-provider-hcs` controller must be Ready in `cpaas-system` first; otherwise, replaced nodes get user-data from the old controller and keep the old behavior.
-
-   ```bash
-   kubectl get deployment -n cpaas-system -l app=cluster-api-provider-hcs-manager -o wide
-   kubectl rollout status deployment -n cpaas-system cluster-api-provider-hcs-manager
-   ```
-
-2. Decide whether the change affects nodes you actually use. For the hostname behavior change, only nodes with a dotted `HCSMachineConfigPool.spec.configs[].hostname` are affected; pools where every entry is a short label see no change. Run the no-op verification step below before scheduling a rollout.
-
-3. Follow the [Infrastructure Image Updates](#infrastructure-image-updates) procedure to roll the control plane, then the [Worker Node Upgrades](#worker-node-upgrades) procedure to roll workers. You do not have to change `imageName`, `flavorName`, or any Kubernetes-version field — the new template can be a byte-for-byte copy of the previous one with a new `metadata.name`. The rename alone is what triggers CAPI to roll machines and pick up the new user-data.
-
-4. Verify on each new node that the behavior actually changed (see next subsection).
-
-### Verifying hostname behavior after rollout
-
-On each new node:
-
-```bash
-hostname
-hostname -f
-cat /etc/hosts
-```
-
-For a node whose pool config was `hostname: master-1.example.org`, expect:
-
-- `hostname` returns `master-1` (short label, dot and everything after it stripped)
-- `hostname -f` returns `master-1.example.org`
-- `/etc/hosts` contains a line like `192.0.2.11 master-1.example.org master-1`
-
-If the new node reports the FQDN-style string from `hostname`, or if `hostname -f` returns `Name or service not known`, the cloud-init log on the node (`/var/log/cloud-init.log` and `/var/lib/cloud/instance/user-data.txt`) is the first thing to read; see also [Hostname / FQDN issues](/how-to/troubleshoot-cluster-not-ready#hostname--fqdn-issues) in the troubleshooting guide.
-
 ## Control Plane Upgrades
 
 Control plane upgrades update the Kubernetes API server, etcd, scheduler, and controller manager, along with the underlying VM infrastructure.
