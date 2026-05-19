@@ -5,6 +5,7 @@ queries:
   - global cluster disaster recovery on immutable infrastructure
   - immutable infra etcd sync
   - microos global dr
+  - vmware vsphere global cluster disaster recovery
   - immutable os disaster recovery
 ---
 
@@ -19,10 +20,11 @@ Use [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-reco
 That deployment procedure is the authoritative source for the installation-time DR configuration, including:
 
 - Primary and standby clusters use the same Kubernetes API server encryption provider configuration.
-- The etcd server certificate SAN list includes the local control plane VIP, Platform Access Address, and DR VIP.
+- The etcd server certificate SAN list includes both the primary and standby control plane VIPs and the Platform Access Address.
 - Huawei DCS deployments reference the shared encryption provider Secret from `DCSCluster.spec.encryptionProviderConfigRef`.
 - VMware vSphere deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Huawei Cloud Stack deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
+- VMware vSphere and Huawei Cloud Stack create the `dcs-import-extra-resources` ConfigMap before installer import so the installation can preserve provider-specific resources. The name keeps the `dcs` prefix for historical installer compatibility. Huawei DCS uses the built-in provider resource migration unless extra resources must be imported.
 - The primary cluster installs `global-etcd-sync` with the standby cluster connection values after both installations succeed.
 
 ## Operational Scope
@@ -31,7 +33,7 @@ After the primary and standby clusters are installed, operate DR as a separate l
 
 - Verify `etcd-sync` health and replication lag.
 - Verify that the standby cluster can decrypt Kubernetes Secrets created on the primary cluster.
-- Validate the DR VIP and platform access path before a planned failover.
+- Validate the primary and standby control plane VIPs and the platform access path before a planned failover.
 - Execute failover and failback with an approved operations procedure.
 - Reconcile provider-specific resources after a failover.
 
@@ -40,17 +42,17 @@ After the primary and standby clusters are installed, operate DR as a separate l
 <Tabs>
   <Tab label="Huawei DCS">
 
-Follow the DCS steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The DCS installation must keep the same encryption provider Secret and `DCSCluster.spec.encryptionProviderConfigRef` on both sides. Do not add the encryption provider file to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for DCS.
+Follow the DCS steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The DCS installation must keep the same encryption provider Secret and `DCSCluster.spec.encryptionProviderConfigRef` on both sides. Do not add the encryption provider file to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for DCS. DCS provider resources are migrated by the built-in flow; create `dcs-import-extra-resources` only when extra resources must be imported.
 
   </Tab>
   <Tab label="VMware vSphere">
 
-Follow the VMware vSphere steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The VMware vSphere installation uses the same `KubeadmControlPlane` encryption file entry and etcd SAN configuration as the primary installation. No `VSphereCluster` encryption Secret reference is required.
+Follow the VMware vSphere steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The VMware vSphere installation uses the same `KubeadmControlPlane` encryption file entry and etcd SAN configuration as the primary installation. No `VSphereCluster` encryption Secret reference is required. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap so the installer imports vSphere infrastructure resources and the `global-vsphere-credentials` Secret referenced by `VSphereCluster.spec.identityRef.name`.
 
   </Tab>
   <Tab label="Huawei Cloud Stack">
 
-Follow the HCS steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The HCS installation uses the same `KubeadmControlPlane` encryption file entry and etcd SAN configuration as the primary installation. No `HCSCluster` encryption Secret reference is required.
+Follow the HCS steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The HCS installation uses the same `KubeadmControlPlane` encryption file entry and etcd SAN configuration as the primary installation. No `HCSCluster` encryption Secret reference is required. Create the HCS `dcs-import-extra-resources` ConfigMap so the installer imports HCS infrastructure resources and the Secret referenced by `HCSCluster.spec.identityRef.name`.
 
   </Tab>
   <Tab label="Bare Metal">

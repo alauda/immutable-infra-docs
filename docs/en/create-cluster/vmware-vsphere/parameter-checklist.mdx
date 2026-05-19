@@ -187,6 +187,7 @@ The template should also meet the following requirements:
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
 | Default datacenter | `<default_datacenter>` | Yes | Used by the baseline topology. | `dc-a` | - |
+| VM folder | `<vm_folder>` | Yes | Folder path for VMs created from `VSphereMachineTemplate`. Use `/<datacenter>/vm/<cluster_name>` so operators can identify which cluster the VMs belong to in vCenter. For `global` DR deployments, add one child folder under `<cluster_name>` to distinguish the primary and standby clusters. | `/dc-a/vm/demo-cluster` | - |
 
 ### Primary NIC parameters
 
