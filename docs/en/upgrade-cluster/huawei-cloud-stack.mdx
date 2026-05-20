@@ -7,6 +7,7 @@ queries:
   - upgrade hcs cluster
   - hcs kubernetes upgrade
   - hcs cluster version update
+  - hcs upgrade preserve persistent disks
 ---
 
 # Upgrading Clusters on Huawei Cloud Stack
@@ -26,6 +27,18 @@ This page covers only the Kubernetes step of the upgrade. The full ACP upgrade f
 Use this page when the same cluster runs on an immutable operating system, because the Kubernetes step on immutable OS replaces nodes from a new VM template rather than upgrading binaries in place.
 :::
 
+:::info
+**Version**
+
+HCS provider `v1.0.1` is the first release that supports pool-managed persistent disks.
+:::
+
+:::info
+**Existing Cluster Migration**
+
+If your cluster runs ACP `v4.3.1` or later and you are moving to HCS provider `v1.0.1` or later, complete the migration procedure in [Migrate Existing Huawei Cloud Stack Clusters to Pool-Managed Persistent Disks](../how-to/hcs_persistent_disk_upgrade.mdx) before you rely on upgrade-time disk preservation.
+:::
+
 ## Overview
 
 Cluster upgrades on HCS encompass multiple components and follow a structured approach to ensure system reliability:
@@ -33,8 +46,6 @@ Cluster upgrades on HCS encompass multiple components and follow a structured ap
 - **Control Plane Upgrades**: Update Kubernetes control plane components and underlying infrastructure
 - **Worker Node Upgrades**: Upgrade worker nodes with new machine images and Kubernetes versions
 - **Infrastructure Updates**: Modify virtual machine specifications, storage, and network configurations
-
-Cluster API orchestrates declarative rolling updates with built-in safety mechanisms.
 
 ## Upgrade Sequence
 
@@ -44,6 +55,12 @@ Upgrade HCS clusters in the following order:
 2. Upgrade the Distribution Version on the workload cluster. See [Upgrading Clusters](index.mdx).
 3. Upgrade the control plane Kubernetes version.
 4. Upgrade worker nodes to the target Kubernetes version.
+
+Cluster API orchestrates rolling updates with built-in safety mechanisms to reduce service disruption.
+
+:::warning
+Skipping step 1 risks two failure modes: the old controller silently ignores new schema fields written to `HCSMachineConfigPool` / `HCSMachineTemplate`; or a controller image swap mid-rollout interrupts persistent-disk state-machine progression. Always settle the management-side upgrade before touching workload rollout.
+:::
 
 ## Prerequisites
 
@@ -55,6 +72,7 @@ Before you start, ensure all of the following prerequisites are met:
 - The target VM image is present in the HCS environment under the same name as the **MicroOS Image Version** value in the OS Support Matrix row. The upgrade fails if the image is not present when the new `HCSMachineTemplate` is applied.
 - The target Kubernetes version is compatible with your workloads and add-ons.
 - Review the Kubernetes upgrade path and version skew policy.
+- Any node-local state that must survive replacement is declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`, not in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
 
 For initial deployment, see the [Create Cluster](../create-cluster/huawei-cloud-stack.mdx) guide.
 
@@ -67,16 +85,16 @@ The upgrade workflow in this document applies to HCS clusters with a highly avai
 :::warning
 **Disk Preservation Model**
 
-Upgrades rely on Cluster API's rolling replacement mechanism. The HCS provider currently has four disk classes, and **none of the HCS-side classes survives a delete-recreate**:
+Upgrades rely on Cluster API's rolling replacement mechanism. The HCS provider has four disk classes:
 
 | Disk class | Declared in | Survives upgrade? | Use for |
 |---|---|---|---|
 | System disk (root volume) | `HCSMachineTemplate.spec.template.spec.rootVolume` | ❌ Never | OS + kubelet/kubeadm/containerd. Rebuilt from the new VM image every replacement. |
-| Data volumes | `HCSMachineTemplate.spec.template.spec.dataVolumes` | ❌ Never | The HCS provider does not detach/reattach these. Volumes attached to the old VM may be deleted together with it. |
-| Pool-managed persistent disks | (not implemented for HCS) | — | Not available. DCS and vSphere have an equivalent; HCS does not. |
+| Data volumes | `HCSMachineTemplate.spec.template.spec.dataVolumes` | ❌ Never | Temporary node-local paths that can be recreated with each ECS. Volumes attached to the old VM may be deleted together with it. |
+| Pool-managed persistent disks | `HCSMachineConfigPool.spec.configs[].persistentDisks[]` | ✅ Yes | Node-local state that must survive delete-recreate replacement, such as `/var/cpaas`. |
 | External CSI volumes (HCS EVS CSI, etc.) | Workload PVCs / CSI driver | ✅ Unrelated to node lifecycle | Application data. Use this path for any state that must survive upgrades. |
 
-Do not treat node-local data on HCS data volumes as preserved state. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
+Do not treat node-local data on HCS `dataVolumes[]` as preserved state. Move `/var/cpaas` and any other retained node-local paths to pool-managed persistent disks before the rolling replacement.
 :::
 
 :::warning
@@ -97,7 +115,7 @@ The Fleet Essentials UI workflow has not been adapted to the Cluster Version Ope
 
 Control plane upgrades update the Kubernetes API server, etcd, scheduler, and controller manager, along with the underlying VM infrastructure.
 
-For HCS control planes backed by a fixed-size `HCSMachineConfigPool`, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` during upgrades. This default scale-down-then-scale-up path usually does not require additional control plane IPs. Only prepare extra hostname and static IP entries in the control plane pool if you plan to increase control plane replicas or intentionally set `maxSurge` greater than `0`.
+For HCS control planes backed by an `HCSMachineConfigPool` that uses pool-managed persistent disks, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` during upgrades. Persistent disks are bound to fixed `(hostname, slot)` identities, so the rollout must remove the old machine before the replacement machine can reuse the same disk.
 
 ### Infrastructure Image Updates
 
@@ -119,11 +137,12 @@ Upgrading the underlying machine images for control plane nodes provides securit
    - Set `metadata.name` to `<new-template-name>`
    - Remove server-generated metadata and status fields from the copied manifest.
    - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`. The HCS provider assigns these values when it creates instances.
+   - Keep preserved paths such as `/var/cpaas` out of `spec.template.spec.dataVolumes[]`. Declare those paths in the referenced `HCSMachineConfigPool.spec.configs[].persistentDisks[]`.
    - Update as needed:
      - `spec.template.spec.imageName`
      - `spec.template.spec.flavorName`
      - `spec.template.spec.rootVolume.size`
-     - `spec.template.spec.dataVolumes`
+     - `spec.template.spec.dataVolumes` for temporary disks only
 
 3. **Deploy Updated Template**
 
@@ -205,7 +224,7 @@ The CoreDNS and etcd image tags are control-plane-only because `clusterConfigura
 
    Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same MicroOS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
-   Keep `spec.rolloutStrategy.rollingUpdate.maxSurge: 0` for the default static IP control plane path. Only adjust rollout settings beyond this after you extend the control plane `HCSMachineConfigPool` with extra hostname and IP slots.
+   Keep `spec.rolloutStrategy.rollingUpdate.maxSurge: 0` when the referenced control plane pool uses persistent disks. The replacement machine must reuse the same fixed hostname and disk slot after the old machine is removed.
 
 3. **Update the Kube-OVN version annotation on the `Cluster` resource**
 
@@ -262,7 +281,7 @@ Three facts to internalize before rolling back:
 
 - **The old VMs are gone.** They were destroyed during the upgrade. Rollback uses the old template to build a fresh set of replacement machines; it does not restore the original VMs.
 - **The old `HCSMachineTemplate` resource must still exist.** Do not delete the previous template until the new rollout is healthy. If you already deleted it, recreate it from version control or backup before rolling back.
-- **HCS has no pool-managed persistent disks.** Anything written to a node's local data volumes during the upgrade window is lost when that VM is replaced. Application data must live on external persistent storage (HCS EVS CSI or equivalent) to survive the rollback.
+- **Only pool-managed persistent disks preserve node-local state.** Data written to `HCSMachineTemplate.spec.template.spec.dataVolumes[]` during the upgrade window is lost when that VM is replaced. Data written to disks declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` is retained and reattached to the replacement VM. Application data should still use external persistent storage such as HCS EVS CSI unless your operational design explicitly depends on node-local state.
 
 Procedure:
 
