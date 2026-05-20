@@ -5,8 +5,6 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
   name: hcsclusters.infrastructure.cluster.x-k8s.io
-  labels:
-    cluster.x-k8s.io/v1beta1: v1beta1
 spec:
   group: infrastructure.cluster.x-k8s.io
   names:
@@ -111,6 +109,8 @@ spec:
                   pools:
                     items:
                       properties:
+                        healthMonitorID:
+                          type: string
                         id:
                           type: string
                         protocolPort:
@@ -160,6 +160,27 @@ spec:
                       name of the VPC, optionally included in JSON output.
                     type: string
                 type: object
+              encryptionProviderConfigRef:
+                description: |-
+                  EncryptionProviderConfigRef references a Secret containing a pre-existing
+                  encryption-provider.conf for the cluster. When set, the controller uses
+                  this config instead of generating a new random encryption key.
+                  Required for disaster recovery: the standby cluster must use the same
+                  encryption key as the primary cluster so that restored etcd data can be
+                  decrypted by the API server.
+                  The referenced Secret must contain a key "encryption-provider.conf".
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               identityRef:
                 description: IdentityRef is a reference to the identity used to provision
                   the cluster.

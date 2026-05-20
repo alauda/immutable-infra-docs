@@ -97,6 +97,7 @@ data:
   projectID: <base64-encoded-project-id>
   region: <base64-encoded-region>
   externalGlobalDomain: <base64-encoded-domain>
+  schema: <base64-encoded-schema>
 ```
 
 | Parameter | Description |
@@ -106,12 +107,15 @@ data:
 | `.data.projectID` | Resource Space ID from **My Settings** > **Resource Spaces** (base64-encoded) |
 | `.data.region` | HCS region API value used by the provider (base64-encoded). Tenant administrators cannot retrieve this value from the HCS UI; get it from the HCS administrator |
 | `.data.externalGlobalDomain` | HCS platform access domain used by the provider (base64-encoded) |
+| `.data.schema` | Optional API scheme for the HCS IAM endpoint, usually `https` (base64-encoded). If omitted, the provider uses `https` |
+
+Existing credential Secrets created without `schema` continue to work unchanged. Only set `schema` if your HCS IAM endpoint uses `http` instead of the default `https`.
 
 You can reuse an existing HCS credential Secret. Its name does not need to match the cluster name, but `HCSCluster.spec.identityRef.name` must reference this Secret.
 
 ### Configure Machine Configuration Pool
 
-The `HCSMachineConfigPool` defines pre-configured hostnames and static IP addresses for VMs.
+The `HCSMachineConfigPool` defines pre-configured hostnames, static IP addresses, and any pool-managed persistent disks for VMs.
 
 :::warning
 **Pool Size Requirement**
@@ -131,20 +135,40 @@ kind: HCSMachineConfigPool
 metadata:
   name: <cluster-name>-cp-pool
   namespace: cpaas-system
+  labels:
+    cluster.x-k8s.io/cluster-name: <cluster-name>
 spec:
   configs:
     - hostname: master-1
       networks:
         - subnetName: <subnet-name>
-          ipAddress: 192.0.2.11
+          ipAddress: 192.168.1.11
+      persistentDisks:
+        - slot: 0
+          size: 100
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
     - hostname: master-2
       networks:
         - subnetName: <subnet-name>
-          ipAddress: 192.0.2.12
+          ipAddress: 192.168.1.12
+      persistentDisks:
+        - slot: 0
+          size: 100
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
     - hostname: master-3
       networks:
         - subnetName: <subnet-name>
-          ipAddress: 192.0.2.13
+          ipAddress: 192.168.1.13
+      persistentDisks:
+        - slot: 0
+          size: 100
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
 ```
 
 | Parameter | Type | Required | Description |
@@ -155,8 +179,19 @@ spec:
 | `.spec.configs[].networks[].subnetName` | string | No* | Recommended subnet name field for new manifests |
 | `.spec.configs[].networks[].subnetId` | string | No* | Subnet ID. Use this field instead of `subnetName` when the subnet name is ambiguous |
 | `.spec.configs[].networks[].ipAddress` | string | Yes | Static IP address for the VM |
+| `.spec.configs[].persistentDisks[]` | array | No | EVS disks that survive HCSMachine delete-recreate replacement |
+| `.spec.configs[].persistentDisks[].slot` | int | Yes* | Disk slot within one machine configuration. Slots must be unique and contiguous from `0` for the same hostname |
+| `.spec.configs[].persistentDisks[].size` | int | Yes* | EVS disk size in GB. For newly created EVS data disks, use `10` to `32768` GB. Existing claimed disks must match their current size |
+| `.spec.configs[].persistentDisks[].type` | string | Yes* | EVS disk type name available in the target availability zone |
+| `.spec.configs[].persistentDisks[].mountPath` | string | No | Guest mount path. Use `/var/cpaas` for platform state that must survive VM replacement |
+| `.spec.configs[].persistentDisks[].format` | string | No | File system format. If omitted, the provider uses `xfs` |
+| `.spec.configs[].persistentDisks[].mountOptions` | array | No | Mount options. If omitted, the provider uses `defaults,noatime` |
 
 *For new manifests, set either `subnetName` or `subnetId`. Existing manifests may continue to use `subenetName`, and may add `subnetName` only if both fields use the same value. Do not provide conflicting subnet selector values.
+
+**Persistent disk fields are required when `persistentDisks` is specified.**
+
+Use `persistentDisks[]` for node-local state that must survive VM replacement. Do not declare the same mount path in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
 
 **Note:** The CRD schema lists `subnetName`, `subenetName`, and `subnetId` as optional fields and does not express their allowed combinations. Follow the provider-level rules above when writing manifests.
 
@@ -186,7 +221,8 @@ The following data disk mount points are recommended for control plane nodes:
 - `/var/lib/etcd` - etcd data (10GB+)
 - `/var/lib/kubelet` - kubelet data (100GB+)
 - `/var/lib/containerd` - container runtime data (100GB+)
-- `/var/cpaas` - platform data and logs (40GB+)
+
+The `/var/cpaas` path stores platform state and logs. Declare it in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` when it must survive VM replacement.
 :::
 
 ```yaml
@@ -219,10 +255,6 @@ spec:
           type: SSD
           mountPath: /var/lib/containerd
           format: xfs
-        - size: 40
-          type: SSD
-          mountPath: /var/cpaas
-          format: xfs
 ```
 
 | Parameter | Type | Required | Description |
@@ -240,6 +272,8 @@ spec:
 | `.spec.template.spec.dataVolumes[].format` | string | Yes* | File system format (`xfs` or `ext4`) |
 
 *Required when dataVolumes is specified.
+
+`dataVolumes[]` are recreated with the ECS. Do not use them for `/var/cpaas` or any other path that must survive rolling replacement. Put those paths in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`.
 
 **Note:** Do not set runtime identity fields such as `providerID` or `serverId` in `HCSMachineTemplate` manifests. The provider assigns these values when it creates HCS instances.
 
