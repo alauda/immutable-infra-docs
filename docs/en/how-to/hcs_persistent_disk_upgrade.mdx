@@ -263,15 +263,17 @@ Inspect the pool status:
 kubectl get hcsmachineconfigpool <pool-name> -n cpaas-system -o yaml
 ```
 
-Each migrated disk appears under `status.persistentDiskStatus`. The stable states are:
+Each migrated disk appears under `status.persistentDiskStatus`:
 
 | Phase | Meaning |
 |-------|---------|
+| `Creating` | The provider is creating the EVS volume for this hostname and slot. |
+| `Available` | The EVS volume is ready and is not attached to any ECS. |
+| `Attaching` | The replacement ECS exists; the provider is confirming the attachment. |
 | `Attached` | The EVS disk is attached to the current ECS. |
-| `Available` | The EVS disk has been detached from the old ECS and is ready for the replacement ECS. |
+| `Detaching` | The disk is being detached before the old ECS is removed. |
+| `Deleting` | Pool deletion is in progress; the EVS volume is being removed. |
 | `Error` | The provider cannot safely continue. Inspect `lastError`. |
-
-During replacement, transient phases such as `Detaching` and `Attaching` may appear.
 
 Confirm the replacement node can read data from the preserved path:
 

@@ -109,6 +109,8 @@ data:
 | `.data.externalGlobalDomain` | HCS platform access domain used by the provider (base64-encoded) |
 | `.data.schema` | Optional API scheme for the HCS IAM endpoint, usually `https` (base64-encoded). If omitted, the provider uses `https` |
 
+Existing credential Secrets created without `schema` continue to work unchanged. Only set `schema` if your HCS IAM endpoint uses `http` instead of the default `https`.
+
 You can reuse an existing HCS credential Secret. Its name does not need to match the cluster name, but `HCSCluster.spec.identityRef.name` must reference this Secret.
 
 ### Configure Machine Configuration Pool

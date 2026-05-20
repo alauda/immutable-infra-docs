@@ -62,6 +62,8 @@ Create the HCS credential `Secret` only after you collect all required values.
 | `region` | HCS region API value used by the provider | HCS administrator |
 | `schema` | Optional API scheme for the HCS IAM endpoint. If omitted, the provider uses `https` | HCS administrator |
 
+Existing credential Secrets created without `schema` continue to work unchanged. Only set `schema` if your HCS IAM endpoint uses `http` instead of the default `https`.
+
 **Note:** Tenant administrators cannot retrieve `region` from the HCS UI. Get the exact provider-recognized value from the HCS administrator before you encode the Secret.
 
 ## Compute Values

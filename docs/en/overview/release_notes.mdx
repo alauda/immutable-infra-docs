@@ -4,18 +4,6 @@ weight: 50
 
 # Release Notes
 
-## 2026-05-30
-
-### Component Version
-- Alauda Container Platform HCS Infrastructure Provider: `v1.0.1`
-
-### Changes
-- Added first support for pool-managed persistent disks on Huawei Cloud Stack in HCS provider `v1.0.1`.
-- `HCSMachineConfigPool` now declares EVS disks that survive node replacement through `spec.configs[].persistentDisks[]` and tracks runtime attachment state through `status.persistentDiskStatus[]`.
-- The platform-required `/var/cpaas` disk is now documented as a pool-managed persistent disk instead of a template-owned `HCSMachineTemplate.spec.template.spec.dataVolumes[]` entry.
-- HCS rolling replacement workflows that use pool-managed persistent disks must use `maxSurge: 0` so the replacement ECS can reuse the same fixed `(hostname, slot)` disk identity.
-- Existing clusters can migrate to the new model by following [Migrate Existing Huawei Cloud Stack Clusters to Pool-Managed Persistent Disks](../how-to/hcs_persistent_disk_upgrade.mdx).
-
 ## 2026-04-30
 
 ### Component Version
