@@ -166,3 +166,8 @@ Engage platform support with the following information:
 - The names and creation timestamps of every `clustercredentials.platform.tkestack.io` object that shares the same `cluster.x-k8s.io/cluster-name` label as the affected cluster.
 
 Recovery currently requires deleting and recreating the workload cluster after cleaning up the orphan `ClusterCredential` entries. Do not perform this on a production cluster without platform-support guidance: the recreate path triggers deletion of the underlying virtual machines on the IaaS platform, and provider-specific details (for example, DCS IP-pool and hostname planning, or HCS `HCSMachineConfigPool` re-allocation) must be reviewed before the recreate is applied.
+
+## See Also
+
+- [Troubleshoot a Cluster Stuck in Deleting](./troubleshoot-cluster-stuck-deleting.mdx) — covers ACP-built clusters that stall in `Deleting` rather than failing to import.
+- [Troubleshoot a DCSMachine Stuck in Deleting](./troubleshoot-machine-stuck-deleting.mdx) — node-level deletion stalls; different scope.
