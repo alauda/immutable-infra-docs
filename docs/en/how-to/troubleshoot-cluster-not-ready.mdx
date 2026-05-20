@@ -16,9 +16,11 @@ The diagnostic flow assumes the workload cluster was created by applying provide
 
 ## Scope
 
-The diagnostic flow in this guide targets the **`global` cluster's import controller**, which is shared across all Immutable Infrastructure providers (Huawei DCS, VMware vSphere, Huawei Cloud Stack). The four invariants in [Invariants of a Healthy Imported Cluster](#invariants-of-a-healthy-imported-cluster) — `clusters.platform.tkestack.io` presence, the `capi.cpaas.io/imported` label, the `ClusterCredential` count, and the workload-cluster `sentry` ServiceAccount — apply to every provider.
+The diagnostic flow in this guide targets the **`global` cluster's import controller**, which is shared across all Immutable Infrastructure providers. The four invariants in [Invariants of a Healthy Imported Cluster](#invariants-of-a-healthy-imported-cluster) — `clusters.platform.tkestack.io` presence, the `capi.cpaas.io/imported` label, the `ClusterCredential` count, and the workload-cluster `sentry` ServiceAccount — apply to every provider.
 
-The example log strings in this guide come from the **DCS provider** (`KubeOvn`, `DCSCluster`). Other providers produce equivalent failures but use provider-specific reconciler object names (for example, `HCSCluster` on Huawei Cloud Stack). The diagnostic pattern is the same; only the reconciler object names differ.
+The log strings in this guide use placeholders for reconciler object names because each infrastructure provider uses its own object types (for example, the provider's own `Cluster` and `Machine` infrastructure CRDs). When you read your provider's logs, substitute the placeholders for the real object names that appear in your provider's reconciler output. The diagnostic pattern itself does not depend on the provider — only the object names in the log strings do.
+
+If your environment is Huawei Cloud Stack and the symptoms below also include a stalled `kubeadm init` on a node whose pool config carries a dotted hostname, see [Troubleshoot HCS Workload Clusters](./troubleshoot-workload-cluster-huawei-cloud-stack.mdx) for the provider-specific pattern after you finish the generic diagnostic flow on this page.
 
 ## Symptoms
 
@@ -36,9 +38,11 @@ The cluster reaches a partial-success state and stays there. The following indic
 A typical secondary signature appears in the infrastructure provider reconciler logs on the `global` cluster:
 
 ```text
-ERROR  failed to reconcile KubeOvn object: ServiceAccount "sentry" not found
-ERROR  failed to reconcile DCSCluster: ServiceAccount "sentry" not found
+ERROR  failed to reconcile <CNI-AppRelease-object>: ServiceAccount "sentry" not found
+ERROR  failed to reconcile <Infra-Cluster-object>: ServiceAccount "sentry" not found
 ```
+
+`<CNI-AppRelease-object>` and `<Infra-Cluster-object>` are placeholders for the actual object types your provider uses. For example, the CNI AppRelease object is typically named after the CNI being deployed, and the infrastructure cluster object name matches your provider's CRD (your provider's own `*Cluster` CRD).
 
 The reconciler tries to apply the CNI through an `AppRelease` resource that is executed by the workload cluster's own `sentry` ServiceAccount. If that ServiceAccount is not present, the CNI is never deployed and the workload nodes stay `NotReady`.
 
@@ -113,7 +117,7 @@ kubectl logs -n cpaas-system <infra-provider-manager-pod> --tail=200 | \
   grep -E 'ServiceAccount|sentry|<cluster-name>'
 ```
 
-If you see repeated `ServiceAccount "sentry" not found` errors paired with a failure to reconcile the CNI object (for example, `KubeOvn`), the workload cluster's CNI is not being deployed because the import flow has not completed. Continue to Step 4.
+If you see repeated `ServiceAccount "sentry" not found` errors paired with a failure to reconcile the CNI AppRelease object, the workload cluster's CNI is not being deployed because the import flow has not completed. Continue to Step 4.
 
 ### Step 4 — Verify the global cluster has imported the workload cluster
 
@@ -148,7 +152,7 @@ When this pattern holds, the workload cluster's initial import on the `global` c
 ## What Does Not Resolve This Pattern
 
 :::warning
-Restarting the cluster-transformer pod on the `global` cluster does **not** re-import a workload cluster whose initial import already failed in this pattern. This was validated on 2026-05-12 against a live test environment: after a manual pod restart no log entries referenced the affected cluster and the missing `clusters.platform.tkestack.io` entry was not created.
+Restarting the cluster-transformer pod on the `global` cluster does **not** re-import a workload cluster whose initial import already failed in this pattern. After a manual pod restart no log entries reference the affected cluster and the missing `clusters.platform.tkestack.io` entry is not created.
 :::
 
 Do not assume the controller will eventually recover on its own when more than one orphan `ClusterCredential` is present for the same cluster.
