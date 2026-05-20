@@ -101,6 +101,10 @@ The bootstrap script provisions an embedded registry, the Cluster API control pl
 
 Upload the Kubeadm provider package and the infrastructure provider package to the local registry.
 
+<Directive type="info" title="Why cluster.type is Baremetal for every provider">
+  The AppRelease values in the tabs below all set `global.cluster.type: Baremetal`. This is a chart-internal classifier, not the IaaS provider name. Keep `Baremetal` for the Huawei DCS, VMware vSphere, and Huawei Cloud Stack `global` installations. The value drives how the platform configures node-level components; it does not select the infrastructure provider.
+</Directive>
+
 <Tabs>
   <Tab label="Huawei DCS">
 
@@ -161,7 +165,7 @@ spec:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: Baremetal # Provider internal value; keep Baremetal for DCS global installation.
+        type: Baremetal
       host: ${PLATFORM_HOST}
       ingress:
         ingressClassName: ${INGRESS_CLASS_NAME}
@@ -207,7 +211,7 @@ spec:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: Baremetal # Provider internal value; keep Baremetal for DCS global installation.
+        type: Baremetal
       host: ${PLATFORM_HOST}
       ingress:
         ingressClassName: ${INGRESS_CLASS_NAME}
@@ -295,7 +299,7 @@ spec:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: Baremetal # Provider internal value; keep Baremetal for VMware vSphere global installation.
+        type: Baremetal
       host: ${PLATFORM_HOST}
       ingress:
         ingressClassName: ${INGRESS_CLASS_NAME}
@@ -341,7 +345,7 @@ spec:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: Baremetal # Provider internal value; keep Baremetal for VMware vSphere global installation.
+        type: Baremetal
       host: ${PLATFORM_HOST}
       ingress:
         ingressClassName: ${INGRESS_CLASS_NAME}
@@ -430,7 +434,7 @@ spec:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: Baremetal # Provider internal value; keep Baremetal for HCS global installation.
+        type: Baremetal
       host: ${PLATFORM_HOST}
       ingress:
         ingressClassName: ${INGRESS_CLASS_NAME}
@@ -476,7 +480,7 @@ spec:
         isGlobal: true
         name: global
         networkType: kube-ovn
-        type: Baremetal # Provider internal value; keep Baremetal for HCS global installation.
+        type: Baremetal
       host: ${PLATFORM_HOST}
       ingress:
         ingressClassName: ${INGRESS_CLASS_NAME}
@@ -524,6 +528,14 @@ Use the provider creation guides as the detailed resource reference:
 - Huawei Cloud Stack: [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx)
 
 Apply the [naming convention from Common Prerequisites](#common-prerequisites) to every resource in the manifest you author below.
+
+Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format` to the value that the target provider accepts. The provider controllers enforce this:
+
+| Provider | Bootstrap userdata format |
+|----------|---------------------------|
+| Huawei DCS | `ignition` (provider-enforced; the DCS provider rejects any other format with `invalid format, expected ignition, got <other>`). |
+| VMware vSphere | `cloud-init` (provider default; setting `ignition` is not supported). |
+| Huawei Cloud Stack | `cloud-init` (provider-enforced; the HCS provider rejects `ignition` with `ignition format is not supported`). |
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -637,7 +649,7 @@ The VMware vSphere `global` manifest must contain the following resources in the
 
 | Resource | Purpose |
 |----------|---------|
-| `Secret` | Stores the vCenter username and password referenced by `VSphereCluster.spec.identityRef`. |
+| `Secret` (must be named `global-vsphere-credentials`) | Stores the vCenter username and password. Must be referenced by `VSphereCluster.spec.identityRef.name`. The fixed name is required for the vSphere `global` install path: the import ConfigMap in Step 7 and the DR section hardcode this exact name. |
 | `VSphereMachineConfigPool` for control plane nodes | Assigns static hostnames, datacenter values, IP addresses, network settings, and optional data disks. |
 | `VSphereMachineTemplate` for control plane nodes | Defines the VM template, clone mode, CPU, memory, datastore, folder, network devices, and system disk settings. |
 | `KubeadmControlPlane` | Bootstraps the Kubernetes control plane. Set `spec.version` to `${K8S_VERSION}`. |
@@ -884,7 +896,7 @@ VMware vSphere and Huawei Cloud Stack require this ConfigMap for both normal and
 <Tabs>
   <Tab label="Huawei DCS">
 
-Do not create the DCS `dcs-import-extra-resources` ConfigMap for the default DCS installation path. DCS provider resources are migrated by the built-in flow. Create this ConfigMap only when your DCS deployment needs to import additional resources beyond the built-in provider resource migration, and keep the ConfigMap name exactly `dcs-import-extra-resources`.
+Do not create the DCS `dcs-import-extra-resources` ConfigMap for the default DCS installation path. DCS provider resources are migrated by the built-in flow.
 
   </Tab>
   <Tab label="VMware vSphere">
