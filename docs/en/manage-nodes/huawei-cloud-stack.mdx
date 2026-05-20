@@ -7,6 +7,7 @@ queries:
   - hcs worker nodes
   - hcs node management
   - hcs machine deployment
+  - hcs worker persistent disks
 ---
 
 # Managing Nodes on Huawei Cloud Stack
@@ -38,7 +39,7 @@ Before you prepare worker YAML, complete the HCS input checklist in [Infrastruct
 
 ### Step 1: Configure Machine Configuration Pool
 
-The `HCSMachineConfigPool` defines the network configuration for worker node VMs. You must plan and configure the IP addresses, hostnames, and other network parameters before deployment.
+The `HCSMachineConfigPool` defines the network configuration and any pool-managed persistent disks for worker node VMs. You must plan and configure the IP addresses, hostnames, persistent disk slots, and other parameters before deployment.
 
 :::warning
 **Pool Size Requirement**
@@ -56,20 +57,40 @@ kind: HCSMachineConfigPool
 metadata:
   name: <cluster-name>-worker-pool
   namespace: cpaas-system
+  labels:
+    cluster.x-k8s.io/cluster-name: <cluster-name>
 spec:
   configs:
     - hostname: <worker-1-hostname>
       networks:
         - subnetName: <subnet-name>
           ipAddress: <worker-1-ip>
+      persistentDisks:
+        - slot: 0
+          size: 100
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
     - hostname: <worker-2-hostname>
       networks:
         - subnetName: <subnet-name>
           ipAddress: <worker-2-ip>
+      persistentDisks:
+        - slot: 0
+          size: 100
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
     - hostname: <worker-3-hostname>
       networks:
         - subnetName: <subnet-name>
           ipAddress: <worker-3-ip>
+      persistentDisks:
+        - slot: 0
+          size: 100
+          type: SSD
+          mountPath: /var/cpaas
+          format: xfs
 ```
 
 | Parameter | Type | Required | Description |
@@ -80,18 +101,45 @@ spec:
 | `.spec.configs[].networks[].subnetName` | string | No* | Recommended subnet name field for new manifests |
 | `.spec.configs[].networks[].subnetId` | string | No* | Subnet ID. Use this field instead of `subnetName` when the subnet name is ambiguous |
 | `.spec.configs[].networks[].ipAddress` | string | Yes | Static IP address for the worker VM |
+| `.spec.configs[].persistentDisks[]` | array | No | EVS disks that survive HCSMachine delete-recreate replacement |
+| `.spec.configs[].persistentDisks[].slot` | int | Yes* | Disk slot within one machine configuration. Slots must be unique and contiguous from `0` for the same hostname |
+| `.spec.configs[].persistentDisks[].size` | int | Yes* | EVS disk size in GB. For newly created EVS data disks, use `10` to `32768` GB. Existing claimed disks must match their current size |
+| `.spec.configs[].persistentDisks[].type` | string | Yes* | EVS disk type name available in the target availability zone |
+| `.spec.configs[].persistentDisks[].mountPath` | string | No | Guest mount path. Use `/var/cpaas` for platform state that must survive VM replacement |
+| `.spec.configs[].persistentDisks[].format` | string | No | File system format. If omitted, the provider uses `xfs` |
+| `.spec.configs[].persistentDisks[].mountOptions` | array | No | Mount options. If omitted, the provider uses `defaults,noatime` |
 
 *For new manifests, set either `subnetName` or `subnetId`. Existing manifests may continue to use `subenetName`, and may add `subnetName` only if both fields use the same value. Do not provide conflicting subnet selector values.
+
+**Persistent disk fields are required when `persistentDisks` is specified.**
+
+Use `persistentDisks[]` for node-local state that must survive worker replacement. Do not declare the same mount path in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
 
 **Note:** The CRD schema lists `subnetName`, `subenetName`, and `subnetId` as optional fields and does not express their allowed combinations. Follow the provider-level rules above when writing manifests.
 
 **Note:** `networks[]` can contain more than one entry when a worker node needs multiple NICs. The current provider only uses each entry to attach a NIC with a subnet selector and static IP. It does not support per-NIC role declarations, default gateway selection, static routes, route metrics, or per-NIC DNS settings.
 
+### Pool-Managed Persistent Disks for Workers
+
+Declare worker-node disks that must survive replacement in the matching `HCSMachineConfigPool.spec.configs[].persistentDisks[]` entry. Use this model for `/var/cpaas` and for any other node-local state that must be retained during rolling replacement.
+
+- Keep `HCSMachineTemplate.spec.template.spec.dataVolumes[]` for temporary disks that may be recreated with each ECS.
+- Keep slots unique and contiguous from `0` for each hostname. The provider uses `(hostname, slot)` as the persistent-disk identity.
+- Treat `slot`, `size`, `type`, `format`, and `mountPath` as immutable after the provider accepts the entry.
+- You can update `mountOptions`. The change takes effect after the worker is replaced.
+- You can append new `persistentDisks[]` entries. The provider creates or claims the EVS disk, but it does not hot-mount the disk into the running ECS. Trigger a rolling replacement with `MachineDeployment.spec.strategy.rollingUpdate.maxSurge: 0` before you expect the new disk to be formatted and mounted inside the guest OS.
+
+To inspect persistent-disk runtime state during worker operations, check the pool status:
+
+```bash
+kubectl get hcsmachineconfigpool <cluster-name>-worker-pool -n cpaas-system -o yaml
+```
+
 ### Step 2: Configure Machine Template
 
 The `HCSMachineTemplate` defines the VM specifications for worker nodes.
 
-Configure worker nodes with a system volume and data volumes for `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/cpaas`. You may add more data volumes, but preserve these paths so node bootstrap and platform components can use the expected runtime directories. These paths do not imply that data volumes will be preserved when nodes are replaced.
+Configure worker nodes with a system volume and temporary data volumes for paths that may be recreated with each ECS, such as `/var/lib/kubelet` and `/var/lib/containerd`. Put `/var/cpaas` in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` when platform state must survive worker replacement.
 
 Use the provider-recognized `flavorName` and `availabilityZone` API values when you prepare the worker template. These values are not the tenant UI display names.
 
@@ -121,10 +169,6 @@ spec:
           type: SSD
           mountPath: /var/lib/containerd
           format: xfs
-        - size: 10
-          type: SSD
-          mountPath: /var/cpaas
-          format: xfs
 ```
 
 | Parameter | Type | Required | Description |
@@ -142,6 +186,8 @@ spec:
 | `.spec.template.spec.dataVolumes[].format` | string | Yes* | File system format |
 
 *Required when dataVolumes is specified.
+
+`dataVolumes[]` are recreated with the ECS. Do not use them for `/var/cpaas` or any other path that must survive rolling replacement.
 
 **Note:** Do not set runtime identity fields such as `providerID` or `serverId` in `HCSMachineTemplate` manifests. The provider assigns these values when it creates HCS instances.
 
@@ -258,7 +304,7 @@ Increase the number of worker nodes to handle increased workload.
 
 2. **Extend Configuration Pool**
 
-   Add new IP configurations to the pool for the additional nodes.
+   Add new machine configurations to the pool for the additional nodes. If the new workers need preserved node-local state such as `/var/cpaas`, include the matching `persistentDisks[]` entries in each new configuration.
 
    ```bash
    kubectl get hcsmachineconfigpool <cluster-name>-worker-pool -n cpaas-system -o yaml
@@ -269,6 +315,8 @@ Increase the number of worker nodes to handle increased workload.
    ```bash
    kubectl apply -f <updated-pool-config.yaml>
    ```
+
+   When you edit the pool, keep all existing `configs[]` entries and their accepted `persistentDisks[]` entries unchanged unless you are intentionally appending a new disk slot.
 
 3. **Scale Up the MachineDeployment**
 
@@ -296,7 +344,7 @@ Decrease the number of worker nodes to reduce cluster capacity.
 :::warning
 **Data Loss Warning**
 
-Scaling down removes nodes and their associated disks. Ensure:
+Scaling down removes worker nodes and their ECS instances. Template-owned `dataVolumes[]` are not preserved. Pool-managed persistent disks declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` remain tracked by the pool and can be reused while the corresponding hostname entry stays in the pool. Ensure:
 - Workloads can tolerate node loss through proper replication
 - No critical data is stored only on the nodes being removed
 - Applications are designed for horizontal scaling
@@ -326,7 +374,7 @@ Scaling down removes nodes and their associated disks. Ensure:
 
 To upgrade worker machine specifications (CPU, memory, disk, VM image), follow these steps:
 
-**Note:** Worker infrastructure upgrades rely on Cluster API rolling replacement. The current HCS provider does not preserve or reattach data disks during node replacement. When a worker node is replaced, the old VM and its attached volumes may be deleted together. Move stateful data to external persistent storage, or complete backup and migration before starting the upgrade.
+**Note:** Worker infrastructure upgrades rely on Cluster API rolling replacement. HCS `dataVolumes[]` are not preserved during replacement. To preserve node-local state such as `/var/cpaas`, declare it in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` before the rollout and keep `MachineDeployment.spec.strategy.rollingUpdate.maxSurge: 0`.
 
 1. **Create New Machine Template**
 
@@ -334,7 +382,9 @@ To upgrade worker machine specifications (CPU, memory, disk, VM image), follow t
    - `imageName` - VM image
    - `flavorName` - Instance type
    - `rootVolume.size` - System disk size
-   - `dataVolumes` - Data disk configurations
+   - `dataVolumes` - Temporary data disk configurations
+
+   If you need to add a new pool-managed persistent disk, append it to the worker `HCSMachineConfigPool` first. The provider creates or claims the EVS disk, but the running ECS does not mount it until this rolling replacement creates a replacement worker.
 
      ```bash
      kubectl get hcsmachinetemplate <current-template> -n cpaas-system -o yaml > new-template.yaml
