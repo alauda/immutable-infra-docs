@@ -675,6 +675,7 @@ spec:
       server: "<vsphere_server>"
       template: "<template_name>"
       cloneMode: <clone_mode>
+      folder: "<vm_folder>"
       datastore: "<cp_system_datastore>"
       diskGiB: <cp_system_disk_gib>
       memoryMiB: <cp_memory_mib>
@@ -1006,6 +1007,7 @@ spec:
       server: "<vsphere_server>"
       template: "<template_name>"
       cloneMode: <clone_mode>
+      folder: "<vm_folder>"
       datastore: "<worker_system_datastore>"
       diskGiB: <worker_system_disk_gib>
       memoryMiB: <worker_memory_mib>
@@ -1211,6 +1213,11 @@ Prioritize the following checks:
 - If the `cpaas.io/registry-address` annotation is missing, verify the public registry credential and the platform controller that injects the annotation.
 - If a machine is stuck in `Provisioning`, check `VSphereMachine` conditions for `MachineConfigPoolReady` — it shows whether slot allocation failed due to pool binding or datacenter mismatch.
 - If a VM is waiting for IP allocation, verify VMware Tools, the static IP settings, and `VSphereVM.status.addresses`.
+- If workload `Node` objects remain without `spec.providerID`, first verify the CPI delivery resources and then check for duplicate vCenter guest hostnames. When an old VM in the same datacenter still reports the same guest hostname as a new node, `cloud-provider-vsphere` can fall back to node-name lookup, cache the old VM, and reject the new node because the VM IP does not match the kubelet node IP. Check the leader `vsphere-cloud-controller-manager` logs, the node `SystemUUID`, the real VM UUID, and vCenter guest hostname/IP values. After you fix or remove the duplicate hostname or old VM conflict, restart the workload cluster's `vsphere-cloud-controller-manager` Pods to clear the bad in-memory cache:
+  ```bash
+  kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig -n kube-system delete pod \
+    -l k8s-app=vsphere-cloud-controller-manager
+  ```
 - If datastore space is exhausted, verify whether old VM directories or `.vmdk` files remain in the target datastore.
 - If the template system disk size does not match the manifest values, first check the actual clone mode. When the VM was created as `linkedClone`, the system disk stays at the template's size and `diskGiB` is ignored. Only `fullClone` uses `diskGiB`, and in that case `diskGiB` must not be smaller than the template disk size.
 - If the control plane endpoint does not come up, verify the load balancer, the VIP, and port `6443`.
