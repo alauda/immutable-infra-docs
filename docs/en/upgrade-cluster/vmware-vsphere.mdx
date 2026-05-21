@@ -155,6 +155,20 @@ Before you start, collect every required value from the target ACP row in the OS
 
    If the target ACP row in the OS Support Matrix shows a different **kube-ovn** value than the current cluster, patch the annotation on the `Cluster` resource so the vSphere provider reconciles the new Kube-OVN AppRelease.
 
+   :::info
+   **Prerequisite — Kube-OVN reconcile gating annotation (vSphere only)**
+
+   On vSphere, the provider reconciles the Kube-OVN `AppRelease` only when the `Cluster` resource carries the annotation `cpaas.io/network-type: kube-ovn`. This annotation is normally set at cluster creation. If it is missing, the steps below will succeed at writing the version annotation but the Kube-OVN `AppRelease` will not be reconciled. Verify before proceeding:
+
+   ```bash
+   kubectl get cluster <cluster_name> -n <namespace> \
+     -o jsonpath='{.metadata.annotations.cpaas\.io/network-type}{"\n"}'
+   # Expected output: kube-ovn
+   ```
+
+   This precondition is vSphere-specific. The DCS and Huawei Cloud Stack providers use the `DCSCluster` / `HCSCluster` `spec.networkType` field instead and do not require this annotation.
+   :::
+
    ```bash
    kubectl annotate cluster <cluster_name> -n <namespace> \
      cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
@@ -170,7 +184,7 @@ Before you start, collect every required value from the target ACP row in the OS
 
    # Confirm the installed revision matches the target version and the chart phase is Success
    kubectl get apprelease cni-kube-ovn -n cpaas-system \
-     -o jsonpath='Installed: {.status.charts.cpaas-kube-ovn.installedRevision}{"\n"}Phase: {.status.charts.cpaas-kube-ovn.phase}{"\n"}'
+     -o jsonpath='Installed: {.status.charts.*.installedRevision}{"\n"}Phase: {.status.charts.*.phase}{"\n"}'
    ```
 
    The Kube-OVN upgrade is complete when `installedRevision` equals the **kube-ovn** value from the OS Support Matrix row and `phase` is `Success`. Any other `phase` value (`Downloading`, `Installing`, `Upgrading`, `Syncing`, `HealthChecking`) means the reconciliation is still in progress; the failure phases are `DownloadFailed`, `DeployFailed`, and `NotReady`.

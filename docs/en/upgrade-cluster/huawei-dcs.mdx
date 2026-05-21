@@ -215,7 +215,7 @@ Before you start, collect every required value from the target ACP row in the OS
 
    # Confirm the installed revision matches the target version and the chart phase is Success
    kubectl get apprelease cni-kube-ovn -n cpaas-system \
-     -o jsonpath='Installed: {.status.charts.cpaas-kube-ovn.installedRevision}{"\n"}Phase: {.status.charts.cpaas-kube-ovn.phase}{"\n"}'
+     -o jsonpath='Installed: {.status.charts.*.installedRevision}{"\n"}Phase: {.status.charts.*.phase}{"\n"}'
    ```
 
    The Kube-OVN upgrade is complete when `installedRevision` equals the **kube-ovn** value from the OS Support Matrix row and `phase` is `Success`. Any other `phase` value (`Downloading`, `Installing`, `Upgrading`, `Syncing`, `HealthChecking`) means the reconciliation is still in progress; the failure phases are `DownloadFailed`, `DeployFailed`, and `NotReady`.
