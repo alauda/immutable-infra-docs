@@ -176,18 +176,30 @@ Before you start, collect every required value from the target ACP row in the OS
 
    Kube-OVN is a Core lifecycle component, but on immutable OS the vSphere provider drives its delivery from this annotation; the annotation does not update automatically when `spec.version` changes.
 
-   The vSphere provider reconciles a single Kube-OVN `AppRelease` named `cni-kube-ovn` in the `cpaas-system` namespace of the workload cluster. Confirm the reconciliation has completed against the new target version before you move on. Run the following on the workload cluster (not the bootstrap KIND or the `global` cluster):
+   The vSphere provider reconciles a single Kube-OVN `AppRelease` named `cni-kube-ovn` in the `cpaas-system` namespace of the workload cluster. Run the following on the workload cluster (not the bootstrap KIND or the `global` cluster) to follow the reconciliation:
 
    ```bash
-   # Overall AppRelease state — the Sync and Health columns must report a Success-equivalent reason
+   # Overall AppRelease state — Sync and Health columns must reach a Success-equivalent reason
    kubectl get apprelease cni-kube-ovn -n cpaas-system
 
-   # Confirm the installed revision matches the target version and the chart phase is Success
+   # Installed revision and chart phase
    kubectl get apprelease cni-kube-ovn -n cpaas-system \
      -o jsonpath='Installed: {.status.charts.*.installedRevision}{"\n"}Phase: {.status.charts.*.phase}{"\n"}'
    ```
 
-   The Kube-OVN upgrade is complete when `installedRevision` equals the **kube-ovn** value from the OS Support Matrix row and `phase` is `Success`. Any other `phase` value (`Downloading`, `Installing`, `Upgrading`, `Syncing`, `HealthChecking`) means the reconciliation is still in progress; the failure phases are `DownloadFailed`, `DeployFailed`, and `NotReady`.
+   The normal sequence is `Upgrading → HealthChecking → Success`. On small clusters the full transition typically completes within about one minute. Read the phases as follows:
+
+   | Phase | Meaning | `installedRevision` |
+   |---|---|---|
+   | `Upgrading` | Helm release upgrade in progress. `Sync` condition is `Unknown(Syncing)`. | Still the previous version |
+   | `HealthChecking` | Helm release applied; controller is verifying Kube-OVN pods. `Sync` condition is `True(Synced)`. | Already the target version |
+   | `Success` | All three conditions (`Validate`, `Sync`, `Health`) are `True`. | Target version |
+
+   :::warning
+   Do not declare the upgrade complete on `installedRevision` alone. The field flips to the target value during `HealthChecking`, before pods have been verified Ready. The chart is only considered upgraded when `phase` is `Success` **and** `installedRevision` matches the target.
+   :::
+
+   The `AppRelease` API also defines `Downloading`, `Installing`, `Syncing`, `DownloadFailed`, `DeployFailed`, and `NotReady`. The first three are transient and the upgrade should converge on its own. The last three indicate a failure that needs manual investigation; start with `kubectl describe apprelease cni-kube-ovn -n cpaas-system` to read the per-condition `message` field.
 
 3. **Monitor the control plane rollout**
 
