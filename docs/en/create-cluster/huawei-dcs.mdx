@@ -70,6 +70,8 @@ If global cluster nodes use a multi-NIC layout (for example, one NIC on the ACP 
 
 Configure a LoadBalancer for the Kubernetes API Server before creating the cluster. The LoadBalancer distributes API server traffic across control plane nodes to ensure high availability.
 
+The DCS provider does not create this load balancer. Provision it yourself before cluster creation and reference its address in `DCSCluster.spec.controlPlaneLoadBalancer`. For a single-control-plane deployment that has no load balancer in front of the API server, see [Single-Control-Plane (No External LB) Layout](#single-control-plane-layout).
+
 ### 6. Public Registry Configuration
 
 Configure the public registry credentials. This includes:
