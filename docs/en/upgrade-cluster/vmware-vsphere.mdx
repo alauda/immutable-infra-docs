@@ -87,7 +87,7 @@ The cells you read from that row map to the upgrade manifests as follows:
 | **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
 | **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
 | **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
-| **kube-ovn** | `Cluster.metadata.annotations["cpaas.io/kube-ovn-version"]` | Cluster scope; the vSphere provider reconciles the Kube-OVN AppRelease from this annotation |
+| **kube-ovn (chart)** | `Cluster.metadata.annotations["cpaas.io/kube-ovn-version"]` | Cluster scope; the vSphere provider reconciles the Kube-OVN AppRelease from this annotation. This is the `acp/chart-cpaas-kube-ovn` chart version (for example `v4.3.3`), not the Kube-OVN component version. |
 
 The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags. The Kube-OVN annotation lives on the `Cluster` resource, not on `KubeadmControlPlane`, because the vSphere provider watches it independently of the Kubernetes control plane rollout.
 
@@ -153,7 +153,7 @@ Before you start, collect every required value from the target ACP row in the OS
 
 2. **Update the Kube-OVN version annotation on the `Cluster` resource**
 
-   If the target ACP row in the OS Support Matrix shows a different **kube-ovn** value than the current cluster, patch the annotation on the `Cluster` resource so the vSphere provider reconciles the new Kube-OVN AppRelease.
+   If the target ACP row in the OS Support Matrix shows a different **kube-ovn (chart)** value than the current cluster, patch the annotation on the `Cluster` resource so the vSphere provider reconciles the new Kube-OVN AppRelease.
 
    :::info
    **Prerequisite — Kube-OVN reconcile gating annotation (vSphere only)**

@@ -109,7 +109,7 @@ The cells you read from that row map to the upgrade manifests as follows:
 | **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
 | **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
 | **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
-| **kube-ovn** | `Cluster.metadata.annotations["cpaas.io/kube-ovn-version"]` **and** the `cni-kube-ovn` `AppRelease` `spec.source.charts[0].targetRevision` on the workload cluster | The annotation records the intended version; on an existing cluster the chart revision must be patched separately (see step 3 below). |
+| **kube-ovn (chart)** | `Cluster.metadata.annotations["cpaas.io/kube-ovn-version"]` **and** the `cni-kube-ovn` `AppRelease` `spec.source.charts[0].targetRevision` on the workload cluster | The annotation records the intended chart version; on an existing cluster the chart revision must be patched separately (see step 3 below). This is the `acp/chart-cpaas-kube-ovn` chart version (for example `v4.3.3`), not the Kube-OVN component version. |
 
 The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags. The Kube-OVN annotation lives on the `Cluster` resource, not on `KubeadmControlPlane`, because the DCS provider watches it independently of the Kubernetes control plane rollout.
 
@@ -213,7 +213,7 @@ Before you start, collect every required value from the target ACP row in the OS
      cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
    ```
 
-   The annotation does not update automatically when `spec.version` changes; keep it in step with the **kube-ovn** column of the target row.
+   The annotation does not update automatically when `spec.version` changes; keep it in step with the **kube-ovn (chart)** column of the target row.
 
    3.2. **Patch the `AppRelease` chart revision on the workload cluster**
 
