@@ -24,6 +24,18 @@ Immutable Infrastructure supports multiple infrastructure platforms through plug
 | [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | ✅ Available |
 | [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | 📋 Planned |
 
+## Control Plane Endpoint
+
+Each cluster's Kubernetes API server (`kube-apiserver`, port `6443`) is reached through a control plane endpoint — a virtual IP (VIP) or load balancer address that fronts the control plane nodes. How that endpoint is provided differs by provider, which determines what you must prepare before cluster creation.
+
+| Provider | Control plane endpoint | Mechanism | What you prepare |
+|----------|------------------------|-----------|------------------|
+| Huawei DCS | You provide it | An external load balancer that fronts the control plane nodes, or a single control plane node reached directly | Provision the load balancer before cluster creation and supply its address and port in `DCSCluster.spec.controlPlaneLoadBalancer` |
+| Huawei Cloud Stack | The provider creates it | An HCS Elastic Load Balance (ELB) instance created automatically during cluster reconciliation | Plan the ELB inputs — VIP subnet, VIP address, bandwidth, and public-IP preference — in `HCSCluster.spec.controlPlaneLoadBalancer` |
+| VMware vSphere | You provide it | An external load balancer that fronts the control plane nodes | Provision the load balancer and allocate the control plane VIP before cluster creation; the documented flow does not deploy an in-cluster VIP component |
+
+Huawei Cloud Stack is the only provider that creates the control plane load balancer for you. For Huawei DCS and VMware vSphere, the load balancer — including its VIP allocation and backend (real-server) maintenance — is prepared and owned outside the cluster. Bare Metal is planned; its control plane endpoint model will be documented when the provider is released.
+
 ## Fleet Essentials Plugin
 
 Fleet Essentials is a core plugin that provides a shared web UI framework for cluster management. Infrastructure Providers can extend it through UI extension anchors to add platform-specific pages and workflows.

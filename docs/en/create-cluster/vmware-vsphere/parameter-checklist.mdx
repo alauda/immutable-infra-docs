@@ -156,6 +156,8 @@ The template should also meet the following requirements:
 
 ## Load Balancer Prerequisites
 
+The control plane VIP is served by an external load balancer that you provision before cluster creation. The documented vSphere flow does not deploy an in-cluster VIP component, so the load balancer, its VIP allocation, and its backend (real-server) maintenance are all prepared and owned outside the cluster.
+
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
 | Control plane VIP | `<vip>` | Yes | The VIP is already allocated. | `10.10.10.10` | - |
