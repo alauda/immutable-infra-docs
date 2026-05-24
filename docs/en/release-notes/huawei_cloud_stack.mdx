@@ -1,0 +1,43 @@
+---
+weight: 20
+queries:
+  - hcs release notes
+  - huawei cloud stack version
+  - what changed hcs provider
+---
+
+# Huawei Cloud Stack Provider Release Notes
+
+## Overview
+
+This page tracks release notes for the Alauda Container Platform Huawei Cloud Stack (HCS) Infrastructure Provider. Each section corresponds to a release tag.
+
+Pre-release tags (`v1.0.0`, `v1.0`) are internal builds and are not covered here. The first publicly released version is `v1.0.1`.
+
+For the current full capability list and installation steps, see [Huawei Cloud Stack Provider Installation](../install/huawei-cloud-stack.mdx).
+
+## v1.0.1 (2026-05-20) \{#v1-0-1}
+
+### Overview
+
+`v1.0.1` is the first public release of the HCS Infrastructure Provider. The provider manages the full lifecycle of Kubernetes clusters on Huawei Cloud Stack through the Cluster API model, including cluster creation, node pool scaling, control plane replacement, and machine configuration through reserved IP and hostname pools.
+
+### New Features
+
+- **Cluster lifecycle on Huawei Cloud Stack** — Create, scale, and delete Kubernetes clusters that use HCS as the infrastructure backend. Cluster creation reuses an existing VPC, subnet, and security group; the provider creates and binds the control plane ELB automatically and writes back the resulting `controlPlaneEndpoint`.
+
+- **Reserved hostname and IP pool (`HCSMachineConfigPool`)** — Reserve fixed hostnames, subnet assignments, and static IP slots for cluster nodes. Slots are released and reused when nodes are deleted. Required when persistent node-local disks must be preserved across node replacement.
+
+- **Control plane replacement with static IPs** — `maxSurge: 0` rolling replacement is the default upgrade path for static-IP control planes. No additional IP slot is needed for replacement. When `maxSurge > 0` or the control plane is scaled up, IP pool capacity must be expanded first.
+
+- **Cloud-init-based node bootstrap** — Node bootstrap uses cloud-init user data. By design, the HCS provider uses cloud-init exclusively as the bootstrap mechanism; Ignition is not part of the HCS provider's design and is intentionally not supported.
+
+- **FQDN and hostname rendering** — Node hostnames are rendered with the short name and FQDN separated correctly in cloud-init, matching customer domain naming requirements. Webhook validation enforces lowercase hostnames and rejects names containing consecutive dots; no CRD field change is required for this validation.
+
+- **Bootstrap encryption provider secret** — `HCSCluster` accepts a reference to a Kubernetes Secret that provides the bootstrap encryption configuration, enabling encryption-at-rest for etcd data from cluster creation onward.
+
+- **OCI source and revision labels on container images** — Built provider images include standard OCI `source` and `revision` labels for build traceability.
+
+### Upgrade Notes
+
+`v1.0.1` is the first public release. There is no upgrade path from earlier internal builds; production deployments must start at `v1.0.1` or later.

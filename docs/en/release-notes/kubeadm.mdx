@@ -1,0 +1,75 @@
+---
+weight: 50
+queries:
+  - kubeadm release notes
+  - kubeadm provider version
+  - what changed kubeadm provider
+---
+
+# Kubeadm Provider Release Notes
+
+## Overview
+
+This page tracks release notes for the Alauda Container Platform Kubeadm Provider, the Alauda-packaged distribution of the upstream Cluster API kubeadm bootstrap and control plane providers for the Alauda Container Platform.
+
+The Kubeadm Provider is platform-wide and is consumed by every infrastructure provider on this site (HCS, DCS, vSphere) for cluster bootstrap and control plane management.
+
+For installation and capability details, see the platform installation documentation.
+
+## v1.0.9 (2026-05-21) \{#v1-0-9}
+
+### Notes
+
+Internal design documentation update for KCP rollout gating. No user-facing behavior change.
+
+## v1.0.8 (2026-04-09) \{#v1-0-8}
+
+### Enhancements
+
+- **Go 1.25 toolchain** — Provider built with the Go 1.25 toolchain for security and maintenance updates.
+
+## v1.0.7 (2026-03-06) \{#v1-0-7}
+
+### Fixed Issues
+
+- **Upstream Cluster API CVE patches** — Upstream Cluster API dependency bumped to a build that resolves disclosed CVE issues.
+
+## v1.0.6 (2025-12-25) \{#v1-0-6}
+
+### New Features
+
+- **Machine taints synchronization** — Taints declared on the platform `Machine` resource are now synchronized to the underlying Kubernetes node by the provider, ensuring node taint state matches the declarative spec.
+
+## v1.0.5 (2025-08-28) \{#v1-0-5}
+
+### Notes
+
+`v1.0.5` is a re-tag of `v1.0.4` (same underlying commit). No additional changes beyond `v1.0.4`; see [v1.0.4](#v1-0-4) for the release content.
+
+## v1.0.4 (2025-08-28) \{#v1-0-4}
+
+### Enhancements
+
+- **Stabilization and dependency refresh** — Maintenance release rolling up minor stabilization changes.
+
+## v1.0.1 (2025-07-09) \{#v1-0-1}
+
+### Enhancements
+
+- **Internal naming cleanup** — Adjusted provider component naming for consistency. No user-visible API change.
+
+## v1.0.0 (2025-06-18) \{#v1-0-0}
+
+### Overview
+
+`v1.0.0` is the initial release of the Alauda Container Platform Kubeadm Provider. The provider packages the upstream Cluster API kubeadm bootstrap and control plane providers as an Alauda Container Platform module, plus Alauda-specific control plane rollout enhancements.
+
+### Initial Capability Set
+
+- **Upstream Cluster API kubeadm bootstrap and control plane** — Bundles the upstream Cluster API kubeadm bootstrap provider and the `KubeadmControlPlane` controller, distributed as an Alauda Container Platform module.
+
+- **Platform-aligned installation flow** — Installs through the Alauda Container Platform's standard provider installation flow.
+
+- **KCP rollout enhancements** — Alauda-specific rollout logic on top of the upstream `KubeadmControlPlane` controller, controlling control plane node replacement behavior during version upgrades and machine replacements.
+
+- **Foundation for infrastructure providers** — Provides the bootstrap and control plane layer consumed by the Huawei Cloud Stack, Huawei DCS, and VMware vSphere infrastructure providers on this site.
