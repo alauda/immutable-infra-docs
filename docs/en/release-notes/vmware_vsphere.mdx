@@ -1,0 +1,107 @@
+---
+weight: 40
+queries:
+  - vsphere release notes
+  - vmware vsphere version
+  - what changed vsphere provider
+---
+
+# VMware vSphere Provider Release Notes
+
+## Overview
+
+This page tracks release notes for the Alauda Container Platform VMware vSphere Infrastructure Provider. The version number you see on the platform (for example, `v1.0.10`) refers to the packaging release of the vSphere provider, which bundles the Cluster API Provider vSphere (CAPV) controller image, the vSphere Cloud Provider Interface (CPI) image, and the Helm chart used to deploy them on the Alauda Container Platform.
+
+For the current full capability list and installation steps, see [VMware vSphere Provider Installation](../install/vmware-vsphere.mdx).
+
+## v1.0.11 (2026-05-21) \{#v1-0-11}
+
+### Fixed Issues
+
+- **Reduced unnecessary OVN reconciliation triggers** — Upstream CAPV image bumped to a build that prevents OVN reconciliation from being repeatedly retriggered when no actual state change is required. Improves controller stability and reduces background load.
+
+## v1.0.10 (2026-05-18) \{#v1-0-10}
+
+### Enhancements
+
+- **Upstream CAPV image refresh** — Provider chart now references a newer Alauda build of the upstream Cluster API Provider vSphere controller. No behavior change in this overlay release beyond the upstream image bump.
+
+## v1.0.9 (2026-05-18) \{#v1-0-9}
+
+### New Features
+
+- **OCI source and revision labels on container images** — Built provider images include standard OCI `source` and `revision` labels for build traceability.
+
+### Fixed Issues
+
+- **OVN integration and persistent disk handling** — Upstream CAPV image bumped to a build that resolves OVN networking integration issues and persistent disk handling regressions reported on prior releases.
+
+## v1.0.8 (2026-05-12) \{#v1-0-8}
+
+### Fixed Issues
+
+- **`capv-manager-role` ClusterRole** — Corrected the `capv-manager-role` ClusterRole definition that was missing required permissions for normal controller operation.
+
+## v1.0.7 (2026-04-28) \{#v1-0-7}
+
+### Fixed Issues
+
+- **Chart template regressions** — Restored the `v1beta1` contract label on CRDs and corrected an escaped Go template literal in the chart, fixing chart template regressions that prevented successful provider installation in certain configurations.
+
+## v1.0.6 (2026-04-28) \{#v1-0-6}
+
+### Enhancements
+
+- **CRD update** — Provider CRDs refreshed to align with the latest schema.
+
+## v1.0.5 (2026-04-16) \{#v1-0-5}
+
+### Breaking Changes
+
+- **CRD rename: `VSphereResourcePool` → `VSphereMachineConfigPool`** — The CRD that declares per-node-pool slot reservations and persistent configuration has been renamed from `VSphereResourcePool` to `VSphereMachineConfigPool`. Existing manifests must be updated to use the new resource type.
+
+## v1.0.4 (2026-04-11) \{#v1-0-4}
+
+### Enhancements
+
+- **`VSphereResourcePool` CRD update** — Schema adjustments to the `VSphereResourcePool` CRD (subsequently renamed in `v1.0.5`; see above).
+
+- **Documentation** — Provider README refreshed with project structure, components, CRDs, and configuration sections.
+
+## v1.0.3 (2026-04-07) \{#v1-0-3}
+
+### Fixed Issues
+
+- **CVE patches** — Resolved multiple disclosed CVE issues in vendored dependencies.
+
+## v1.0.2 (2026-04-07) \{#v1-0-2}
+
+### Notes
+
+`v1.0.2` is a re-tag of `v1.0.1` (same underlying commit). No additional changes beyond `v1.0.1`; see [v1.0.1](#v1-0-1) for the release content.
+
+## v1.0.1 (2026-04-07) \{#v1-0-1}
+
+### New Features
+
+- **Secret-based encryption for CAPV deployment** — The provider deployment can now consume an external Secret for encryption configuration, removing the previous requirement to bake encryption material into the deployment manifest directly.
+
+### Enhancements
+
+- **`VSphereResourcePool` CRD update** — Schema refresh on the `VSphereResourcePool` CRD. Note this CRD was later renamed to `VSphereMachineConfigPool` in `v1.0.5`.
+
+- **Updated CAPV deployment manifest** — Provider deployment manifest aligned with the new CRD schema.
+
+## v1.0.0 (2026-04-03) \{#v1-0-0}
+
+### Overview
+
+`v1.0.0` is the initial release of the Alauda Container Platform VMware vSphere Infrastructure Provider, an Alauda-packaged distribution of the upstream Cluster API Provider vSphere (CAPV) for the Alauda Container Platform.
+
+### Initial Capability Set
+
+- **Helm-chart packaging of CAPV controller and vSphere CPI** — Bundles the upstream CAPV controller image and the vSphere Cloud Provider Interface (CPI) image, plus the Alauda Container Platform ModulePlugin definition required for platform-managed installation.
+
+- **CRD set** — Ships the standard CAPV CRDs (`VSphereCluster`, `VSphereClusterIdentity`, `VSphereMachine`, `VSphereMachineTemplate`, `VSphereVM`, `VSphereDeploymentZone`, `VSphereFailureDomain`) plus the Alauda extension `VSphereResourcePool` (renamed to `VSphereMachineConfigPool` in `v1.0.5`).
+
+- **Platform-aligned installation flow** — Installs through the Alauda Container Platform's standard provider installation flow, exposing chart values for upstream CAPV controller and CPI image overrides.
