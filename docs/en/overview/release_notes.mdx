@@ -1,48 +1,18 @@
 ---
 weight: 50
+queries:
+  - release notes
+  - version history
+  - documentation site release notes
 ---
 
 # Release Notes
 
-## 2026-04-30
+Release notes are maintained per infrastructure provider. Each provider has its own version timeline and is documented in a dedicated page:
 
-### Component Version
-- Alauda Container Platform DCS Infrastructure Provider: `v1.0.16`
+- [Huawei Cloud Stack Provider Release Notes](../release-notes/huawei_cloud_stack.mdx)
+- [Huawei DCS Provider Release Notes](../release-notes/huawei_dcs.mdx)
+- [VMware vSphere Provider Release Notes](../release-notes/vmware_vsphere.mdx)
+- [Kubeadm Provider Release Notes](../release-notes/kubeadm.mdx)
 
-### Changes
-- Added first support for pool-managed persistent disks on Huawei DCS in DCS provider `v1.0.16`.
-- Declared persistent disks can now be detached from old VMs and reattached to replacement VMs during rolling upgrades, reducing the risk of data loss on preserved node-local disks.
-- `DCSIpHostnamePool` now carries persistent disk specifications and runtime tracking through `persistentDisk` and `persistentDiskStatus`.
-- In `v1.0.16`, declare `DCSIpHostnamePool.spec.pool[].persistentDisk` through YAML manifests. This configuration is not exposed in the web UI.
-- The platform-required `/var/cpaas` disk is now documented as a persistent disk configured on the IP slot instead of in `DCSMachineTemplate`.
-- Existing clusters can migrate to the new model by following [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx).
-
-## 2026-01-15
-
-### Component Version
-- Alauda Container Platform DCS Infrastructure Provider: v1.0.9
-- Alauda Container Platform Kubeadm Provider: v1.0.6
-
-### Changes
-- The system now automatically generates encryption configurations for clusters. After etcd key rotation, no manual intervention is required during control plane upgrades.
-- Added support for configuring multiple network interface cards (NICs) on virtual machines.
-- Supports configuring node labels, annotations, and taints through the MachineDeployment and KubeadmControlPlane resources (available in <Term name="product" textCase="capitalize" /> 4.2.0 and above).
-- Resolved various security issues.
-
-## Initial Release
-
-### Features and Enhancements
-
-- **Cluster management**: See details in [Feature Overview](./feature#cluster-management)
-  - Cluster creation: immutable OS, automated compute provisioning, bootstrap automation
-  - Cluster deletion: complete cleanup and provider resource release
-  - Cluster scaling: horizontal scaling, automated compute management, zero-downtime operations
-  - Cluster upgrades: Kubernetes version management
-
-- **Supported infrastructure providers**: See [Feature Overview](./feature#supported-infrastructure-providers)
-  - Provider-agnostic design; current support includes the DCS provider
-  - Additional providers on the roadmap
-
-- **Compute resource management**: See [Feature Overview](./feature#compute-resource-management)
-  - Create and delete compute instances
-  - Configuration: instance/flavor selection, size customization, resource allocation, networking, storage options
+The Bare Metal Provider does not have published release notes on this site at this time.

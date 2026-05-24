@@ -1,0 +1,193 @@
+---
+weight: 30
+queries:
+  - dcs release notes
+  - huawei dcs version
+  - what changed dcs provider
+---
+
+# Huawei DCS Provider Release Notes
+
+## Overview
+
+This page tracks release notes for the Alauda Container Platform Huawei DCS Infrastructure Provider. Each section corresponds to a release tag. Releases are ordered newest first.
+
+For the current full capability list and installation steps, see [Huawei DCS Provider Installation](../install/huawei-dcs.mdx).
+
+## v1.0.18 (2026-05-19) \{#v1-0-18}
+
+### New Features
+
+- **Safer VM deletion lifecycle** — The provider now stops a virtual machine before issuing the delete operation against Huawei DCS. The provider waits for the VM to reach a stopped state, then performs the delete; if the VM is already gone the operation completes idempotently. This prevents orphaned VM state in scenarios where the delete API rejects or retries against a running VM.
+
+- **`retainVm` annotation on `DCSMachine`** — Setting the `retainVm` annotation on a `DCSMachine` short-circuits both the stop and the delete steps. The `DCSMachine` finalizer is released cleanly and the underlying VM remains running in DCS. Useful when a VM should be detached from the cluster for offline inspection or migration without being destroyed.
+
+- **`VMStopPending` status condition on `DCSMachine`** — A new status condition reports whether a node deletion is currently waiting for its VM to stop. The condition is observable through `kubectl describe dcsmachine` and integrates with controller logs, providing visibility into the stop-then-delete lifecycle stage.
+
+### Enhancements
+
+- **Etcd encryption restoration during cluster reconciliation** — Etcd encryption configuration and datastore handling are restored consistently during reconciliation of existing clusters, improving recovery behavior after control plane churn.
+
+- **Etcd synchronization for the global cluster** — The provider now correctly handles the global cluster during etcd synchronization, aligning behavior with workload-cluster handling.
+
+- **FC/DCS domain user support in cluster credentials** — The `DCSCluster` Secret reference accepts a `userType` field. Domain users on Huawei FC and DCS are recognized through the new semantic Secret key. Local administrator accounts continue to work as before.
+
+### Fixed Issues
+
+- **`DCSMachineTemplate` system disk size validation** — The system disk size declared in `DCSMachineTemplate` must be at least equal to the source VM template's system disk size; the controller now reports the explicit error sooner during reconcile.
+
+## v1.0.17 (2026-04-29) \{#v1-0-17}
+
+### Enhancements
+
+- **Cluster Plugin UI image tag refresh** — Internal management UI image tag updated. No user-visible behavior change in the provider controller.
+
+## v1.0.16 (2026-04-29) \{#v1-0-16}
+
+### New Features
+
+- **Pool-managed persistent disks on Huawei DCS** — Persistent disks are now declared and tracked through the `DCSIpHostnamePool` resource. Declared persistent disks can be detached from old VMs and reattached to replacement VMs during rolling upgrades, reducing the risk of data loss on preserved node-local disks.
+
+- **`DCSIpHostnamePool.spec.pool[].persistentDisk` and `persistentDiskStatus`** — `DCSIpHostnamePool` carries persistent disk specifications and runtime tracking through the new `persistentDisk` and `persistentDiskStatus` fields. Persistent disks are declared through YAML manifests only; this configuration is not exposed in the web UI.
+
+- **Platform-required `/var/cpaas` disk** — The `/var/cpaas` disk is now documented as a persistent disk configured on the IP slot. It is no longer declared inside `DCSMachineTemplate`.
+
+### Upgrade Notes
+
+Existing clusters can migrate to the pool-managed persistent disk model by following [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx).
+
+## v1.0.15 (2026-04-13) \{#v1-0-15}
+
+### New Features
+
+- **Etcd encryption configuration support** — Initial implementation of etcd encryption configuration for clusters managed by this provider. Note: a more complete automatic generation and key-rotation flow shipped later in `v1.0.9` of the next major track; treat this entry as the first DCS-side support for the capability.
+
+### Fixed Issues
+
+- **Kube-OVN reconciliation timing** — Kube-OVN reconciliation is now permitted when control plane nodes are still partially initializing, avoiding a chicken-and-egg condition during initial cluster bring-up.
+
+### Enhancements
+
+- **`imagePullSecrets` on apiservice ServiceAccount** — The apiservice ServiceAccount now accepts `imagePullSecrets`, enabling image pull from registries that require authentication.
+
+- **Internal toolchain refresh** — Internal Kubernetes API client libraries updated to align with newer platform baselines.
+
+## v1.0.14 (2026-03-06) \{#v1-0-14}
+
+### Enhancements
+
+- **OpenTelemetry SDK upgrade** — Bumped `go.opentelemetry.io/otel/sdk` to `v1.40.0` for security and maintenance updates.
+
+## v1.0.13 (2026-02-28) \{#v1-0-13}
+
+### New Features
+
+- **DCS proxy API** — Added a proxy API that exposes selected DCS platform operations through the provider, simplifying integration for callers that should not access the DCS platform API directly.
+
+## v1.0.12 (2026-02-10) \{#v1-0-12}
+
+### Enhancements
+
+- **Deployment storage limit configuration** — Provider Deployment now declares ephemeral storage limits, preventing the controller pod from consuming unbounded node disk space.
+
+## v1.0.11 (2026-02-09) \{#v1-0-11}
+
+### New Features
+
+- **Dedicated CD-ROM datastore for ignition ISO upload** — The DCS provider can now use a dedicated datastore for uploading the ignition ISO via the CD-ROM device, separating ISO storage from general VM datastores when policy requires it.
+
+## v1.0.10 (2026-01-22) \{#v1-0-10}
+
+### Fixed Issues
+
+- **CVE patches** — Resolved multiple disclosed CVE issues in vendored dependencies.
+
+## v1.0.9 (2025-12-31) \{#v1-0-9}
+
+### New Features
+
+- **Multiple network interface card (NIC) support on virtual machines** — Cluster nodes can be configured with multiple NICs, enabling separated control, workload, and storage networks on the same VM.
+
+- **Custom node metadata through `MachineDeployment` and `KubeadmControlPlane`** — Node labels, annotations, and taints can be declared on `MachineDeployment` and `KubeadmControlPlane` resources. Available with platform version 4.2.0 and above.
+
+### Enhancements
+
+- **Automatic etcd encryption configuration** — Encryption configurations are generated automatically during cluster creation. After etcd key rotation, no manual intervention is required during control plane upgrades.
+
+### Fixed Issues
+
+- Multiple security issues addressed in this release.
+
+## v1.0.8 (2025-12-29) \{#v1-0-8}
+
+### New Features
+
+- **Automatic etcd encryption configuration (initial)** — The provider auto-generates the apiserver encryption configuration during cluster bring-up. This is the first cut; the fully automatic key rotation and post-rotation control-plane upgrade behavior is described in `v1.0.9`.
+
+### Fixed Issues
+
+- **CoreDNS configuration fix** — Resolved a CoreDNS configuration issue in clusters created through this provider.
+
+## v1.0.7 (2025-07-09) \{#v1-0-7}
+
+### Enhancements
+
+- **Internal naming cleanup** — Adjusted provider component naming for consistency. No user-visible API change.
+
+## v1.0.6 (2025-07-04) \{#v1-0-6}
+
+### Enhancements
+
+- **`DCSIpHostnamePool` deletion annotation** — The provider now sets a deletion annotation on `DCSIpHostnamePool` resources during teardown, improving the deletion-flow auditability.
+
+## v1.0.5 (2025-07-02) \{#v1-0-5}
+
+### New Features
+
+- **Initial `retainVm` functionality for `DCSMachine` deletion** — First implementation of the `retainVm` capability: deleting a `DCSMachine` can be configured to leave the underlying VM running in DCS instead of destroying it. This capability was later promoted to a formal annotation on `DCSMachine` in `v1.0.18`.
+
+## v1.0.4 (2025-06-19) \{#v1-0-4}
+
+### Enhancements
+
+- **`DCSIpHostnamePool` cleanup on `DCSMachineTemplate` deletion** — When a `DCSMachineTemplate` is removed, the associated `DCSIpHostnamePool` is now released automatically.
+
+- **Removed bundled `kubeadm` component from the DCS plugin** — The DCS provider no longer ships its own bundled kubeadm component; kubeadm bootstrap is handled through the platform's standard Cluster API kubeadm provider.
+
+## v1.0.3 (2025-06-11) \{#v1-0-3}
+
+### New Features
+
+- **Data disk support on `DCSMachineTemplate`** — `DCSMachineTemplate` accepts additional data disks beyond the system disk, allowing per-template disk inventory declaration.
+
+- **`dcsctl` CLI utility** — Initial release of `dcsctl`, a command-line utility for DCS-side operations (for example, manual VM stop and folder operations referenced by later releases).
+
+## v1.0.2 (2025-06-05) \{#v1-0-2}
+
+### New Features
+
+- **`/etc/resolv.conf` in ignition configuration** — Ignition userdata now writes `/etc/resolv.conf` so cluster nodes pick up DNS settings at bootstrap without requiring post-boot remediation.
+
+- **Generated kubelet TLS material** — The provider can now generate `kubelet.crt` and `kubelet.key` during node provisioning, removing a manual step previously required for the kubelet TLS bootstrap.
+
+## v1.0.1 (2025-05-27) \{#v1-0-1}
+
+### Enhancements
+
+- Stabilization patch following the initial `v1.0.0` release. No user-visible API changes.
+
+## v1.0.0 (2025-05-09) \{#v1-0-0}
+
+### Overview
+
+`v1.0.0` is the initial release of the Alauda Container Platform Huawei DCS Infrastructure Provider. The provider implements the Cluster API model for the Huawei DCS (also referred to as FC / FusionCompute) platform, enabling declarative Kubernetes cluster creation and management on top of DCS-managed virtualized infrastructure.
+
+### Initial Capability Set
+
+- **Cluster lifecycle on Huawei DCS** — Create, scale, and delete Kubernetes clusters that use DCS as the infrastructure backend.
+
+- **`DCSCluster`, `DCSMachine`, `DCSMachineTemplate`, `DCSIpHostnamePool` CRDs** — Declarative API surface for DCS-based clusters, including reserved hostname and IP pool management through `DCSIpHostnamePool`.
+
+- **Ignition-based node bootstrap** — Node bootstrap uses ignition userdata. By design, the DCS provider uses ignition exclusively as the bootstrap mechanism for DCS-managed VMs.
+
+- **Kubeadm-based control plane and worker bootstrap** — Cluster bootstrap aligns with the upstream Cluster API kubeadm bootstrap/control-plane model.
