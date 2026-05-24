@@ -30,7 +30,7 @@ For the current full capability list and installation steps, see [Huawei Cloud S
 
 - **Control plane replacement with static IPs** — `maxSurge: 0` rolling replacement is the default upgrade path for static-IP control planes. No additional IP slot is needed for replacement. When `maxSurge > 0` or the control plane is scaled up, IP pool capacity must be expanded first.
 
-- **Cloud-init based node bootstrap** — Node bootstrap uses cloud-init user data. By design, the HCS provider uses cloud-init exclusively as the bootstrap mechanism; Ignition is not part of the HCS provider's design and is intentionally not supported.
+- **Cloud-init-based node bootstrap** — Node bootstrap uses cloud-init user data. By design, the HCS provider uses cloud-init exclusively as the bootstrap mechanism; Ignition is not part of the HCS provider's design and is intentionally not supported.
 
 - **FQDN and hostname rendering** — Node hostnames are rendered with the short name and FQDN separated correctly in cloud-init, matching customer domain naming requirements. Webhook validation enforces lowercase hostnames and rejects names containing consecutive dots; no CRD field change is required for this validation.
 
