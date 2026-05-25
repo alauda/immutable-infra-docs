@@ -36,7 +36,7 @@ The bare-metal provider chart ships an `elemental-image-catalog` ConfigMap that 
 kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```
 
-Every value used as `Machine.spec.version` (for both the control plane and worker `MachineDeployment` resources) must appear as a key in this ConfigMap, with the leading `v` preserved. The provider resolves the image at reprovision time by substituting `global.registry.address` (via the workload `Cluster`'s `cpaas.io/registry-address` annotation) for the registry portion of the entry. If a target version is missing, no `reprovision` plan is written and `BaremetalMachine` ends up in `Failed / Reason=ImageCatalogMiss` until the entry is added.
+Every value used as `Machine.spec.version` (for both the control plane and worker `MachineDeployment` resources) must appear as a key in this ConfigMap, with the leading `v` preserved. The provider resolves the image at reprovision time by substituting the platform registry address for the registry portion of the entry. If a target version is missing, no `reprovision` plan is written and `BaremetalMachine` ends up in `Failed / Reason=ImageCatalogMiss` until the entry is added.
 
 ### 3. Network Connectivity
 
@@ -130,12 +130,6 @@ spec:
         # Remove emulate-tpm for production hardware with a real TPM.
         emulate-tpm: true
         emulated-tpm-seed: -1
-    cloud-config:
-      write_files:
-        - path: /etc/resolv.conf
-          permissions: "0644"
-          content: |
-            nameserver <dns-server>
 ---
 apiVersion: elemental.cattle.io/v1beta1
 kind: SeedImage
@@ -262,7 +256,7 @@ Create the `BaremetalCluster` (declares the control-plane VIP), the control-plan
 :::tip
 **Full Configuration Reference**
 
-The example below uses a minimal `KubeadmControlPlane`. For the full hardening profile used in QA — admission, audit, kubelet patches, encryption provider — see [Complete KubeadmControlPlane Configuration](#complete-kubeadmcontrolplane-configuration) in the Appendix.
+The example below uses a minimal `KubeadmControlPlane`. For the full hardening profile recommended in production — admission, audit, kubelet patches, encryption provider — see [Complete KubeadmControlPlane Configuration](#complete-kubeadmcontrolplane-configuration) in the Appendix.
 :::
 
 ```yaml title="03-cluster.yaml"
@@ -352,7 +346,6 @@ metadata:
   annotations:
     capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
     capi.cpaas.io/resource-kind: BaremetalCluster
-    cpaas.io/registry-address: <registry-address>
     cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>
     cpaas.io/sentry-deploy-type: Baremetal
     cpaas.io/alb-address-type: ClusterAddress
@@ -382,7 +375,6 @@ spec:
 |---|---|---|---|
 | `capi.cpaas.io/resource-group-version` | Yes | Literal `infrastructure.cluster.x-k8s.io/v1beta1` | CAPI infrastructure binding. |
 | `capi.cpaas.io/resource-kind` | Yes | Literal `BaremetalCluster` | CAPI infrastructure binding. |
-| `cpaas.io/registry-address` | Yes | Platform registry hostname (same value as `global.registry.address`). | Substituted into the catalog image at reprovision time. Missing annotation keeps `BaremetalMachine` in `ImageResolved=False / Reason=ImageRegistryMissing`. |
 | `cpaas.io/kube-ovn-join-cidr` | Yes | Operator-chosen `/16` CIDR that does not overlap with pods/services or any other cluster. | Kube-OVN inter-node tunnel. |
 | `cpaas.io/sentry-deploy-type` | Yes | Literal `Baremetal`. | Marks the cluster for the bare-metal deploy profile. |
 | `cpaas.io/alb-address-type` | Yes | Literal `ClusterAddress`. | ALB address mode used on bare-metal clusters. |
@@ -414,14 +406,9 @@ Each new control-plane `BaremetalMachine` advances `Pending → Allocated → Re
 - `MachineInventory.status.plan.state` — `Applied` once the host completes `cloud-init clean`, `elemental upgrade`, reboot, and `kubeadm init`/`join`.
 - `BaremetalCluster.status.conditions[EndpointReady]` — true once the VIP is reachable.
 
-#### Single Control-Plane Layout \{#single-control-plane-layout}
-
-For development or PoC clusters that run a single control-plane replica, set `KubeadmControlPlane.spec.replicas: 1`. Two fields still need a value:
-
-- `BaremetalCluster.spec.controlPlaneLoadBalancer.host` — set to the IP of the sole control-plane host (the same IP the host carries on its main NIC). `vrid` and `port` are still required.
-- `BaremetalCluster.spec.controlPlaneEndpoint.host` — leave empty; the reconciler backfills it.
-
-`type=Internal` continues to work in this layout — `alive` will manage the VIP, which simply happens to coincide with the only control-plane node's IP. If you cannot afford `alive` static pods on a one-node control plane, use `type=External` and pre-create a TCP forwarder.
+:::warning
+The bare-metal provider does not support single-node control planes. Provision at least three control-plane replicas (`KubeadmControlPlane.spec.replicas: 3`) so that `alive` can arbitrate the VIP and etcd retains quorum.
+:::
 
 ### Step 4: Deploy Worker Nodes
 
@@ -472,7 +459,7 @@ A successfully created cluster shows:
 | `BaremetalMachine` stuck in `Pending`, `InventoryAllocated=False / Reason=PoolExhausted` | Pool has no `Available` inventory left. | `MachineInventoryPool.status.available`; allocation annotations on each member. |
 | `BaremetalMachine` stuck after allocation, `BootstrapReady=False / Reason=BootstrapWaiting` | KubeadmConfig has not produced a bootstrap data secret yet. | `Machine.spec.bootstrap.dataSecretName`. |
 | `BaremetalMachine` in `Failed`, `ImageResolved=False / Reason=ImageCatalogMiss` | The target `Machine.spec.version` is not a key in `elemental-image-catalog`. | `kubectl -n cpaas-system get cm elemental-image-catalog -o yaml`. |
-| `ImageResolved=False / Reason=ImageRegistryMissing` | `Cluster` is missing the `cpaas.io/registry-address` annotation. | Cluster annotations. |
+| `ImageResolved=False / Reason=ImageRegistryMissing` | Neither the optional `cpaas.io/registry-address` annotation nor the platform registry-credential Secret resolves a registry address. | Cluster annotations; platform registry-credential Secret. |
 | Reprovision never completes; `MachineInventory.status.plan.state=Failed` | `elemental upgrade` failed (registry unreachable, TLS, disk full). | Plan secret `failed-output` field; host serial console. |
 | `BaremetalCluster` Ready, but the VIP is not reachable | `vrid` collides with another cluster; control-plane VIP not in the L2 domain; firewall blocking VRRP. | `kubectl -n kube-system get pod -l app=alive`, `ip addr show`, `ipvsadm -Ln` on a control-plane host. |
 
@@ -493,7 +480,7 @@ After creating a cluster:
 
 ### Complete `KubeadmControlPlane` Configuration \{#complete-kubeadmcontrolplane-configuration}
 
-The hardened configuration used by the bare-metal QA suite — admission control, audit policy, kubelet patches, encryption provider, and IPv6 bind addresses. Substitute the placeholders from the table in [Resolving Placeholder Values](#resolving-placeholders).
+The hardened configuration recommended for production bare-metal clusters — admission control, audit policy, kubelet patches, encryption provider, and IPv6 bind addresses. Substitute the placeholders from the table in [Resolving Placeholder Values](#resolving-placeholders).
 
 ```yaml
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1

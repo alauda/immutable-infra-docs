@@ -73,7 +73,11 @@ Before you start, ensure all of the following prerequisites are met:
 
 ## Update the Image Catalog \{#update-the-image-catalog}
 
-`elemental-image-catalog` is the only resource that introduces a new Kubernetes version to the bare-metal provider. There are two ways to extend it; pick whichever is more convenient for the rollout being planned.
+`elemental-image-catalog` is the resource that introduces a Kubernetes version to the bare-metal provider.
+
+:::info
+In most upgrades you do not edit this ConfigMap by hand. The bare-metal provider plugin re-renders `elemental-image-catalog` with the Kubernetes versions shipped by the new distribution when it is reapplied during the Distribution Version upgrade (Phase 1). Your task is normally just to **verify** that the target version is present (see the verification step below). The two options that follow are only needed when you must add an out-of-band version — for example a digest-pinned or test build that the plugin does not ship.
+:::
 
 **Option A — Add a chart override.** Append the new version under `provider.imageCatalog.images` (uses `global.registry.address` as the registry):
 
@@ -175,23 +179,6 @@ Kubernetes only supports single-minor upgrades for the control plane (skew polic
 3. Upgrade the worker `MachineDeployment` to v1.34.
 
 The bare-metal rollout strategy already serializes node replacement, so cross-version upgrades do not require additional pool capacity beyond what was already needed for a same-minor upgrade.
-
-## Rolling Back a Failed Upgrade
-
-If the rolling update fails — new hosts do not reach `Ready`, the new minor surfaces an incompatibility, or `elemental upgrade` fails repeatedly — patch the version fields back to the previous values. CAPI treats the reversion as new spec drift and rolls the v2 machines back to the previous version, one at a time.
-
-Three facts to internalize before rolling back:
-
-- **The old nodes were not preserved.** They were reprovisioned during the upgrade; rollback runs another reprovision against the previous catalog entry. There is no "old VM" to revive.
-- **The previous catalog entry must still exist.** Do not remove the old entry from `elemental-image-catalog` until the new rollout is healthy. If it has already been removed, restore it before rolling back.
-- **`MachineInventory` does not preserve Kubernetes data between reprovisions.** etcd, kubelet caches, and CRI state are gone after a reprovision — rollback re-creates the cluster on the previous version, but cluster state written by workloads during the upgrade window does not come back unless backed up externally.
-
-Procedure:
-
-- **Control plane**: patch `KubeadmControlPlane.spec.version` (and the DNS / etcd image tags) back to the previous values.
-- **Workers**: patch each `MachineDeployment.spec.template.spec.version` back to the previous version.
-
-If the new control plane never reached etcd quorum, the `KubeadmControlPlane` controller may refuse to roll back any machine because its preflight checks block on an unhealthy etcd. Recover etcd quorum first (operator intervention) before retrying the rollback.
 
 ## Verification
 

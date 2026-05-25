@@ -105,9 +105,6 @@ spec:
       joinConfiguration:
         patches:
           directory: /etc/kubernetes/patches
-        nodeRegistration:
-          kubeletExtraArgs:
-            cloud-provider: external
 ```
 
 The provider applies a minimal normalization to bootstrap user-data before writing it into the `reprovision` plan, so leave the following fields out of the template:

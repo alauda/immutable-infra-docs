@@ -12,8 +12,6 @@ Before installing the provider, ensure you have:
 
 - Access to the <Term name="product" textCase="capitalize" /> `global` cluster.
 - Access to Customer Portal for downloading plugins.
-- A platform registry reachable from every physical host. Note its address — it is the value behind `global.registry.address` and the `cpaas.io/registry-address` annotation on each workload `Cluster`.
-- (Self-signed registries) Decide whether to keep the chart default `global.registry.tlsVerify=false`. The same flag is propagated to `elemental-system-agent`, so `elemental upgrade --tls-verify=false` and `elemental pull-image --tls-verify=false` run with the same setting.
 
 ## Downloading
 
@@ -33,16 +31,7 @@ For detailed instructions on uploading packages, refer to <ExternalSiteLink name
 
 For detailed instructions on installing cluster plugins, refer to <ExternalSiteLink name="acp" href="/extend/cluster_plugin.html#cluster-plugin" children="Cluster Plugin" />.
 
-The umbrella chart installs both the bare-metal provider manager and `elemental-operator` in one step. Two values are commonly customized at install time:
-
-| Value | Purpose |
-|---|---|
-| `global.platformUrl` | Fully qualified URL used by `elemental-operator` to compose the registration URL written into every `MachineRegistration` / `SeedImage` (`<platformUrl><elemental.ingress.path>`). |
-| `global.cluster.name` | Cluster name passed to `elemental-operator` as `--system-agent-cluster-name`. `elemental-system-agent` uses it to find the correct platform Kubernetes API URL through ACP's multi-cluster router. Defaults to `global`. |
-| `elemental.tls.caCertSecretName` / `elemental.tls.caCertSecretKey` | Secret that carries the CA bundle for `global.platformUrl`. Defaults to the platform `cpaas-system` secret. `elemental.tls.agentTLSMode` controls how `elemental-system-agent` validates the chain (`strict` by default). |
-| `provider.imageCatalog.images` | Map of `Machine.spec.version` to a base-image repository / tag. The chart renders this into the `elemental-image-catalog` ConfigMap; full image references (digests, custom registries) live under `provider.imageCatalog.data`. |
-
-The image catalog ConfigMap is created by the chart — you do not need to apply it separately when creating a workload cluster.
+The umbrella chart installs both the bare-metal provider manager and `elemental-operator` in one step. The image catalog ConfigMap is created by the chart — you do not need to apply it separately when creating a workload cluster.
 
 ## Verifying Installation
 
