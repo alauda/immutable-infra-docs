@@ -41,7 +41,7 @@ Bare-metal upgrades replace every node — they do not run `kubeadm upgrade` on 
 Two structural consequences operators must internalize before starting:
 
 - **Bare-metal does not preserve Kubernetes-managed disk state.** `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, `/etc/kubernetes` are cleared by the initramfs cleanup step of every reprovision. There is no equivalent of the DCS provider's pool-managed persistent disks today.
-- **The same `MachineInventory` may not be re-picked.** The provider does not guarantee that the inventory released by a `clean` plan is the same one re-allocated to the replacement `Machine`. Pool capacity sizing must assume both old and new node coexist briefly during the rollout.
+- **The same `MachineInventory` may not be re-picked.** The provider does not guarantee that the inventory released by a `clean` plan is the same one re-allocated to the replacement `Machine`. Replacements are performed as delete-then-add when `maxSurge=0` (no overlap between old and new node), so pool capacity sizing need only accommodate the desired replica count — old and new nodes do not coexist during the rollout.
 
 ## Upgrade Sequence
 
