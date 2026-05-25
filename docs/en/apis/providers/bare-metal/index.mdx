@@ -6,14 +6,31 @@ weight: 40
 
 <Overview />
 
-## Status
+The Bare Metal Infrastructure Provider defines custom resources for managing physical-server infrastructure on top of `elemental-operator` and Cluster API.
 
-📋 **Planned**
+## Custom Resources
 
-API documentation will be available when development begins.
+| Resource | Description | Documentation |
+|---|---|---|
+| `BaremetalCluster` | Cluster-level infrastructure: control-plane VIP, endpoint, network type. | [BaremetalCluster](./baremetalcluster.mdx) |
+| `BaremetalMachine` | Single infra machine bound to one `MachineInventory`. | [BaremetalMachine](./baremetalmachine.mdx) |
+| `BaremetalMachineTemplate` | Template that binds a pool to a `KubeadmControlPlane` or `MachineDeployment`. | [BaremetalMachineTemplate](./baremetalmachinetemplate.mdx) |
+| `MachineInventoryPool` | Allowed set of `MachineInventory` names for a cluster. | [MachineInventoryPool](./machineinventorypool.mdx) |
 
-## Planned Resources
+## API Group
 
-- `MetalCluster`: Represents a Kubernetes cluster infrastructure on bare metal
-- `MetalMachine`: Represents a bare metal server
-- `MetalMachineTemplate`: Template for configuring bare metal servers
+All bare-metal infrastructure resources belong to `infrastructure.cluster.x-k8s.io/v1beta1`.
+
+## Related upstream resources
+
+The provider also relies on resources owned by `elemental-operator` and Cluster API; the bare-metal provider does **not** mutate them, but operators read and write them as part of every workflow:
+
+| Resource | API group | Owner | Purpose |
+|---|---|---|---|
+| `MachineRegistration` | `elemental.cattle.io/v1beta1` | elemental-operator | Registration URL + first-install cloud-config. Authored once per cluster. |
+| `SeedImage` | `elemental.cattle.io/v1beta1` | elemental-operator | Triggers ISO build with registration baked in. |
+| `MachineInventory` | `elemental.cattle.io/v1beta1` | elemental-operator | Long-lived host identity object; consumed by `MachineInventoryPool`. |
+| `Cluster` | `cluster.x-k8s.io/v1beta1` | upstream CAPI | Top-level CAPI resource; carries the bare-metal-specific `cpaas.io/*` annotations. |
+| `KubeadmControlPlane` | `controlplane.cluster.x-k8s.io/v1beta1` | upstream CAPI | Owns control-plane `Machine` lifecycle and kubeadm config. |
+| `MachineDeployment` | `cluster.x-k8s.io/v1beta1` | upstream CAPI | Owns worker `Machine` lifecycle. |
+| `KubeadmConfigTemplate` | `bootstrap.cluster.x-k8s.io/v1beta1` | upstream CAPI | Worker cloud-init `user-data` template. |

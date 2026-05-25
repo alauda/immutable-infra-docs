@@ -6,10 +6,83 @@ weight: 40
 
 This document describes how to install the Bare Metal Infrastructure Provider for Immutable Infrastructure.
 
-## Status
+## Prerequisites
 
-📋 **Planned**
+Before installing the provider, ensure you have:
 
-This provider is in the planning phase. Documentation will be available when development begins.
+- Access to the <Term name="product" textCase="capitalize" /> `global` cluster.
+- Access to Customer Portal for downloading plugins.
+- A platform registry reachable from every physical host. Note its address — it is the value behind `global.registry.address` and the `cpaas.io/registry-address` annotation on each workload `Cluster`.
+- (Self-signed registries) Decide whether to keep the chart default `global.registry.tlsVerify=false`. The same flag is propagated to `elemental-system-agent`, so `elemental upgrade --tls-verify=false` and `elemental pull-image --tls-verify=false` run with the same setting.
 
-For more information about the Bare Metal platform, see [Provider Overview](../overview/providers/bare-metal.mdx).
+## Downloading
+
+:::info
+The bare-metal workflow requires two plugins from Customer Portal:
+1. **Alauda Container Platform Kubeadm Provider**
+2. **Alauda Container Platform Bare Metal Infrastructure Provider** (umbrella chart that ships the `cluster-api-provider-baremetal-manager` and `elemental-operator` subcharts together)
+:::
+
+Download both plugins from the Customer Portal.
+
+## Uploading
+
+For detailed instructions on uploading packages, refer to <ExternalSiteLink name="acp" href="/extend/upload_package.html#upload-packages" children="Upload Packages" />.
+
+## Installing
+
+For detailed instructions on installing cluster plugins, refer to <ExternalSiteLink name="acp" href="/extend/cluster_plugin.html#cluster-plugin" children="Cluster Plugin" />.
+
+The umbrella chart installs both the bare-metal provider manager and `elemental-operator` in one step. Two values are commonly customized at install time:
+
+| Value | Purpose |
+|---|---|
+| `global.platformUrl` | Fully qualified URL used by `elemental-operator` to compose the registration URL written into every `MachineRegistration` / `SeedImage` (`<platformUrl><elemental.ingress.path>`). |
+| `global.cluster.name` | Cluster name passed to `elemental-operator` as `--system-agent-cluster-name`. `elemental-system-agent` uses it to find the correct platform Kubernetes API URL through ACP's multi-cluster router. Defaults to `global`. |
+| `elemental.tls.caCertSecretName` / `elemental.tls.caCertSecretKey` | Secret that carries the CA bundle for `global.platformUrl`. Defaults to the platform `cpaas-system` secret. `elemental.tls.agentTLSMode` controls how `elemental-system-agent` validates the chain (`strict` by default). |
+| `provider.imageCatalog.images` | Map of `Machine.spec.version` to a base-image repository / tag. The chart renders this into the `elemental-image-catalog` ConfigMap; full image references (digests, custom registries) live under `provider.imageCatalog.data`. |
+
+The image catalog ConfigMap is created by the chart — you do not need to apply it separately when creating a workload cluster.
+
+## Verifying Installation
+
+After installing the plugins, verify that the controllers and CRDs are present:
+
+```bash
+# Provider manager + elemental-operator should both be Running
+kubectl -n cpaas-system get pods | grep -E 'baremetal|elemental'
+
+# Bare-metal CRDs
+kubectl get crd | grep -E '^(baremetalclusters|baremetalmachines|baremetalmachinetemplates|machineinventorypools)\.infrastructure\.cluster\.x-k8s\.io$'
+
+# Elemental CRDs (shipped by the elemental subchart)
+kubectl get crd | grep -E '^(machineinventories|machineregistrations|seedimages)\.elemental\.cattle\.io$'
+
+# Image catalog ConfigMap
+kubectl -n cpaas-system get configmap elemental-image-catalog
+```
+
+Expected output includes:
+
+- `baremetalclusters.infrastructure.cluster.x-k8s.io`
+- `baremetalmachines.infrastructure.cluster.x-k8s.io`
+- `baremetalmachinetemplates.infrastructure.cluster.x-k8s.io`
+- `machineinventorypools.infrastructure.cluster.x-k8s.io`
+- `machineinventories.elemental.cattle.io`
+- `machineregistrations.elemental.cattle.io`
+- `seedimages.elemental.cattle.io`
+
+Confirm that `elemental-image-catalog` contains the Kubernetes versions you intend to deploy:
+
+```bash
+kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
+```
+
+Every `Machine.spec.version` used by a cluster — both at creation time and at upgrade time — must appear as a key in this ConfigMap.
+
+## Next Steps
+
+After installing the provider, you can proceed to:
+
+- [Create a Cluster](../create-cluster/bare-metal.mdx)
+- Review [Provider Overview](../overview/providers/bare-metal.mdx) for the pool model and plan lifecycle.
