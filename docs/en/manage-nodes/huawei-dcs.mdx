@@ -197,8 +197,10 @@ Declare any upgrade-preserved disk in the matching `DCSIpHostnamePool.spec.pool[
 - On replacement nodes, the guest disk setup logic checks for an existing filesystem. If the disk is already formatted, it skips `mkfs` and mounts the disk directly.
 - Persistent-disk workflows require one-by-one replacement, so keep `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`.
 - You can append new `persistentDisk` entries, but deleting existing entries is not supported. The controller attaches the newly added disk to the running VM on the DCS side, but it does not format or mount the disk inside the guest OS. Guest formatting and mounting take effect only after the VM is replaced and the replacement VM runs the generated disk setup during bootstrap.
+- The controller creates new persistent volumes as independent persistent normal volumes. When it reuses an existing volume, it only requires the volume to be independent and persistent; it does not require a specific DCS volume type.
 - Treat `format`, `options`, and `pciType` as immutable after creation.
-- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort validation against the DCS platform when it has enough cluster context.
+- Use `isThin` only when the DCS environment requires an explicit thin-provisioning value for newly created persistent volumes. If omitted, the provider does not send `isThin` and DCS uses the platform default.
+- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort validation against the DCS platform when it has enough cluster context. `isThin` is creation-only: changing it does not validate, reconcile, or convert existing volumes, and affects only persistent volumes created later.
 
 To inspect the runtime state of persistent disks during node operations, check `status.persistentDiskStatus` on the pool:
 
@@ -481,7 +483,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
    **Important Notes**
    - The `pool` array must include **all existing entries** plus the new entries you want to add
    - Copy the existing entries from the exported YAML to avoid data loss
-   - `kubectl patch --type='merge'` replaces the entire `spec.pool` array, so copy every existing `persistentDisk` block unchanged unless you are intentionally adding new disks
+   - `kubectl patch --type='merge'` replaces the entire `spec.pool` array, so copy every existing `persistentDisk` block unchanged, including `isThin` if it is present, unless you are intentionally adding new disks
    - Ensure each new entry has unique `ip`, `hostname`, and `machineName` values
    - If new worker nodes also need the platform-required `/var/cpaas` disk, declare it in each new entry's `persistentDisk`
    - Network parameters (`mask`, `gateway`, `dns`) typically match existing entries
