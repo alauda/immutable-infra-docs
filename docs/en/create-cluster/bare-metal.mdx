@@ -58,13 +58,13 @@ Production hosts should keep `MachineRegistration.spec.config.elemental.registra
 
 When using YAML, the workflow proceeds through five steps. Every step must be applied in the `cpaas-system` namespace.
 
-```text
-1. MachineRegistration + SeedImage           ─►  Build the bootable ISO
-2. Boot the ISO on each host                 ─►  elemental install + register MachineInventory
-3. MachineInventoryPool (per role)           ─►  Pre-declare the allowed inventories
-4. BaremetalCluster + BaremetalMachineTemplate + KubeadmControlPlane + Cluster
-5. KubeadmConfigTemplate + worker BaremetalMachineTemplate + MachineDeployment
-```
+| Step | Apply or perform | Result |
+|---|---|---|
+| 1 | `MachineRegistration` and `SeedImage` | `elemental-operator` builds the bootable ISO. |
+| 2 | Boot the ISO on each physical host | The host runs `elemental install` and registers as a `MachineInventory`. |
+| 3 | `MachineInventoryPool` resources, one per role | The allowed control-plane and worker inventories are declared before CAPI creates Machines. |
+| 4 | `BaremetalCluster`, control-plane `BaremetalMachineTemplate`, `KubeadmControlPlane`, and `Cluster` | Cluster API starts the control-plane rollout using the control-plane pool. |
+| 5 | Worker `KubeadmConfigTemplate`, worker `BaremetalMachineTemplate`, and `MachineDeployment` | Cluster API starts the worker rollout using the worker pool. |
 
 :::warning
 **Important Namespace Requirement**
@@ -84,6 +84,7 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 
 | Placeholder | Source of truth | How to retrieve |
 |---|---|---|
+| `<cluster-name>` | Operator-supplied workload cluster name. Must not be `global`. | Choose once and use consistently for `Cluster`, `BaremetalCluster`, pools, templates, and registration resources. |
 | `<kubernetes-version>` | `elemental-image-catalog` ConfigMap key (with leading `v`, for example `v1.33.7-2`). | `kubectl -n cpaas-system get cm elemental-image-catalog -o yaml` |
 | `<base-image-iso>` | Same ConfigMap entry, with `-iso` appended to the repository. Tag/digest matches the catalog value. | See the [SeedImage step](#step-1-machineregistration-seedimage). |
 | `<registry-address>` | Platform registry (same value as `global.registry.address` on the install chart). | `kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'` (when one exists). |
@@ -92,7 +93,14 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 | `<dns-server>` | Operator-supplied. Written into `/etc/resolv.conf` by both `MachineRegistration.config.cloud-config` and `SeedImage.cloud-config`. | n/a |
 | `<ssh-authorized-keys>` | Operator-supplied OpenSSH public key — required for any interactive debugging on the node. | n/a |
 | `<inventory-name>` | Allocated by `elemental-operator` after the host boots the ISO and registers. Cannot be predicted before registration. | `kubectl -n cpaas-system get machineinventories.elemental.cattle.io` |
+| `<pool-name>` | Name of the `MachineInventoryPool` that claims an inventory. | Use `<cluster-name>-control-plane-pool` or `<cluster-name>-worker-pool` in the examples below. |
+| `<control-plane-inventory-1/2/3>` / `<worker-inventory-1/2/3>` | Exact `MachineInventory` names selected for each role. | Use the names from `kubectl -n cpaas-system get machineinventories.elemental.cattle.io`. |
+| `<control-plane-host-1/2/3>` / `<worker-host-1>` | Optional Kubernetes node hostnames applied during reprovision. | Operator-supplied; omit `hostname` to fall back to the inventory name. |
 | `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the `global` cluster's CIDRs, or any other CAPI cluster on the same `global`. | n/a |
+| `<machine-name>` | Existing CAPI `Machine` name used for targeted removal or recovery. | `kubectl -n cpaas-system get machines.cluster.x-k8s.io` |
+| `<new-replica-count>` | Desired `MachineDeployment.spec.replicas` value after scaling. | Operator-supplied target worker count. |
+| `<new-template-name>` | New immutable template name for a changed `BaremetalMachineTemplate` or `KubeadmConfigTemplate`. | Operator-supplied; create a new name instead of editing an existing template in place. |
+| `<new-kubernetes-version>` / `<new-tag>` / `<new-image>` | Target upgrade version and matching bare-metal base-image tag or resolved image. | Use the release support matrix and confirm the final key exists in `elemental-image-catalog`. |
 
 ### Step 1: Build the SeedImage and Register Hosts \{#step-1-machineregistration-seedimage}
 

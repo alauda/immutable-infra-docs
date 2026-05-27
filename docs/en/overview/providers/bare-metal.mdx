@@ -51,21 +51,13 @@ The provider currently follows a YAML-only workflow. There is no Fleet Essential
 
 ### Object hierarchy
 
-```text
-elemental.cattle.io                              infrastructure.cluster.x-k8s.io
-─────────────────────                            ────────────────────────────────
-MachineRegistration  ──┐                         BaremetalCluster
-                       │                         BaremetalMachineTemplate
-SeedImage            ──┤                         BaremetalMachine
-                       ▼                         MachineInventoryPool
-MachineInventory  ◄──────────────────────────►  (referenced by name)
-   ▲
-   │ (default plan secret, status.plan)
-   ▼
-elemental-system-agent on the host
-```
+| Layer | Owned resources | Role in the workflow |
+|---|---|---|
+| `elemental.cattle.io` | `MachineRegistration`, `SeedImage`, `MachineInventory` | Registers physical hosts, builds the bootable ISO, and keeps the long-lived host identity. |
+| Host agent | `elemental-system-agent` on each host | Polls the default plan secret referenced by `MachineInventory.status.plan.secretRef` and reports plan state back to `MachineInventory.status.plan.state`. |
+| `infrastructure.cluster.x-k8s.io` | `BaremetalCluster`, `BaremetalMachineTemplate`, `BaremetalMachine`, `MachineInventoryPool` | Implements the Cluster API infrastructure provider, selects inventories from pools, and writes `clean` / `reprovision` plans. |
 
-`elemental-operator` owns the left column (host registration and the long-lived `MachineInventory`). `cluster-api-provider-baremetal` owns the right column (the Cluster API infrastructure tree) and only references `MachineInventory` by name.
+The ownership boundary is deliberate: `elemental-operator` owns host registration and `MachineInventory` lifecycle, while `cluster-api-provider-baremetal` owns the Cluster API infrastructure tree. The provider references `MachineInventory` objects by name and writes plans through the inventory's existing plan secret; it does not create or delete inventories.
 
 ### Bare-metal concepts
 
@@ -115,7 +107,7 @@ The Cluster API infrastructure machine. Reconciles a single `Machine` against a 
 1. Picks an `Available` inventory from the pool referenced by the owning template.
 2. Reads the owning `Machine.spec.bootstrap.dataSecretName` and resolves the elemental upgrade image for `Machine.spec.version` from the image catalog.
 3. Normalizes the bootstrap user-data (hostname, kubelet `provider-id`, `criSocket`) and writes the `reprovision` plan into the `MachineInventory` plan secret.
-4. Watches `MachineInventory.status.plan.state` until the plan reports `Applied`, then sets `BaremetalMachine.status.providerID = baremetal:///<inventory-name>`.
+4. Watches `MachineInventory.status.plan.state` until the plan reports `Applied`, then sets `BaremetalMachine.spec.providerID = baremetal:///<inventory-name>`.
 5. On deletion, writes a `clean` plan and clears the owner annotations once the plan applies, returning the inventory to the pool.
 
 Phase transitions: `Pending → Allocated → Reprovisioning → Running`; deletion: `Running → Preparing → Deleted`; failure: `* → Failed`.
@@ -137,7 +129,7 @@ The provider applies the plans through the upstream "single default plan secret"
 
 #### `alive` (control-plane HA) \{#alive}
 
-`alive` is a set of static pods (keepalived + IPVS) plus a `kube-lock` Lease arbitrator that maintain the control-plane VIP described in `BaremetalCluster.spec.controlPlaneLoadBalancer`. The provider deploys `alive` as an `AppRelease` on the workload cluster once the first control-plane Node is Ready, and re-renders it whenever the control-plane membership changes. During the very first `kubeadm init`, the provider prepends a one-off `ip addr add <vip>/32 dev eth0` command to the bootstrap so that the first node holds the VIP until `alive` takes over.
+`alive` is a set of static pods (keepalived + IPVS) plus a `kube-lock` Lease arbitrator that maintain the control-plane VIP described in `BaremetalCluster.spec.controlPlaneLoadBalancer`. The provider deploys `alive` as an `AppRelease` on the workload cluster once the first control-plane Node is Ready, and re-renders it whenever the control-plane membership changes. During the very first `kubeadm init`, the provider prepends a one-off `ip addr add <control-plane-vip>/32 dev eth0` command to the bootstrap so that the first node holds the VIP until `alive` takes over.
 
 The VIP must live in the control-plane nodes' Layer-2 broadcast domain; `vrid` must be unique within that domain.
 
@@ -161,7 +153,9 @@ All bare-metal infrastructure resources belong to `infrastructure.cluster.x-k8s.
 
 ## Supported Kubernetes Versions
 
-The bare-metal provider supports the Kubernetes versions listed in its `elemental-image-catalog`. The default chart values ship two entries (the `v1.33.7-2` and `v1.34.5` `baremetal-base-image` releases); additional versions are introduced by appending entries to `provider.imageCatalog.images` (renders to `global.registry.address/<repository>:<tag>`) or by overriding with a full image reference under `provider.imageCatalog.data`. See [OS Support Matrix](../os-support-matrix.mdx) for the matching component versions.
+Use the product support matrix for the Kubernetes versions supported by each ACP release. See [OS Support Matrix](../os-support-matrix.mdx) for the release-approved Kubernetes version and matching component versions.
+
+The bare-metal provider enforces that support decision through `elemental-image-catalog`: every `Machine.spec.version` used by a cluster must exist as a key in that ConfigMap. The catalog wiring and out-of-band override procedure are documented in [Installation](../../install/bare-metal.mdx) and [Upgrading Clusters](../../upgrade-cluster/bare-metal.mdx).
 
 ## Requirements
 
