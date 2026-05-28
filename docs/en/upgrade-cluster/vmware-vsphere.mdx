@@ -75,6 +75,12 @@ Upgrades rely on Cluster API's rolling replacement mechanism. Each cluster has f
 vSphere clusters do not currently expose a Fleet Essentials UI upgrade path. Use the YAML procedure documented below, or the two-step upgrade flow built into the ACP Core platform — see <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
 :::
 
+## Cross-Version Upgrades  \{#cross-version-upgrades}
+
+When the target ACP version is more than one Kubernetes minor above the cluster's current version, upgrade the Kubernetes version one minor at a time — for example, v1.32 → v1.33 → v1.34. Kubernetes only supports single-minor upgrades, and each intermediate Kubernetes minor uses the matching VM template and Core images from its OS Support Matrix row.
+
+Before starting a cross-version upgrade, complete the [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation) so the intermediate Core images and VM templates required for each hop are already staged.
+
 ## Required Values From the OS Support Matrix \{#required-values}
 
 The authoritative mapping between an ACP release, its VM template, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the steps below need.

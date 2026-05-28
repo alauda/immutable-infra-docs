@@ -38,6 +38,7 @@ Like workload clusters, the `global` cluster on Immutable Infrastructure follows
 - An etcd backup of the `global` cluster has been taken and verified.
 - The new MicroOS image and the matching `KubeadmControlPlane` and `MachineDeployment` versions are available on the platform's registry.
 - A maintenance window plan that accounts for rolling control plane replacement.
+- For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and OS images are pre-staged. See [Cross-Version Upgrade Preparation](../upgrade-cluster/index.mdx#cross-version-preparation).
 
 ## Procedure
 

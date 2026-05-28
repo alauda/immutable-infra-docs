@@ -103,6 +103,41 @@ See platform-specific guides:
 
 ---
 
+## Preparing for Cross-Version Upgrades  \{#cross-version-preparation}
+
+When the target ACP Distribution Version is more than one Kubernetes minor above the cluster's current version, additional preparation is required before starting Phase 2. Single-minor upgrades skip this section.
+
+On Immutable Infrastructure, each Kubernetes minor is baked into a matching OS image, and each Kubernetes minor maps to a specific ACP version row in [OS Support Matrix](../overview/os-support-matrix.mdx). The Kubernetes version therefore moves forward one minor at a time, stepping through the OS image of each intermediate ACP row. The ACP Core (Distribution Version) itself is still upgraded directly to the target version through the Cluster Version Operator — only the Kubernetes version steps through the intermediate minors.
+
+Identify every ACP minor between the current and target versions, use the latest patch in each row, and complete the following pre-staging for each intermediate version before starting Phase 2.
+
+### Step 1 — Pre-sync intermediate Core images to the registry
+
+For each intermediate ACP version, download its Core package and synchronize only its images into the registry. Do not request a Core upgrade to the intermediate version.
+
+```bash
+bash upgrade.sh --only-sync-image
+```
+
+See <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html#sync-upgrade-artifacts" children="Sync upgrade artifacts" /> for command options.
+
+This places the intermediate-version CoreDNS, etcd, and Kube-OVN chart images in the registry so the staged Kubernetes rollout can pull them when `KubeadmControlPlane` is patched to the matching OS Support Matrix row. In an air-gapped environment, missing intermediate images prevent the new control plane components from starting.
+
+Aligned plugins do not need an extra `violet push` for the intermediate versions; they move directly to the target version with the Core upgrade, and the Kube-OVN chart used by each intermediate Kubernetes hop is already covered by the Core image sync above.
+
+### Step 2 — Stage intermediate OS images for the provisioning mechanism
+
+For each intermediate ACP version, make the matching OS image (the **MicroOS Image Version** value from the OS Support Matrix row) available to the node provisioning mechanism so the Kubernetes step can replace nodes from each image in turn:
+
+- **IaaS providers (Huawei DCS, VMware vSphere, Huawei Cloud Stack)**: upload the OS image and register it as a VM template (or VM image, depending on the platform) under the exact name listed in the OS Support Matrix row.
+- **Bare metal**: make the OS image available to the node re-provisioning flow used by your cluster.
+
+The control plane and worker rollouts then step through the intermediate OS images one at a time, matched to the staged Kubernetes minor, until the cluster reaches the target ACP version row.
+
+After completing both steps, continue with the platform-specific procedure below.
+
+---
+
 ## Platform-Specific Instructions
 
 Select your platform for detailed upgrade instructions:
