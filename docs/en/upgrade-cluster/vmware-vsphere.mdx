@@ -44,6 +44,7 @@ Before you begin, ensure the following conditions are met:
 - The control plane is healthy and reachable.
 - All nodes are in the `Ready` state.
 - The target VM template is present in the vSphere environment under the same name as the **MicroOS Image Version** value in the OS Support Matrix row. The upgrade fails if the template is not present when the new `VSphereMachineTemplate` is applied.
+- For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM templates are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
 - The target Kubernetes version is compatible with your workloads and add-ons.
 - The machine config pools have enough capacity for rolling updates.
 - Review the Kubernetes upgrade path and version skew policy.

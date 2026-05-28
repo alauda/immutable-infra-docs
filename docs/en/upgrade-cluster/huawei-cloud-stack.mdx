@@ -70,6 +70,7 @@ Before you start, ensure all of the following prerequisites are met:
 - The control plane is reachable.
 - All nodes are healthy and in `Ready` state.
 - The target VM image is present in the HCS environment under the same name as the **MicroOS Image Version** value in the OS Support Matrix row. The upgrade fails if the image is not present when the new `HCSMachineTemplate` is applied.
+- For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM images are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
 - The target Kubernetes version is compatible with your workloads and add-ons.
 - Review the Kubernetes upgrade path and version skew policy.
 - Any node-local state that must survive replacement is declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`, not in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.

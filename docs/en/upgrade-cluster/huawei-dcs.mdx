@@ -62,6 +62,7 @@ Before you start, ensure all of the following prerequisites are met:
 - All nodes are healthy and in Ready state
 - The IP Pool has sufficient capacity for rolling updates
 - The VM template supports the target Kubernetes version. See [OS Support Matrix](../overview/os-support-matrix.mdx) for version mapping
+- For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM templates are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation)
 - The target Kubernetes version is compatible with your workloads and add-ons
 - DCS VM templates are `4.2.1` or later if you use pool-managed persistent disks, because safe shutdown and disk detach depend on guest tools
 - If you rely on pool-managed persistent disks, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`
@@ -393,17 +394,6 @@ Worker Node Pools cannot be upgraded until the Control Plane Node Pool upgrade c
 | Control Plane not started | ❌ Disabled: "Upgrade the Control Plane Node Pool first" |
 | Control Plane upgrading | ❌ Disabled: "Wait for the Control Plane Node Pool upgrade to complete" |
 | Control Plane upgraded | ✅ Enabled |
-
-### Cross-Version Upgrades
-
-When upgrading across multiple minor versions (for example, v1.32 → v1.34):
-
-1. Upgrade Control Plane to v1.33
-2. Wait for completion
-3. Upgrade Control Plane to v1.34
-4. Repeat for Worker Pools
-
-**Why**: Kubernetes only supports single minor version upgrades.
 
 ### Troubleshooting
 
