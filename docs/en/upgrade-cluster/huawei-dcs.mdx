@@ -395,17 +395,6 @@ Worker Node Pools cannot be upgraded until the Control Plane Node Pool upgrade c
 | Control Plane upgrading | ❌ Disabled: "Wait for the Control Plane Node Pool upgrade to complete" |
 | Control Plane upgraded | ✅ Enabled |
 
-### Cross-Version Upgrades
-
-When upgrading across multiple minor versions (for example, v1.32 → v1.34):
-
-1. Upgrade Control Plane to v1.33
-2. Wait for completion
-3. Upgrade Control Plane to v1.34
-4. Repeat for Worker Pools
-
-**Why**: Kubernetes only supports single minor version upgrades. Each intermediate Kubernetes minor uses the matching VM template and Core images from its OS Support Matrix row, so the intermediate Core images and VM templates must be pre-staged before the cross-version upgrade starts. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
-
 ### Troubleshooting
 
 | Issue | Solution |

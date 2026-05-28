@@ -134,7 +134,9 @@ For each intermediate ACP version, make the matching OS image (the **MicroOS Ima
 
 The control plane and worker rollouts then step through the intermediate OS images one at a time, matched to the staged Kubernetes minor, until the cluster reaches the target ACP version row.
 
-After completing both steps, continue with the platform-specific procedure below.
+### Step 3 — Apply the platform-specific procedure for each intermediate version
+
+Repeat the platform-specific Phase 2 procedure for each intermediate ACP version in turn, using that version's row in [OS Support Matrix](../overview/os-support-matrix.mdx) for `KubeadmControlPlane` and `MachineDeployment` values. For each hop, complete the provider's standard procedure — control plane first, then workers, per the Kubernetes version skew policy — before starting the next. After all intermediate hops succeed, apply the same procedure once more for the target ACP version.
 
 ---
 

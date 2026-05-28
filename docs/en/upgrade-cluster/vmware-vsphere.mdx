@@ -44,6 +44,7 @@ Before you begin, ensure the following conditions are met:
 - The control plane is healthy and reachable.
 - All nodes are in the `Ready` state.
 - The target VM template is present in the vSphere environment under the same name as the **MicroOS Image Version** value in the OS Support Matrix row. The upgrade fails if the template is not present when the new `VSphereMachineTemplate` is applied.
+- For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM templates are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
 - The target Kubernetes version is compatible with your workloads and add-ons.
 - The machine config pools have enough capacity for rolling updates.
 - Review the Kubernetes upgrade path and version skew policy.
@@ -74,12 +75,6 @@ Upgrades rely on Cluster API's rolling replacement mechanism. Each cluster has f
 
 vSphere clusters do not currently expose a Fleet Essentials UI upgrade path. Use the YAML procedure documented below, or the two-step upgrade flow built into the ACP Core platform — see <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
 :::
-
-## Cross-Version Upgrades  \{#cross-version-upgrades}
-
-When the target ACP version is more than one Kubernetes minor above the cluster's current version, upgrade the Kubernetes version one minor at a time — for example, v1.32 → v1.33 → v1.34. Kubernetes only supports single-minor upgrades, and each intermediate Kubernetes minor uses the matching VM template and Core images from its OS Support Matrix row.
-
-Before starting a cross-version upgrade, complete the [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation) so the intermediate Core images and VM templates required for each hop are already staged.
 
 ## Required Values From the OS Support Matrix \{#required-values}
 

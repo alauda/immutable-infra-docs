@@ -70,6 +70,7 @@ Before you start, ensure all of the following prerequisites are met:
 - The control plane is reachable.
 - All nodes are healthy and in `Ready` state.
 - The target VM image is present in the HCS environment under the same name as the **MicroOS Image Version** value in the OS Support Matrix row. The upgrade fails if the image is not present when the new `HCSMachineTemplate` is applied.
+- For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM images are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
 - The target Kubernetes version is compatible with your workloads and add-ons.
 - Review the Kubernetes upgrade path and version skew policy.
 - Any node-local state that must survive replacement is declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`, not in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
@@ -110,12 +111,6 @@ Every upgrade step on this page therefore creates a new `HCSMachineTemplate` wit
 
 The Fleet Essentials UI workflow has not been adapted to the Cluster Version Operator (CVO) mechanism introduced in ACP 4.3. HCS clusters do not currently expose a Fleet Essentials UI upgrade path; use the YAML procedure documented below, or the two-step upgrade flow built into the ACP Core platform — see <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
 :::
-
-## Cross-Version Upgrades  \{#cross-version-upgrades}
-
-When the target ACP version is more than one Kubernetes minor above the cluster's current version, upgrade the Kubernetes version one minor at a time — for example, v1.32 → v1.33 → v1.34. Kubernetes only supports single-minor upgrades, and each intermediate Kubernetes minor uses the matching VM image and Core images from its OS Support Matrix row.
-
-Before starting a cross-version upgrade, complete the [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation) so the intermediate Core images and VM images required for each hop are already staged.
 
 ## Control Plane Upgrades
 
