@@ -3,14 +3,14 @@ weight: 30
 title: Upgrading the global Cluster
 queries:
   - upgrade global cluster on immutable infrastructure
-  - microos global cluster upgrade
+  - alauda os global cluster upgrade
   - upgrade platform on huawei dcs huawei cloud stack
   - immutable os global upgrade
 ---
 
 # Upgrading the global Cluster
 
-This document describes how to upgrade a `global` cluster that runs on Immutable Infrastructure. Upgrades replace nodes with new MicroOS images managed by the Cluster API provider; in-place node upgrades are not used.
+This document describes how to upgrade a `global` cluster that runs on Immutable Infrastructure. Upgrades replace nodes with new Alauda OS images managed by the Cluster API provider; in-place node upgrades are not used.
 
 ## When to Use This Path
 
@@ -26,7 +26,7 @@ For traditional-OS `global` clusters, use <ExternalSiteLink name="acp" href="/up
 Like workload clusters, the `global` cluster on Immutable Infrastructure follows a two-phase upgrade.
 
 1. **Phase 1 — Distribution Version**: aligned and agnostic extensions are upgraded to the target Distribution Version. The procedure is shared with workload clusters; see [Upgrading Clusters](../upgrade-cluster/index.mdx) for the Phase 1 mechanics.
-2. **Phase 2 — Kubernetes and OS Image**: nodes are replaced with new MicroOS images that contain the target Kubernetes version. This document focuses on Phase 2 for the `global` cluster.
+2. **Phase 2 — Kubernetes and OS Image**: nodes are replaced with new Alauda OS images that contain the target Kubernetes version. This document focuses on Phase 2 for the `global` cluster.
 
 <Directive type="info" title="Phase 1 Compatibility">
   Before starting Phase 2, verify that every workload cluster falls within the Compatible Versions matrix of the target Distribution Version. Workload clusters that are out of range must be upgraded first.
@@ -36,7 +36,7 @@ Like workload clusters, the `global` cluster on Immutable Infrastructure follows
 
 - The `global` cluster has completed Phase 1 (Distribution Version upgrade).
 - An etcd backup of the `global` cluster has been taken and verified.
-- The new MicroOS image and the matching `KubeadmControlPlane` and `MachineDeployment` versions are available on the platform's registry.
+- The new Alauda OS image and the matching `KubeadmControlPlane` and `MachineDeployment` versions are available on the platform's registry.
 - A maintenance window plan that accounts for rolling control plane replacement.
 - For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and OS images are pre-staged. See [Cross-Version Upgrade Preparation](../upgrade-cluster/index.mdx#cross-version-preparation).
 
@@ -46,7 +46,7 @@ After installation, the Cluster API controllers that manage the `global` cluster
 
 ### Step 1 — Update the global Cluster Manifest
 
-Update the Cluster API manifests of the `global` cluster to reference the new MicroOS image and Kubernetes version. The manifest fields to update are provider-specific.
+Update the Cluster API manifests of the `global` cluster to reference the new Alauda OS image and Kubernetes version. The manifest fields to update are provider-specific.
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -55,7 +55,7 @@ For DCS, create new immutable infrastructure templates instead of editing templa
 
 Update the control plane resources:
 
-- Create a new `DCSMachineTemplate` for the target image and set `spec.template.spec.vmTemplateName` to the MicroOS template that matches the target Kubernetes version.
+- Create a new `DCSMachineTemplate` for the target image and set `spec.template.spec.vmTemplateName` to the Alauda OS template that matches the target Kubernetes version.
 - Keep preserved node-local data, including `/var/cpaas`, in `DCSIpHostnamePool.spec.pool[].persistentDisk`. Do not move preserved disks back into `DCSMachineTemplate`.
 - Set `KubeadmControlPlane.spec.version` to the target Kubernetes version.
 - Point `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` to the new `DCSMachineTemplate`.
@@ -106,7 +106,7 @@ For HCS, create new immutable infrastructure templates instead of editing templa
 
 Update the control plane resources:
 
-- Create a new `HCSMachineTemplate` for the target image and set `spec.template.spec.imageName` to the MicroOS image that matches the target Kubernetes version.
+- Create a new `HCSMachineTemplate` for the target image and set `spec.template.spec.imageName` to the Alauda OS image that matches the target Kubernetes version.
 - Keep preserved node-local data, including `/var/cpaas`, in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`. Do not move preserved disks back into `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
 - Leave runtime identity fields unset in the new template, including `spec.template.spec.providerID` and `spec.template.spec.serverId`.
 - Set `KubeadmControlPlane.spec.version` to the target Kubernetes version.
