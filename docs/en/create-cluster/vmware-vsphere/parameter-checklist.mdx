@@ -138,7 +138,7 @@ Use the following table to record the required values and validation results.
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| VM template name | `<template_name>` | Yes | Used to clone control plane and worker nodes. | `microos-k8s-template` | - |
+| VM template name | `<template_name>` | Yes | Used to clone control plane and worker nodes. | `alaudaos-k8s-template` | - |
 | vCenter credential secret name | `<credentials_secret_name>` | Yes | Use a stable name such as `<cluster_name>-vsphere-credentials`. | `demo-cluster-vsphere-credentials` | - |
 | Clone mode | `<clone_mode>` | Yes | Allowed values: `linkedClone`, `fullClone`. Default is `linkedClone`. `linkedClone` requires the VM template to have at least one snapshot; if none exists, CAPV falls back to `fullClone`. When `linkedClone` is used, `diskGiB` is ignored; the system disk stays at the template's size. Choose `fullClone` if you need `diskGiB` to take effect. | `linkedClone` | - |
 | Power-off mode | `<power_off_mode>` | Yes | Allowed values: `hard`, `soft`, `trySoft`. Default is `hard`. `soft` and `trySoft` require VMware Tools / `open-vm-tools` in the template for graceful shutdown; `trySoft` falls back to `hard` after the guest-soft-power-off timeout. | `trySoft` | - |

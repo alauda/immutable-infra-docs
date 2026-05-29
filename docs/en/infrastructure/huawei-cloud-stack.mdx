@@ -37,7 +37,7 @@ Prepare the following inputs before you create or edit any cluster manifests:
 | `externalGlobalDomain` | HCS credential `Secret` | HCS platform access domain | Yes | Use the HCS platform domain that the provider should call |
 | `schema` | HCS credential `Secret` | HCS administrator | No | Optional API scheme for the HCS IAM endpoint. If omitted, the provider uses `https` |
 | `region` | HCS credential `Secret` | HCS administrator | Yes | Tenant administrators cannot retrieve this value from the HCS UI |
-| `imageName` | `HCSMachineTemplate` | HCS image inventory | Yes | Use the validated HCS image name for the selected MicroOS image |
+| `imageName` | `HCSMachineTemplate` | HCS image inventory | Yes | Use the validated HCS image name for the selected Alauda OS image |
 | `flavorName` | `HCSMachineTemplate` | HCS administrator | Yes | Use the provider-recognized HCS API value matched against `Flavor.Name`, not the tenant UI display name |
 | `availabilityZone` | `HCSMachineTemplate` | HCS administrator | Yes | Use the provider-recognized HCS API value matched against `ZoneName`, not the tenant UI display name |
 | Root, temporary data volume, and persistent disk layout | `HCSMachineTemplate`, `HCSMachineConfigPool` | Cluster storage plan | Yes | Plan disk sizes and mount points before you write the template and pool. Put disks that can be recreated with the VM in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`. Put disks that must survive VM replacement, such as `/var/cpaas`, in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` |
@@ -72,7 +72,7 @@ Prepare the VM image, flavor, availability zone, temporary data volume layout, a
 
 | Input | Guidance |
 |-------|----------|
-| `imageName` | Use the validated HCS image name for the MicroOS image you want to deploy |
+| `imageName` | Use the validated HCS image name for the Alauda OS image you want to deploy |
 | `flavorName` | Use the provider-recognized HCS API value matched against `Flavor.Name`. Do not use the tenant UI display name |
 | `availabilityZone` | Use the provider-recognized HCS API value matched against `ZoneName`. Do not use the tenant UI display name |
 | Root and temporary data volumes | Plan system and temporary data disks in advance. Control plane templates typically use temporary data volumes for `/var/lib/etcd`, `/var/lib/kubelet`, and `/var/lib/containerd`. Worker templates typically use temporary data volumes for `/var/lib/kubelet` and `/var/lib/containerd`. |
@@ -82,7 +82,7 @@ Prepare the VM image, flavor, availability zone, temporary data volume layout, a
 
 ## Version and Component Baseline
 
-Use the [OS Support Matrix](../overview/os-support-matrix.mdx) only for the component versions it explicitly lists, such as Kubernetes, coredns, etcd, and pause versions for supported MicroOS images.
+Use the [OS Support Matrix](../overview/os-support-matrix.mdx) only for the component versions it explicitly lists, such as Kubernetes, coredns, etcd, and pause versions for supported Alauda OS images.
 
 The OS Support Matrix is not a complete source for all HCS manifest values. Before writing YAML, also get the approved release baseline for values such as the container image repository, DNS image repository, Kube-OVN version, Kube-OVN join CIDR, Pod CIDR, and Service CIDR. If your release does not publish a complete baseline source yet, use values validated for your environment by the platform or release owner.
 
