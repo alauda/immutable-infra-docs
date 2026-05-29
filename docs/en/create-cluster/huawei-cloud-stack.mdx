@@ -259,7 +259,7 @@ spec:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `.spec.template.spec.imageName` | string | Yes | HCS image name. Use the image identifier published in the current release's OS support matrix; placeholder shown as `<microos-version>` in the manifest above. The exact name moves with each MicroOS release, so do not hardcode the example value across versions. |
+| `.spec.template.spec.imageName` | string | Yes | HCS image name. Use the image identifier published in the current release's OS support matrix; placeholder shown as `<alaudaos-version>` in the manifest above. The exact name moves with each Alauda OS release, so do not hardcode the example value across versions. |
 | `.spec.template.spec.flavorName` | string | Yes | Provider-recognized HCS API value matched against `Flavor.Name`. Do not use the tenant UI display name |
 | `.spec.template.spec.availabilityZone` | string | No | Provider-recognized HCS API value matched against `ZoneName`. Do not use the tenant UI display name |
 | `.spec.template.spec.rootVolume.type` | string | Yes | Volume type (`SSD` or `SATA`) |
@@ -425,7 +425,7 @@ The HCS controller also injects files while resolving cloud-init data. It writes
 
 **Note:** HCS also supports creating a single-control-plane cluster by setting `spec.replicas: 1` and preparing one control plane config entry in the referenced `HCSMachineConfigPool`. Treat this as a creation-only topology, and leave the rollout strategy unset in that create manifest. The upgrade flow in this documentation does not support single-control-plane HCS clusters.
 
-Use the [OS Support Matrix](../overview/os-support-matrix.mdx) only for the component versions it explicitly lists, such as coredns and etcd image tags for supported MicroOS images. It is not a complete source for all HCS manifest values. Before you apply this YAML, also use the approved release baseline for values such as `imageRepository`, DNS image repository, Kube-OVN version, Kube-OVN join CIDR, Pod CIDR, and Service CIDR.
+Use the [OS Support Matrix](../overview/os-support-matrix.mdx) only for the component versions it explicitly lists, such as coredns and etcd image tags for supported Alauda OS images. It is not a complete source for all HCS manifest values. Before you apply this YAML, also use the approved release baseline for values such as `imageRepository`, DNS image repository, Kube-OVN version, Kube-OVN join CIDR, Pod CIDR, and Service CIDR.
 
 ### Configure HCSCluster
 

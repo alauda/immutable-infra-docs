@@ -127,7 +127,7 @@ Aligned plugins do not need an extra `violet push` for the intermediate versions
 
 ### Step 2 — Stage intermediate OS images for the provisioning mechanism
 
-For each intermediate ACP version, make the matching OS image (the **MicroOS Image Version** value from the OS Support Matrix row) available to the node provisioning mechanism so the Kubernetes step can replace nodes from each image in turn:
+For each intermediate ACP version, make the matching OS image (the **Alauda OS Image Version** value from the OS Support Matrix row) available to the node provisioning mechanism so the Kubernetes step can replace nodes from each image in turn:
 
 - **IaaS providers (Huawei DCS, VMware vSphere, Huawei Cloud Stack)**: upload the OS image and register it as a VM template (or VM image, depending on the platform) under the exact name listed in the OS Support Matrix row.
 - **Bare metal**: make the OS image available to the node re-provisioning flow used by your cluster.

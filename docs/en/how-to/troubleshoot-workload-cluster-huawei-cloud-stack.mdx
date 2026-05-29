@@ -53,7 +53,7 @@ Indicators that you are hitting this pattern:
 
 Upgrade the `cluster-api-provider-hcs` plugin to v1.0.1 or later, then trigger a rolling replacement of the affected control plane and worker machines so the new cloud-init runs on freshly booted VMs. The step-by-step procedure is documented in [Configure FQDN Hostname on Existing HCS Clusters](./migrate-hcs-node-fqdn-hostname.mdx).
 
-Manual edits to `/etc/hostname` and `/etc/hosts` on an existing MicroOS / SLE Micro node do not persist: cloud-init re-renders these files on every boot, including reboots triggered by `transactional-update`, OS patching, or `systemctl reboot`. Rolling replacement is the supported migration path.
+Manual edits to `/etc/hostname` and `/etc/hosts` on an existing immutable-OS node do not persist: cloud-init re-renders these files on every boot, including reboots triggered by `transactional-update`, OS patching, or `systemctl reboot`. Rolling replacement is the supported migration path.
 
 ### Prevent
 
