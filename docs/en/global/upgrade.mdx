@@ -90,6 +90,8 @@ spec:
             - defaults
 ```
 
+Use `isThin` only when the DCS environment requires an explicit thin-provisioning value. If omitted, the provider does not send `isThin` and DCS uses the platform default. New persistent volumes are created as independent persistent normal volumes.
+
 Use the IP pool status to confirm that preserved disks are detached from old VMs and attached to replacement VMs during the rolling replacement.
 
   </Tab>
