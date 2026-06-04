@@ -331,6 +331,7 @@ spec:
 | `slot` | Disk position within the IP slot. It determines attach order, guest device naming, and the sequence number used during volume claim and reattach. |
 | `quantityGB` | Disk size in GB. |
 | `datastoreName` / `datastoreClusterName` | Specify exactly one storage target for the persistent disk. |
+| `isThin` | Optional. Controls DCS thin provisioning for newly created persistent volumes. If omitted, the provider does not send `isThin` and DCS uses the platform default. |
 | `path` | Mount path inside the guest OS. `/var/cpaas` is the platform-required path. |
 | `format` | Filesystem used when the disk is first initialized. If the replacement VM sees an existing filesystem, formatting is skipped. |
 | `options` | `mkfs` options applied only when the disk is first formatted. |
@@ -340,9 +341,10 @@ spec:
 **Update rules:**
 
 - You can append new `persistentDisk` entries to an existing IP slot. The controller attaches the newly added disk to the running VM on the DCS side, but it does not format or mount the disk inside the guest OS. Guest formatting and mounting take effect only after the VM is replaced and the replacement VM runs the generated disk setup during bootstrap.
+- The controller creates new persistent volumes as independent persistent normal volumes. When it reuses an existing volume, it only requires the volume to be independent and persistent; it does not require a specific DCS volume type.
 - Do not delete existing `persistentDisk` entries from the spec. The webhook rejects removal.
 - Treat `format`, `options`, and `pciType` as immutable after creation.
-- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort platform validation when the pool carries a cluster label.
+- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort platform validation when the pool carries a cluster label. `isThin` is creation-only: changing it does not validate, reconcile, or convert existing volumes, and affects only persistent volumes created later.
 - Treat `path` and `mountOptions` changes as guest-side changes that take effect on replacement machines during rolling updates.
 
 ---

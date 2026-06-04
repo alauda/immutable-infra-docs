@@ -238,7 +238,7 @@ Follow these steps in order to provision a functional cluster (control plane **a
 
 **Note**: Infrastructure resources (Secret, control-plane `DCSIpHostnamePool`, control-plane `DCSMachineTemplate`) should be configured separately. See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for instructions.
 
-If you need any disk to survive rolling replacement, declare it in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry. This includes the platform-required `/var/cpaas` disk.
+If you need any disk to survive rolling replacement, declare it in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry. This includes the platform-required `/var/cpaas` disk. The provider creates new persistent volumes as independent persistent normal volumes. When the DCS environment requires an explicit thin-provisioning setting, set `persistentDisk[].isThin`; if you omit it, the provider does not send `isThin` and DCS uses the platform default.
 
 ### Resolving Placeholder Values \{#resolving-placeholders}
 
