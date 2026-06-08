@@ -47,6 +47,7 @@ Prepare the following inputs before you create or edit any cluster manifests:
 | `vipAddress` and `vipSubnetName` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS ELB address plan | Yes | `vipAddress` must belong to `vipSubnetName` |
 | `elbVirsubnetL4Ips` and `elbVirsubnetL7Ips` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS ELB address plan | Yes | Each L4 or L7 entry must include exactly two IPs |
 | `vipDomainName` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS Cloud DNS Private Zones | Recommended | Configure the domain so it already resolves to `vipAddress` |
+| Control plane HA placement policy | `HCSCluster.spec.controlPlaneHA` | HCS scheduling policy plan | No | Required only when you enable provider-managed control-plane server groups. Choose `anti-affinity` or `soft-anti-affinity` |
 | `controlPlaneEndpoint` | `Cluster.status` / derived cluster endpoint | Controller-managed | No | Do not prepare or write this field in create manifests; the controller fills it after the ELB is ready |
 
 ## Credential Secret Inputs
@@ -139,6 +140,21 @@ If you set `vipDomainName`, configure HCS Cloud DNS Private Zones so the domain 
 - Do not disable Hybrid Load Balancing on the HCS ELB after the cluster is created.
 - Do not write `spec.controlPlaneEndpoint` in the create manifest. The controller fills that field after the ELB is ready.
 
+## Control Plane HA Placement Plan \{#control-plane-ha-placement}
+
+For a multi-replica control plane, you can configure the HCS provider to create and maintain a provider-owned server group for control-plane ECS placement. Enable this through `HCSCluster.spec.controlPlaneHA` when you write the cluster manifest.
+
+Plan the placement policy before you enable the feature:
+
+| Policy | Behavior | Operational impact |
+|--------|----------|--------------------|
+| `anti-affinity` | Hard anti-affinity. HCS must place control-plane ECS instances on different hosts. | Use this when strict host separation is required. ECS creation can fail if HCS cannot find enough capacity that satisfies the rule. |
+| `soft-anti-affinity` | Best-effort anti-affinity. HCS tries to place control-plane ECS instances on different hosts. | Use this when you prefer spread but do not want the rule to block ECS creation. Final placement may still share a host. |
+
+This feature is cluster-scoped and applies only to control-plane machines. It does not configure worker node pools. The provider creates the server group, attaches control-plane ECS creation requests to that group, records the server group in `HCSCluster.status.controlPlaneHA`, and reports progress through the `ControlPlaneHAReady` condition.
+
+For the manifest example and verification commands, see [Configure HCSCluster](../create-cluster/huawei-cloud-stack.mdx#configure-hcscluster) and [Verify Control Plane HA](../create-cluster/huawei-cloud-stack.mdx#verify-control-plane-ha).
+
 ## Static IP Pool Plan
 
 This page focuses on the planned static IP workflow.
@@ -213,6 +229,7 @@ Use the following mapping after you complete the preparation checklist:
 | Control plane and worker hostnames, static IPs, and pool-managed persistent disks | `HCSMachineConfigPool.spec.configs[]` |
 | VPC name, subnet inventory, security group name | `HCSCluster.spec.network.*` |
 | `vipAddress`, `vipSubnetName`, `vipDomainName`, `elbVirsubnetL4Ips`, `elbVirsubnetL7Ips` | `HCSCluster.spec.controlPlaneLoadBalancer.*` |
+| Control plane HA placement policy | `HCSCluster.spec.controlPlaneHA.*` |
 | Kubernetes version and component baseline | `KubeadmControlPlane.spec.version`, `Cluster.spec.clusterNetwork.*`, cluster annotations, and related bootstrap settings |
 
 ## Next Steps
