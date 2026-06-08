@@ -464,7 +464,7 @@ Host placement on the DCS platform is performed by the DCS scheduler. The DCS Pr
 Two consequences follow from this:
 
 - **Capacity hot spots**: If the DCS cluster has uneven host load (for example, one host is severely CPU-over-committed while another is mostly idle), the DCS scheduler may refuse new placements on the over-committed host. The deploy task can stall until the load is rebalanced on the DCS side or DRS is enabled. Use the snippet below to confirm whether host load is the cause.
-- **No automatic spread for control plane**: Control-plane virtual machines from a single `DCSMachineTemplate` are not automatically distributed across multiple physical hosts. For high-availability deployments, configure VM-VM anti-affinity on the DCS platform side as described in [Cross-Host High Availability for Control Plane](#cross-host-ha) below.
+- **Control plane spread depends on DRS**: Control-plane virtual machines are not pinned to specific hosts through the machine template. For high-availability deployments, enable provider-managed DRS mutual exclusion as described in [Cross-Host High Availability for Control Plane](#cross-host-ha) below.
 
 To check current host load before applying a new template:
 
@@ -481,11 +481,30 @@ A `cpuMuxRatio` (CPU allocation / physical cores) above ~3× on every host in th
 
 ### Cross-Host High Availability for Control Plane \{#cross-host-ha}
 
-The DCS Provider does not currently implement host pinning or Cluster API `FailureDomain` spreading. As a result, the three control-plane virtual machines of a Kubernetes cluster created through this provider can be placed on the same physical DCS Host. If that host fails, the entire Kubernetes control plane is unavailable until the host recovers.
+The DCS Provider does not implement host pinning or Cluster API `FailureDomain` spreading. Instead, it can maintain a provider-owned DCS DRS rule for control-plane virtual machines when you enable `DCSCluster.spec.controlPlaneHA`.
 
-To force control-plane virtual machines onto different physical hosts, configure a VM-VM anti-affinity rule on the DCS platform side. The DCS platform calls this feature 互斥虚拟机 (Mutually Exclusive Virtual Machines). The rule is configured under the DCS Cluster's compute resource scheduling settings, lists the control-plane virtual machines by name, and instructs the DCS scheduler to keep those virtual machines on different hosts.
+The provider creates and updates a DRS `ruleType=2` mutual-exclusion rule after the control-plane VMs exist and their VM URNs are known. The rule lists the current control-plane VMs for one workload cluster and asks the DCS scheduler to keep them on different physical hosts. DCS remains responsible for executing the placement decision and any runtime migration.
 
-A full operational runbook for this configuration is being prepared and will be published as a separate document. Until it is available, follow the DCS / FusionCompute platform documentation, or contact the DCS platform support team. Two prerequisites apply on the DCS side: the target cluster must have enough healthy hosts (typically at least one host per control-plane virtual machine), and the cluster must have DRS enabled if the rule should also be honoured during runtime rebalancing.
+Before you enable this feature, verify the following DCS-side requirements:
+
+- The target DCS compute cluster has DRS enabled.
+- The target DCS compute cluster has enough healthy hosts and capacity. A three-replica control plane normally needs at least three usable hosts.
+- The selected datastores are visible from all hosts that may run the control-plane VMs.
+- Runtime DRS migration is not blocked by DCS-side constraints such as a mounted CD-ROM device.
+
+Enable the feature in `DCSCluster.spec.controlPlaneHA` when you write the cluster manifest. For the manifest example and the status fields to watch, see [Configure DCSCluster](../create-cluster/huawei-dcs.mdx#configure-dcscluster) and [Verify Control Plane HA](../create-cluster/huawei-dcs.mdx#verify-control-plane-ha).
+
+After the cluster is created, inspect the condition and status on `DCSCluster`:
+
+```bash
+kubectl get dcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{range .status.conditions[?(@.type=="ControlPlaneHAReady")]}{.status}{" "}{.reason}{" "}{.message}{"\n"}{end}'
+
+kubectl get dcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{.status.controlPlaneHA}{"\n"}'
+```
+
+`ControlPlaneHAReady=True` means the provider-managed DRS rule exists and the provider has observed the current control-plane VMs on different DCS hosts. `ControlPlaneHAReady=False` with reason `ControlPlaneHAPending` usually means the controller is waiting for VM URNs, waiting for enough members, or waiting for DCS-side placement to converge. `ControlPlaneHAReady=False` with reason `ControlPlaneHAFailed` means the provider could not query, validate, create, update, delete, or check the DRS rule. Read the condition message before checking controller logs.
 
 ### Troubleshooting: VM stuck in `creating` \{#stuck-creating}
 
