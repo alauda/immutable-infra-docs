@@ -153,6 +153,8 @@ Plan the placement policy before you enable the feature:
 
 This feature is cluster-scoped and applies only to control-plane machines. It does not configure worker node pools. The provider creates the server group, attaches control-plane ECS creation requests to that group, records the server group in `HCSCluster.status.controlPlaneHA`, and reports progress through the `ControlPlaneHAReady` condition.
 
+For an existing cluster, enabling `HCSCluster.spec.controlPlaneHA` creates and records the provider-owned server group, but it does not retroactively add already-running control-plane ECS instances to that group. Server group placement is applied when a control-plane ECS is created with `os:scheduler_hints.group`. To converge an existing cluster, enable `controlPlaneHA`, wait for `HCSCluster.status.controlPlaneHA.id`, then trigger a control-plane rolling replacement so replacement ECS instances are created with the server group. Until the current control-plane ECS members have been replaced and observed in the group, `ControlPlaneHAReady` can remain `False` with reason `ControlPlaneHAPending`.
+
 For the manifest example and verification commands, see [Configure HCSCluster](../create-cluster/huawei-cloud-stack.mdx#configure-hcscluster) and [Verify Control Plane HA](../create-cluster/huawei-cloud-stack.mdx#verify-control-plane-ha).
 
 ## Static IP Pool Plan

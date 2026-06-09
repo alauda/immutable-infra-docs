@@ -508,7 +508,7 @@ spec:
 
 Do not include `spec.controlPlaneEndpoint` in the create manifest. In the HCS create flow, the controller derives and populates this field from `spec.controlPlaneLoadBalancer` after the `HCSCluster` is created. Do not set `controlPlaneEndpoint` manually, and do not add an empty `controlPlaneEndpoint` object. If `controlPlaneEndpoint` is explicitly present in the manifest, it must include both `host` and `port`.
 
-`controlPlaneHA` is optional. When you include it, both `enabled` and `policy` are required. Use `anti-affinity` for strict host separation. Use `soft-anti-affinity` when you prefer host spread but do not want ECS creation to fail only because HCS cannot satisfy the hard placement rule. For planning guidance, see [Control Plane HA Placement Plan](../infrastructure/huawei-cloud-stack.mdx#control-plane-ha-placement).
+`controlPlaneHA` is optional. When you include it, both `enabled` and `policy` are required. Use `anti-affinity` for strict host separation. Use `soft-anti-affinity` when you prefer host spread but do not want ECS creation to fail only because HCS cannot satisfy the hard placement rule. For planning guidance, including the rolling replacement requirement when enabling the feature on an existing cluster, see [Control Plane HA Placement Plan](../infrastructure/huawei-cloud-stack.mdx#control-plane-ha-placement).
 
 ### Configure Cluster
 
