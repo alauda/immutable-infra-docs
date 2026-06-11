@@ -485,6 +485,8 @@ The DCS Provider does not implement host pinning or Cluster API `FailureDomain` 
 
 The provider creates and updates a DRS `ruleType=2` mutual-exclusion rule after the control-plane VMs exist and their VM URNs are known. The rule lists the current control-plane VMs for one workload cluster and asks the DCS scheduler to keep them on different physical hosts. DCS remains responsible for executing the placement decision and any runtime migration.
 
+The provider does not call the DCS Run DRS API and does not apply DRS recommendations. If `ControlPlaneHAReady` stays `False` with reason `ControlPlaneHAPending` after the rule has been maintained, the DCS scheduler has not converged the placement yet. Wait for DCS-side scheduling, or use the DCS platform operation process to run DRS and apply the generated recommendations.
+
 Before you enable this feature, verify the following DCS-side requirements:
 
 - The target DCS compute cluster has DRS enabled.
