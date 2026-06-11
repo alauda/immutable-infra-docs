@@ -415,7 +415,7 @@ spec:
 | `.spec.networkType` | string | Currently only supports "kube-ovn" | Yes |
 | `.spec.site` | string | DCS platform site ID | Yes |
 
-`controlPlaneHA` is optional. When enabled, the provider creates and maintains one DRS `ruleType=2` mutual-exclusion rule for the current control-plane VMs in this workload cluster. DCS performs the actual placement and runtime migration. For infrastructure prerequisites, see [Cross-Host High Availability for Control Plane](../infrastructure/huawei-dcs.mdx#cross-host-ha).
+`controlPlaneHA` is optional. When enabled, the provider creates and maintains one DRS `ruleType=2` mutual-exclusion rule for the current control-plane VMs in this workload cluster. DCS performs the actual placement and runtime migration. The provider does not run DRS or apply DRS recommendations. If the rule is maintained but placement has not converged, wait for the DCS scheduling mechanism or trigger/apply DRS from the DCS platform side. For infrastructure prerequisites, see [Cross-Host High Availability for Control Plane](../infrastructure/huawei-dcs.mdx#cross-host-ha).
 
 #### Single-Control-Plane (No External LB) Layout \{#single-control-plane-layout}
 
