@@ -66,7 +66,7 @@ Before you start, ensure all of the following prerequisites are met:
 - The target Kubernetes version is compatible with your workloads and add-ons
 - DCS VM templates are `4.2.1` or later if you use pool-managed persistent disks, because safe shutdown and disk detach depend on guest tools
 - If you rely on pool-managed persistent disks, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`
-- If the cluster uses additional NICs, keep the required `DCSIpHostnamePool.spec.pool[].additionNic[]` entries in place and confirm that the DCS DVS / Port Groups are reachable from the hosts that may receive replacement VMs
+- If the cluster uses additional NICs, keep the required `DCSIpHostnamePool.spec.pool[].additionNic[]` entries in place and confirm that the DCS DVS and Port Groups are reachable from the hosts that may receive replacement VMs
 
 :::warning
 **Disk Preservation Model**
