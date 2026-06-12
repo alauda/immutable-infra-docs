@@ -109,6 +109,12 @@ spec:
                               is nil, the Ignition template falls back to ext4. Immutable after
                               creation.
                             type: string
+                          isThin:
+                            description: |-
+                              IsThin is creation-only: it is sent only when creating new DCS
+                              persistent volumes, and is not validated or reconciled for existing
+                              volumes. Nil keeps the platform default.
+                            type: boolean
                           mountOptions:
                             items:
                               type: string
