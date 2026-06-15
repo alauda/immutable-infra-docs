@@ -27,7 +27,7 @@ Before creating clusters, ensure all of the following prerequisites are met:
 Configure the following infrastructure resources before creating a cluster:
 
 - **[Cloud Credential](../infrastructure/huawei-dcs.mdx#cloud-credentials)** - DCS platform access information
-- **[IP Pool](../infrastructure/huawei-dcs.mdx#ip-pools)** - Network configuration for cluster nodes and any IP-slot persistent disks such as `/var/cpaas`
+- **[IP Pool](../infrastructure/huawei-dcs.mdx#ip-pools)** - Network configuration for cluster nodes, additional NICs, and any IP-slot persistent disks such as `/var/cpaas`
 - **[Machine Template](../infrastructure/huawei-dcs.mdx#machine-templates)** - VM specifications for control plane and worker nodes, excluding pool-managed persistent disks
 
 See [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx) for detailed configuration instructions.
@@ -240,6 +240,8 @@ Follow these steps in order to provision a functional cluster (control plane **a
 
 If you need any disk to survive rolling replacement, declare it in the matching `DCSIpHostnamePool.spec.pool[].persistentDisk` entry. This includes the platform-required `/var/cpaas` disk. The provider creates new persistent volumes as independent persistent normal volumes. When the DCS environment requires an explicit thin-provisioning setting, set `persistentDisk[].isThin`; if you omit it, the provider does not send `isThin` and DCS uses the platform default.
 
+If the cluster needs additional NICs, declare them in `DCSIpHostnamePool.spec.pool[].additionNic[]` before the corresponding Machines are created. The provider applies additional NICs only during new VM creation. Existing VMs do not receive hot-added NICs when the Pool is edited later.
+
 ### Resolving Placeholder Values \{#resolving-placeholders}
 
 The example manifests below use `<placeholder>` syntax for values that are environment-specific. Several of these have a canonical source of truth that you should query rather than hand-pick:
@@ -274,6 +276,7 @@ Before creating control plane resources, plan the network architecture and deplo
 
 **Requirements**:
 - **Network segmentation**: Plan IP address ranges for control plane nodes
+- **Additional NICs**: If nodes require storage, management, or isolated application networks, plan `DCSIpHostnamePool.spec.pool[].additionNic[]` values for each IP slot, including DVS and Port Group names
 - **Load balancer**: Deploy and configure access to the API server
 - **API server address**: Prepare a stable VIP or load balancer address for the Kubernetes API Server
 - **Connectivity**: Ensure network connectivity between all components
@@ -524,6 +527,13 @@ kubectl get machines -n cpaas-system
 kubectl get clustermodule <cluster-name> -o jsonpath='{.status.base.deployStatus}'
 ```
 
+For clusters that use additional NICs, also verify that the provider recorded them on the matching `DCSMachine` objects:
+
+```bash
+kubectl -n cpaas-system get dcsmachine -l cluster.x-k8s.io/cluster-name=<cluster-name> \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.networkConfig.ip}{"\t"}{.status.additionalNic}{"\n"}{end}'
+```
+
 ### Expected Results
 
 A successfully created cluster should show:
@@ -532,6 +542,7 @@ A successfully created cluster should show:
 - All worker nodes (if deployed): **Running**
 - Kubernetes nodes: **Ready**
 - Cluster Module Status: **Completed**
+- For multi-NIC clusters, each created VM has the expected additional NICs in `DCSMachine.status.additionalNic`, and the guest OS shows the corresponding `ethN` interfaces.
 
 ---
 
