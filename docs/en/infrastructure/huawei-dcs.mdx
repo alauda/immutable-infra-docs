@@ -170,6 +170,8 @@ DCS Provider supports two credential user types, selected by the optional Secret
 
 IP pools define the network configuration (IP addresses, subnet masks, gateways, DNS) for cluster nodes. Each pool can contain multiple node entries, and each node can have multiple network interface configurations.
 
+For DCS multi-NIC clusters, each IP entry can declare `additionNic` items. These additional NICs are bound to the IP slot and are applied when the provider creates a new VM. Updating `additionNic` on an existing Pool does not hot-add NICs to already-running VMs.
+
 For DCS persistent disks, each IP entry can also declare `persistentDisk` items. These disks are bound to the IP slot instead of the VM lifecycle, so they can be detached from an old VM and reattached to a replacement VM during rolling upgrades. Use this mechanism for the platform-required `/var/cpaas` disk and for any other node-local data that must survive delete-recreate operations. Since DCS provider `v1.0.16`, this `persistentDisk` declaration is supported through YAML only.
 
 ### Using the Web UI
@@ -179,7 +181,7 @@ For DCS persistent disks, each IP entry can also declare `persistentDisk` items.
 - Cloud Credential has been created
 
 :::info
-Since DCS provider `v1.0.16`, the IP Pool web UI covers IP, hostname, and NIC settings only. It does not expose `DCSIpHostnamePool.spec.pool[].persistentDisk`. Configure persistent disks through YAML manifests.
+Since DCS provider `v1.0.16`, the IP Pool web UI covers standard IP, hostname, and network settings only. It does not expose `DCSIpHostnamePool.spec.pool[].persistentDisk`. Configure persistent disks through YAML manifests.
 :::
 
 #### Creating an IP Pool
@@ -227,7 +229,7 @@ The IP Pool form consists of a list of **Pools**. Each Pool represents one node 
 **Tips**:
 - At least one node entry is required
 - Exactly one Node IP configuration is required per node
-- Additional NIC IPs are optional for multi-NIC scenarios (e.g., storage network separation)
+- `additionNic[]` entries are optional for multi-NIC scenarios, such as storage network separation
 
 #### Managing IP Pools
 
@@ -255,6 +257,13 @@ spec:
     dns: "<dns>"
     hostname: "<hostname-1>"
     machineName: "<machine-name-1>"
+    additionNic:
+    - ip: "<additional-ip-1>"
+      mask: "<additional-mask>"
+      gateway: "<additional-gateway>"
+      dns: "<additional-dns>"
+      dvSwitchName: "<additional-dvs>"
+      portGroupName: "<additional-port-group>"
   - ip: "<ip-2>"
     mask: "<mask>"
     gateway: "<gateway>"
@@ -279,10 +288,40 @@ spec:
 | `.spec.pool[].dns` | string | DNS server IP (use ',' to separate multiple servers) | No |
 | `.spec.pool[].machineName` | string | Name of the virtual machine in the DCS platform | No |
 | `.spec.pool[].hostname` | string | Hostname of the virtual machine | No |
+| `.spec.pool[].additionNic[]` | []object | Additional NICs for the VM created from this IP slot. The provider applies them only when creating a new VM. | No |
+| `.spec.pool[].additionNic[].ip` | string | Additional NIC IP address for the generated guest network configuration. This is not the Kubernetes Node IP. | Recommended* |
+| `.spec.pool[].additionNic[].mask` | string | Additional NIC subnet mask for the generated guest network configuration. | Recommended* |
+| `.spec.pool[].additionNic[].gateway` | string | Gateway for the additional NIC network. Confirm route behavior before setting this value. | No |
+| `.spec.pool[].additionNic[].dns` | string | DNS server IPs for the additional NIC network, separated by commas when multiple values are required. | No |
+| `.spec.pool[].additionNic[].dvSwitchName` | string | DCS distributed virtual switch used to resolve the Port Group for the additional NIC. | Yes* |
+| `.spec.pool[].additionNic[].portGroupName` | string | DCS Port Group used to attach the additional NIC. | Yes* |
+
+\*Fields marked `Yes*` are required for the provider to resolve the target network and attach the additional NIC. Fields marked `Recommended*` are needed for the generated static guest network configuration. The CRD does not enforce these fields.
 
 :::warning
 You must configure machine information for a number of machines greater than or equal to the number of nodes you plan to deploy. Insufficient entries will prevent node deployment.
 :::
+
+### Additional NICs in the IP Pool \{#additional-nics}
+
+Declare additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]`.
+
+Use this field when a node needs a secondary network, such as a storage, management, or application-isolation network. Keep the primary `.spec.pool[].ip` as the Kubernetes Node IP unless you intentionally plan a Node IP change.
+
+**How it takes effect:**
+
+- The provider copies `additionNic[]` from the Pool slot into `DCSMachine.status.additionalNic` when a new `DCSMachine` claims that slot.
+- The provider adds those NICs when it clones the DCS VM.
+- The guest OS configures the interfaces during first boot through the generated NetworkManager configuration.
+- Existing VMs are not hot-updated when the Pool is edited later.
+
+**Network boundaries:**
+
+- The DCS provider does not reserve additional NIC IP addresses on the DCS platform. Avoid IP conflicts before applying the Pool.
+- The referenced DVS and Port Group must already exist, and the target DCS hosts must be able to access them.
+- Provide both `dvSwitchName` and `portGroupName` for each additional NIC. The provider uses them to resolve the Port Group URN before cloning the VM.
+- The provider models IP, mask, gateway, DNS, DVS, and Port Group only. Route metrics, static routes, and NIC roles must be handled through MCP or guest OS configuration.
+- If an additional NIC has a gateway, verify that it does not unexpectedly take over the default route from the primary NIC.
 
 ### Persistent Disks in the IP Pool
 

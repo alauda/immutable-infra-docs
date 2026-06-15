@@ -66,6 +66,7 @@ Before you start, ensure all of the following prerequisites are met:
 - The target Kubernetes version is compatible with your workloads and add-ons
 - DCS VM templates are `4.2.1` or later if you use pool-managed persistent disks, because safe shutdown and disk detach depend on guest tools
 - If you rely on pool-managed persistent disks, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`
+- If the cluster uses additional NICs, keep the required `DCSIpHostnamePool.spec.pool[].additionNic[]` entries in place and confirm that the DCS DVS and Port Groups are reachable from the hosts that may receive replacement VMs
 
 :::warning
 **Disk Preservation Model**
@@ -84,6 +85,12 @@ Upgrades rely on Cluster API's rolling update mechanism. Each cluster has four d
 Pool-managed preservation requires one-by-one replacement, so keep `maxSurge = 0` on both `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate` and `MachineDeployment.spec.strategy.rollingUpdate`.
 
 If your existing cluster still keeps preserved data in the old template-disk layout, migrate it first by following [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx).
+:::
+
+:::info
+**Additional NICs During Rolling Replacement**
+
+Additional NICs are declared in `DCSIpHostnamePool.spec.pool[].additionNic[]`, not in `DCSMachineTemplate`. During an upgrade, each replacement VM uses the additional NICs from the Pool slot it claims. The upgrade template steps below should not move additional NIC settings into `DCSMachineTemplate`.
 :::
 
 :::warning
@@ -141,7 +148,7 @@ Upgrading the control plane machine template lets you roll out updated VM specif
    - Strip server-generated metadata (`resourceVersion`, `uid`, `generation`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration` annotation) and the entire `status` field from the copied manifest.
    - Leave `spec.template.spec.providerID` unset. The DCS provider sets `providerID` to `dcs://<machine-name>` once the VM is created; pre-filling it in the template breaks the controller's identity binding.
 
-   Keep pool-managed persistent disks, including `/var/cpaas`, in `DCSIpHostnamePool.spec.pool[].persistentDisk`.
+   Keep pool-managed persistent disks, including `/var/cpaas`, in `DCSIpHostnamePool.spec.pool[].persistentDisk`. Keep additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]`.
 
 3. **Apply the updated template**
 
@@ -174,7 +181,7 @@ Before you start, collect every required value from the target ACP row in the OS
 
 1. **Create a new `DCSMachineTemplate` for the target Kubernetes version**
 
-   Copy the existing control-plane template and update `metadata.name` to a new name and `spec.template.spec.vmTemplateName` to the **Alauda OS Image Version** value read from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx). Keep pool-managed persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` rather than reintroducing them as template disks.
+   Copy the existing control-plane template and update `metadata.name` to a new name and `spec.template.spec.vmTemplateName` to the **Alauda OS Image Version** value read from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx). Keep pool-managed persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` and additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]` rather than reintroducing them as template fields.
 
    ```bash
    kubectl get dcsmachinetemplate <current-cp-template-name> -n cpaas-system -o yaml > new-cp-template.yaml
@@ -275,6 +282,7 @@ Before you start, read the **Alauda OS Image Version** and **Kubernetes Version*
 1. **Create a new `DCSMachineTemplate` for worker nodes**
    - Create a new `DCSMachineTemplate` with a `vmTemplateName` set to the **Alauda OS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx)
    - Keep `/var/cpaas` and any other upgrade-preserved disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` rather than reintroducing them as template disks
+   - Keep additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]`
 
 2. **Update the `MachineDeployment`**
    - Set `spec.template.spec.version` to the **Kubernetes Version** value from the same OS Support Matrix row
