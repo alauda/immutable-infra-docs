@@ -57,14 +57,14 @@ metadata:
 spec:
   pool:
   - ip: "<worker-ip-1>"
-    mask: "<worker-mask>"
+    mask: "<worker-cidr-prefix-length>"
     gateway: "<worker-gateway>"
     dns: "<worker-dns>"
     hostname: "<worker-hostname-1>"
     machineName: "<worker-machine-name-1>"
     additionNic:
     - ip: "<worker-additional-ip-1>"
-      mask: "<worker-additional-mask>"
+      mask: "<worker-additional-cidr-prefix-length>"
       gateway: "<worker-additional-gateway>"
       dns: "<worker-additional-dns>"
       dvSwitchName: "<additional-dvs>"
@@ -76,7 +76,7 @@ spec:
       path: /var/cpaas
       format: xfs
   - ip: "<worker-ip-2>"
-    mask: "<worker-mask>"
+    mask: "<worker-cidr-prefix-length>"
     gateway: "<worker-gateway>"
     dns: "<worker-dns>"
     hostname: "<worker-hostname-2>"
@@ -88,7 +88,7 @@ spec:
       path: /var/cpaas
       format: xfs
   - ip: "<worker-ip-3>"
-    mask: "<worker-mask>"
+    mask: "<worker-cidr-prefix-length>"
     gateway: "<worker-gateway>"
     dns: "<worker-dns>"
     hostname: "<worker-hostname-3>"
@@ -106,16 +106,16 @@ spec:
 | Parameter | Type | Description | Required |
 |-----------|------|-------------|----------|
 | `.spec.pool[].ip` | string | IP address for the worker virtual machine | Yes |
-| `.spec.pool[].mask` | string | Subnet mask for the network | Yes |
+| `.spec.pool[].mask` | string | CIDR prefix length without `/`, for example `24` | Yes |
 | `.spec.pool[].gateway` | string | Gateway IP address | Yes |
-| `.spec.pool[].dns` | string | DNS server IP addresses (comma-separated for multiple) | No |
+| `.spec.pool[].dns` | string | DNS server IP addresses (semicolon-separated for multiple) | No |
 | `.spec.pool[].machineName` | string | Virtual machine name in the DCS platform | No |
 | `.spec.pool[].hostname` | string | Hostname for the virtual machine | No |
 | `.spec.pool[].additionNic[]` | []object | Additional NICs bound to this IP slot. Use this for storage, management, or isolated application networks. | No |
 | `.spec.pool[].additionNic[].ip` | string | Additional NIC IP address for the generated guest network configuration. | Recommended* |
-| `.spec.pool[].additionNic[].mask` | string | Additional NIC subnet mask for the generated guest network configuration. | Recommended* |
+| `.spec.pool[].additionNic[].mask` | string | Additional NIC CIDR prefix length without `/`, for example `24`. | Recommended* |
 | `.spec.pool[].additionNic[].gateway` | string | Gateway for the additional NIC network. Confirm route behavior before setting this value. | No |
-| `.spec.pool[].additionNic[].dns` | string | DNS server IPs for the additional NIC network, separated by commas when multiple values are required. | No |
+| `.spec.pool[].additionNic[].dns` | string | DNS server IPs for the additional NIC network, separated by semicolons when multiple values are required. | No |
 | `.spec.pool[].additionNic[].dvSwitchName` | string | DCS distributed virtual switch used to resolve the Port Group for the additional NIC. | Yes* |
 | `.spec.pool[].additionNic[].portGroupName` | string | DCS Port Group used to attach the additional NIC. | Yes* |
 | `.spec.pool[].persistentDisk[]` | []object | Persistent disks bound to this IP slot. Use this for `/var/cpaas` and any disk that must survive node replacement. | No |
@@ -443,7 +443,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
        "pool": [
          {
            "ip": "<existing-ip-1>",
-           "mask": "<worker-mask>",
+           "mask": "<worker-cidr-prefix-length>",
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<existing-hostname-1>",
@@ -460,7 +460,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "<existing-ip-2>",
-           "mask": "<worker-mask>",
+           "mask": "<worker-cidr-prefix-length>",
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<existing-hostname-2>",
@@ -477,7 +477,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "<new-worker-ip-1>",
-           "mask": "<worker-mask>",
+           "mask": "<worker-cidr-prefix-length>",
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<new-worker-hostname-1>",
@@ -494,7 +494,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "<new-worker-ip-2>",
-           "mask": "<worker-mask>",
+           "mask": "<worker-cidr-prefix-length>",
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<new-worker-hostname-2>",
@@ -535,7 +535,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
        "pool": [
          {
            "ip": "10.0.1.11",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-1",
@@ -552,7 +552,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "10.0.1.12",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-2",
@@ -569,7 +569,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "10.0.1.13",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-3",
@@ -586,7 +586,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "10.0.1.14",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-4",
@@ -603,7 +603,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "10.0.1.15",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-5",
