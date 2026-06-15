@@ -168,7 +168,7 @@ DCS Provider supports two credential user types, selected by the optional Secret
 
 ## IP Pools \{#ip-pools}
 
-IP pools define the network configuration (IP addresses, CIDR prefix lengths, gateways, DNS) for cluster nodes. Each pool can contain multiple node entries, and each node can have multiple network interface configurations.
+IP pools define the network configuration (IP addresses, subnet masks, gateways, DNS) for cluster nodes. Each pool can contain multiple node entries, and each node can have multiple network interface configurations.
 
 For DCS multi-NIC clusters, each IP entry can declare `additionNic` items. These additional NICs are bound to the IP slot and are applied when the provider creates a new VM. Updating `additionNic` on an existing Pool does not hot-add NICs to already-running VMs.
 
@@ -200,7 +200,7 @@ The IP Pool form consists of a list of **Pools**. Each Pool represents one node 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | IP | IP address | Yes | IP address for the Kubernetes Node |
-| Subnet Mask | CIDR prefix length | Yes | Network prefix length, for example `24` |
+| Subnet Mask | CIDR prefix length | Yes | Subnet mask for the network, entered as a prefix length such as `24` |
 | Gateway | IP address | Yes | Gateway IP address |
 | DNS | IP address | No | DNS server addresses (semicolon-separated for multiple) |
 | Hostname | text | No | Hostname for the virtual machine |
@@ -213,7 +213,7 @@ The IP Pool form consists of a list of **Pools**. Each Pool represents one node 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | IP | IP address | Yes | Non-Node IP address (e.g., storage network) |
-| Subnet Mask | CIDR prefix length | Yes | Network prefix length, for example `24` |
+| Subnet Mask | CIDR prefix length | Yes | Subnet mask for the network, entered as a prefix length such as `24` |
 | Gateway | IP address | Yes | Gateway IP address |
 | DNS | IP address | No | DNS server addresses (semicolon-separated for multiple) |
 | dvSwitch Name | dropdown | Yes | Virtual switch name (from DCS platform) |
@@ -222,7 +222,7 @@ The IP Pool form consists of a list of **Pools**. Each Pool represents one node 
 **Validation Rules**:
 - IP addresses must be unique within the same IP Pool
 - IP addresses must be valid IPv4 format
-- Mask must be a valid CIDR prefix length, such as `24`. Do not include `/` or use dotted-decimal format such as `255.255.255.0`.
+- Subnet mask must be entered as a valid CIDR prefix length, such as `24`. Do not include `/` or use dotted-decimal format such as `255.255.255.0`.
 - IP address must be within the configured subnet range
 - Gateway must be a valid IPv4 address within the subnet range
 
@@ -283,14 +283,14 @@ spec:
 | Parameter | Type | Description | Required |
 |-----------|------|-------------|----------|
 | `.spec.pool[].ip` | string | IP address for the virtual machine to be created | Yes |
-| `.spec.pool[].mask` | string | CIDR prefix length without `/`, for example `24` | Yes |
+| `.spec.pool[].mask` | string | Subnet mask in CIDR prefix-length format without `/`, for example `24` | Yes |
 | `.spec.pool[].gateway` | string | Gateway IP address | Yes |
 | `.spec.pool[].dns` | string | DNS server IPs (use `;` to separate multiple servers) | No |
 | `.spec.pool[].machineName` | string | Name of the virtual machine in the DCS platform | No |
 | `.spec.pool[].hostname` | string | Hostname of the virtual machine | No |
 | `.spec.pool[].additionNic[]` | []object | Additional NICs for the VM created from this IP slot. The provider applies them only when creating a new VM. | No |
 | `.spec.pool[].additionNic[].ip` | string | Additional NIC IP address for the generated guest network configuration. This is not the Kubernetes Node IP. | Recommended* |
-| `.spec.pool[].additionNic[].mask` | string | Additional NIC CIDR prefix length without `/`, for example `24`. | Recommended* |
+| `.spec.pool[].additionNic[].mask` | string | Additional NIC subnet mask in CIDR prefix-length format without `/`, for example `24`. | Recommended* |
 | `.spec.pool[].additionNic[].gateway` | string | Gateway for the additional NIC network. Confirm route behavior before setting this value. | No |
 | `.spec.pool[].additionNic[].dns` | string | DNS server IPs for the additional NIC network, separated by semicolons when multiple values are required. | No |
 | `.spec.pool[].additionNic[].dvSwitchName` | string | DCS distributed virtual switch used to resolve the Port Group for the additional NIC. | Yes* |

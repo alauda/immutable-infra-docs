@@ -106,14 +106,14 @@ spec:
 | Parameter | Type | Description | Required |
 |-----------|------|-------------|----------|
 | `.spec.pool[].ip` | string | IP address for the worker virtual machine | Yes |
-| `.spec.pool[].mask` | string | CIDR prefix length without `/`, for example `24` | Yes |
+| `.spec.pool[].mask` | string | Subnet mask in CIDR prefix-length format without `/`, for example `24` | Yes |
 | `.spec.pool[].gateway` | string | Gateway IP address | Yes |
 | `.spec.pool[].dns` | string | DNS server IP addresses (semicolon-separated for multiple) | No |
 | `.spec.pool[].machineName` | string | Virtual machine name in the DCS platform | No |
 | `.spec.pool[].hostname` | string | Hostname for the virtual machine | No |
 | `.spec.pool[].additionNic[]` | []object | Additional NICs bound to this IP slot. Use this for storage, management, or isolated application networks. | No |
 | `.spec.pool[].additionNic[].ip` | string | Additional NIC IP address for the generated guest network configuration. | Recommended* |
-| `.spec.pool[].additionNic[].mask` | string | Additional NIC CIDR prefix length without `/`, for example `24`. | Recommended* |
+| `.spec.pool[].additionNic[].mask` | string | Additional NIC subnet mask in CIDR prefix-length format without `/`, for example `24`. | Recommended* |
 | `.spec.pool[].additionNic[].gateway` | string | Gateway for the additional NIC network. Confirm route behavior before setting this value. | No |
 | `.spec.pool[].additionNic[].dns` | string | DNS server IPs for the additional NIC network, separated by semicolons when multiple values are required. | No |
 | `.spec.pool[].additionNic[].dvSwitchName` | string | DCS distributed virtual switch used to resolve the Port Group for the additional NIC. | Yes* |
