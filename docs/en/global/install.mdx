@@ -849,7 +849,7 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 - Use concrete `datastoreName` values for DCS local storage unless you have verified that the selected datastore cluster can place volumes on hosts that can run the target VM.
 
 <Directive type="warning" title="Fragment Scope">
-  The following YAML is a differential fragment, not a complete manifest that you can apply directly. Merge these `global`-specific changes into the manifest that you prepare from the DCS create-cluster references, then apply the complete manifest file.
+  The following YAML is a differential fragment, not a complete manifest that you can apply directly. Merge these `global`-specific changes into the manifest that you prepare from the DCS create-cluster references, then apply the complete manifest file. If you would rather start from a complete file, adapt the [Worked Example: Complete `global` Manifest for Huawei DCS](#dcs-worked-example) at the end of this page instead of assembling it from fragments.
 </Directive>
 
 The following fragment shows the `global`-specific Cluster API wiring. Fill the provider resource fields by using the DCS create-cluster references above.
@@ -2177,3 +2177,227 @@ After the installer reports success, the `global` cluster runs its own Cluster A
 - Configure infrastructure resources for workload clusters: see [Infrastructure Resources](../infrastructure/index.mdx).
 - Create your first workload cluster: see [Creating Clusters](../create-cluster/index.mdx).
 - Plan disaster recovery: see [Global Cluster Disaster Recovery](./disaster_recovery.mdx).
+
+## Worked Example: Complete `global` Manifest for Huawei DCS \{#dcs-worked-example}
+
+This is a complete, single-file manifest for a three-replica control-plane `global` cluster on Huawei DCS. It is the same set of resources described in [Step 4](#step-4--configure-the-provider-specific-global-manifest), already assembled so you do not have to merge fragments across pages. It uses documentation-only example values: replace every `<placeholder>`, and reuse the `${...}` variables you exported in [Step 1](#step-1--prepare-common-variables). Apply it in [Step 5](#step-5--apply-the-global-manifest).
+
+This example targets a non-DR cluster. The three large kubeadm files (the PodSecurity admission config, the kubelet patch, and the audit policy) are identical to a workload cluster, so they are pulled from the `dcs-kubernetes-<major.minor>-files` Secret shipped by the DCS provider plugin. If that Secret is not present on the bootstrap cluster, inline the file contents from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix instead.
+
+```yaml
+---
+# 1. DCS API credential. See Infrastructure Resources for the field sources.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: global-secret
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+type: Opaque
+stringData:
+  authUser: "<dcs-api-user>"
+  authKey: "<dcs-api-password>"
+  endpoint: "https://<dcs-api-host>:7443"
+  # userType: "interconnect"   # optional; "interconnect" (default) or "domain"
+---
+# 2. Control-plane IP / hostname pool (one entry per control-plane replica).
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSIpHostnamePool
+metadata:
+  name: global-master-pool
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+spec:
+  pool:
+  - {ip: "192.0.2.11", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-master-1", machineName: "global-master-1"}
+  - {ip: "192.0.2.12", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-master-2", machineName: "global-master-2"}
+  - {ip: "192.0.2.13", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-master-3", machineName: "global-master-3"}
+---
+# 3. Control-plane VM spec.
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSMachineTemplate
+metadata:
+  name: global-master-template
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+spec:
+  template:
+    spec:
+      vmTemplateName: <vm-template-name>
+      # Places the cloned VMs in a DCS compute cluster.
+      resource:
+        type: cluster
+        name: <dcs-cluster-name>
+      vmConfig:
+        dvSwitchName: <dvswitch-name>
+        portGroupName: <port-group-name>
+        dcsMachineCpuSpec: {quantity: 16}
+        dcsMachineMemorySpec: {quantity: 32768}   # MB
+        dcsMachineDiskSpec:
+        - {quantity: 0,   datastoreName: <datastore-name>, systemVolume: true}
+        - {quantity: 10,  datastoreName: <datastore-name>, path: /var/lib/etcd,       format: xfs}
+        - {quantity: 100, datastoreName: <datastore-name>, path: /var/lib/kubelet,    format: xfs}
+        - {quantity: 100, datastoreName: <datastore-name>, path: /var/lib/containerd, format: xfs}
+        # This example keeps /var/cpaas as a template disk for simplicity. For
+        # production, declare it in DCSIpHostnamePool.spec.pool[].persistentDisk
+        # so it survives node replacement (see Infrastructure Resources).
+        - {quantity: 100, datastoreName: <datastore-name>, path: /var/cpaas,          format: xfs}
+      ipHostPoolRef:
+        name: global-master-pool
+---
+# 4. Control plane.
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: global-kcp
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+  annotations:
+    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
+spec:
+  replicas: 3
+  version: ${K8S_VERSION}
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 0}
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: DCSMachineTemplate
+      name: global-master-template
+  kubeadmConfigSpec:
+    format: ignition
+    users:
+    - name: boot
+      sshAuthorizedKeys:
+      - "ssh-ed25519 AAAA...replace-with-your-public-key... global-boot"
+    files:
+    - contentFrom: {secret: {name: dcs-kubernetes-<major.minor>-files, key: psa-config.yaml}}
+      path: /etc/kubernetes/admission/psa-config.yaml
+      owner: "root:root"
+      permissions: "0644"
+    - contentFrom: {secret: {name: dcs-kubernetes-<major.minor>-files, key: control-plane-kubelet-patch.json}}
+      path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+      owner: "root:root"
+      permissions: "0644"
+    - contentFrom: {secret: {name: dcs-kubernetes-<major.minor>-files, key: audit-policy.yaml}}
+      path: /etc/kubernetes/audit/policy.yaml
+      owner: "root:root"
+      permissions: "0644"
+    preKubeadmCommands:
+    - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
+    - mkdir -p /run/cluster-api && restorecon -Rv /run/cluster-api
+    - if [ -f /etc/disk-setup.sh ]; then bash /etc/disk-setup.sh; fi
+    postKubeadmCommands:
+    - chmod 600 /var/lib/kubelet/config.yaml
+    clusterConfiguration:
+      imageRepository: cloud.alauda.io/alauda
+      dns: {imageTag: <dns-image-tag>}
+      etcd:
+        local:
+          imageTag: <etcd-image-tag>
+          serverCertSANs: ["${CONTROL_PLANE_VIP}", "etcd.kube-system"]
+      apiServer:
+        extraArgs:
+          audit-log-format: json
+          audit-log-maxage: "30"
+          audit-log-maxbackup: "10"
+          audit-log-maxsize: "200"
+          audit-log-mode: batch
+          audit-log-path: /etc/kubernetes/audit/audit.log
+          audit-policy-file: /etc/kubernetes/audit/policy.yaml
+          admission-control-config-file: /etc/kubernetes/admission/psa-config.yaml
+          profiling: "false"
+          tls-min-version: VersionTLS12
+          kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
+        extraVolumes:
+        - {name: vol-dir-0, hostPath: /etc/kubernetes, mountPath: /etc/kubernetes, pathType: Directory}
+      controllerManager:
+        extraArgs: {bind-address: "::", profiling: "false", tls-min-version: VersionTLS12, flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"}
+      scheduler:
+        extraArgs: {bind-address: "::", tls-min-version: VersionTLS12, profiling: "false"}
+    initConfiguration:
+      patches: {directory: /etc/kubernetes/patches}
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+    joinConfiguration:
+      patches: {directory: /etc/kubernetes/patches}
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          provider-id: PROVIDER_ID
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+          protect-kernel-defaults: "true"
+---
+# 5. DCS infrastructure cluster.
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSCluster
+metadata:
+  name: "global"
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+  annotations:
+    cpaas.io/registry-address: "${NODE_REGISTRY_ADDRESS}"
+spec:
+  controlPlaneLoadBalancer: {host: "${CONTROL_PLANE_VIP}", port: 6443, type: external}
+  controlPlaneEndpoint: {host: "${CONTROL_PLANE_VIP}", port: 6443}
+  credentialSecretRef: {name: global-secret}
+  networkType: kube-ovn
+  site: <dcs-site-id>
+---
+# 6. Top-level CAPI Cluster: global wiring, labels, and annotations.
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: global
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+    cluster-type: DCS
+    is-global: "true"
+  annotations:
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: DCSCluster
+    cpaas.io/registry-address: "${NODE_REGISTRY_ADDRESS}"
+    cpaas.io/kube-ovn-join-cidr: 100.5.0.0/16
+    cpaas.io/kube-ovn-version: <kube-ovn-chart-version>
+    cpaas.io/os-family: <os-family>   # OS family of the Alauda OS image, for example slemicro
+spec:
+  clusterNetwork:
+    pods:     {cidrBlocks: ["${CLUSTER_CIDR}"]}
+    services: {cidrBlocks: ["${SERVICE_CIDR}"]}
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: global-kcp
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: DCSCluster
+    name: global
+```
+
+### Values to Replace \{#dcs-worked-example-values}
+
+| Placeholder / variable | Where it comes from |
+|---|---|
+| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}` | Exported in [Step 1](#step-1--prepare-common-variables). |
+| `<dcs-api-user>` / `<dcs-api-password>` / `<dcs-api-host>` / `<dcs-site-id>` | DCS platform credentials and site. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). |
+| `<vm-template-name>`, `<dns-image-tag>`, `<etcd-image-tag>` | The `cpaas.io/dcs-vm-template` ConfigMap. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders). |
+| `<dcs-cluster-name>`, `<dvswitch-name>`, `<port-group-name>`, `<datastore-name>` | DCS platform objects. Confirm with the DCS administrator. |
+| `192.0.2.x`, `<os-family>`, `<kube-ovn-chart-version>` | Node IPs/gateway/DNS for your network; the OS family of the image; and the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx). |
+| `ssh-ed25519 AAAA...` | A real OpenSSH public key. The `ignition` format rejects an empty list; supply any valid key even if you do not plan to SSH in. |
+
+<Directive type="info" title="Secret encryption and disaster recovery">
+  This example does not enable etcd secret encryption-at-rest. To enable it, or to deploy a DR pair, add the `/etc/kubernetes/encryption-provider.conf` file and the `apiServer.extraArgs.encryption-provider-config` argument as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment).
+</Directive>
