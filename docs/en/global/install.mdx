@@ -2165,7 +2165,7 @@ The installation is successful when all of the following conditions are true:
 
 ## Decommission the Bootstrap Host \{#decommission-bootstrap-host}
 
-After the installer reports success, the `global` cluster runs its own Cluster API providers and no longer depends on the temporary `minialauda` KIND cluster on the bootstrap host. Once [Verification](#verification) passes, decommission the bootstrap host by removing only the local `minialauda` KIND cluster and its container network on that host.
+After the installer reports success, the `global` cluster runs its own Cluster API providers and no longer depends on the temporary `minialauda` KIND cluster on the bootstrap host. Once verification passes, decommission the bootstrap host by removing only the local `minialauda` KIND cluster and its container network on that host.
 
 <Directive type="warning" title="Do not delete the Cluster API objects to clean up">
   Do not run `kubectl delete cluster global`, and do not delete the `Cluster`, `KubeadmControlPlane`, or provider infrastructure objects as a cleanup step. After installation these objects own the live `global` control plane machines, so deleting them cascades into deleting the control plane VMs and destroys the cluster you just installed. Decommissioning is limited to removing the local KIND cluster on the bootstrap host; leave the Cluster API objects in place.
@@ -2180,7 +2180,7 @@ After the installer reports success, the `global` cluster runs its own Cluster A
 
 ## Worked Example: Complete `global` Manifest for Huawei DCS \{#dcs-worked-example}
 
-This is a complete, single-file manifest for a three-replica control-plane `global` cluster on Huawei DCS. It is the same set of resources described in [Step 4](#step-4--configure-the-provider-specific-global-manifest), already assembled so you do not have to merge fragments across pages. It uses documentation-only example values: replace every `<placeholder>`, and reuse the `${...}` variables you exported in [Step 1](#step-1--prepare-common-variables). Apply it in [Step 5](#step-5--apply-the-global-manifest).
+This is a complete, single-file manifest for a three-replica control-plane `global` cluster on Huawei DCS. It is the same set of resources described in Step 4, already assembled so you do not have to merge fragments across pages. It uses documentation-only example values: replace every `<placeholder>`, and reuse the `${...}` variables you exported in Step 1. Apply it in Step 5.
 
 This example targets a non-DR cluster. The three large kubeadm files (the PodSecurity admission config, the kubelet patch, and the audit policy) are identical to a workload cluster, so they are pulled from the `dcs-kubernetes-<major.minor>-files` Secret shipped by the DCS provider plugin. If that Secret is not present on the bootstrap cluster, inline the file contents from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix instead.
 
@@ -2391,7 +2391,7 @@ spec:
 
 | Placeholder / variable | Where it comes from |
 |---|---|
-| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}` | Exported in [Step 1](#step-1--prepare-common-variables). |
+| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}` | Exported in Step 1. |
 | `<dcs-api-user>` / `<dcs-api-password>` / `<dcs-api-host>` / `<dcs-site-id>` | DCS platform credentials and site. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). |
 | `<vm-template-name>`, `<dns-image-tag>`, `<etcd-image-tag>` | The `cpaas.io/dcs-vm-template` ConfigMap. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders). |
 | `<dcs-cluster-name>`, `<dvswitch-name>`, `<port-group-name>`, `<datastore-name>` | DCS platform objects. Confirm with the DCS administrator. |
