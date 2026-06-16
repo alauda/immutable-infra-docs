@@ -1811,6 +1811,7 @@ kubectl --kubeconfig <global-kubeconfig> get clustermodule global
 |---|---|---|
 | Machines stay in `Pending` or do not appear | `kubectl describe machine -n cpaas-system <machine>` | The provider-specific failure reason on the machine `Bootstrap` and `Infrastructure` conditions. IaaS quota, network, and credential issues surface here. |
 | `KubeadmControlPlane` does not reach `Ready` | `kubectl get nodes` with the new cluster kubeconfig and `kubectl describe kubeadmcontrolplane -n cpaas-system` | etcd health on the first control plane node and join progress for the remaining nodes. |
+| `KubeadmControlPlane` stays not `Ready` (often `EtcdClusterHealthy=Unknown`) and the installer hangs, even though the control-plane VMs are up, and the bootstrap (KIND) Pods cannot reach the control-plane subnet | NAT rules on the bootstrap (KIND) host | Stopping the host firewall after KIND started can flush the KIND bridge's SNAT masquerade, so the CAPI controller Pods running in KIND cannot route to the new control-plane subnet. Re-add it: `iptables -t nat -A POSTROUTING -s 172.18.0.0/16 ! -d 172.18.0.0/16 -j MASQUERADE` (`172.18.0.0/16` is the default KIND subnet). |
 | Pods in `kube-system` stay `Pending` or fail to pull images | `kubectl --kubeconfig <global-kubeconfig> describe pod -n kube-system <pod>` | Image pull errors usually mean the node-facing registry address is not reachable from the new cluster's subnet. |
 | Installer progress API shows a stalled stage | `/var/cpaas/data/installer.log` | The most recent phase line and the most recent error message. Retried errors repeat on a short interval; persistent errors do not advance. |
 | `ClusterModule/global` does not reach a healthy phase | `kubectl --kubeconfig <global-kubeconfig> describe clustermodule global` | The `Status.conditions` describe which module is blocking the cluster from completing. |
@@ -2167,6 +2168,10 @@ The installation is successful when all of the following conditions are true:
 
 After the installer reports success, the `global` cluster runs its own Cluster API providers and no longer depends on the temporary `minialauda` KIND cluster on the bootstrap host. Once verification passes, decommission the bootstrap host by removing only the local `minialauda` KIND cluster and its container network on that host.
 
+<Directive type="info" title="Migrate the DCS credential Secret to the global cluster first">
+  The installer migrates the DCS credential Secret to the `global` cluster automatically only when it is named `ait-credential-secret` (the name used in the [worked example](#dcs-worked-example)). If your `DCSCluster.spec.credentialSecretRef` points to a Secret with a different name, it is not carried over — copy that Secret into the `global` cluster's `cpaas-system` namespace before you remove the bootstrap host. Without it, the `global` cluster's DCS provider has no DCS API credentials and cannot reconcile; for example, scaling the cluster out later fails. Verify with `kubectl --kubeconfig <global-kubeconfig> get secret <name> -n cpaas-system`.
+</Directive>
+
 <Directive type="warning" title="Do not delete the Cluster API objects to clean up">
   Do not run `kubectl delete cluster global`, and do not delete the `Cluster`, `KubeadmControlPlane`, or provider infrastructure objects as a cleanup step. After installation these objects own the live `global` control plane machines, so deleting them cascades into deleting the control plane VMs and destroys the cluster you just installed. Decommissioning is limited to removing the local KIND cluster on the bootstrap host; leave the Cluster API objects in place.
 </Directive>
@@ -2190,7 +2195,7 @@ This example targets a non-DR cluster. The three large kubeadm files (the PodSec
 apiVersion: v1
 kind: Secret
 metadata:
-  name: global-secret
+  name: ait-credential-secret   # this exact name lets the installer migrate the credential to the global cluster (see Decommission)
   namespace: cpaas-system
   labels:
     cpaas.io/cluster-name: "global"
@@ -2352,7 +2357,7 @@ metadata:
 spec:
   controlPlaneLoadBalancer: {host: "${CONTROL_PLANE_VIP}", port: 6443, type: external}
   controlPlaneEndpoint: {host: "${CONTROL_PLANE_VIP}", port: 6443}
-  credentialSecretRef: {name: global-secret}
+  credentialSecretRef: {name: ait-credential-secret}
   networkType: kube-ovn
   site: <dcs-site-id>
 ---
