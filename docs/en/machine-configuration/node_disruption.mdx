@@ -13,6 +13,10 @@ Once defined, the Machine Configuration Operator validates the policy to detect 
 
 A default `MachineConfiguration` custom resource named `cluster` is installed with the cluster. You can configure node disruption behavior on this resource.
 
+:::warning
+Because the default action for file changes is `None`, a `MachineConfig` object that only writes or updates a file is applied to disk but does **not** restart the affected service—so the change may not take effect. When a file change requires a service to reload or restart (for example, kubelet or firewalld configuration), define a node disruption policy for that file path, and confirm it appears in `status.nodeDisruptionPolicyStatus` **before** applying the `MachineConfig`.
+:::
+
 ---
 
 ## What You Can Control with Node Disruption Policies

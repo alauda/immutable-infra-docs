@@ -1,0 +1,85 @@
+---
+weight: 40
+title: Managing Firewall Ports
+---
+
+# Managing Firewall Ports
+
+Each node's host firewall is preconfigured with the ports required by the platform. You do not need to manage these ports, and you should not modify the platform's preconfigured port list directly.
+
+When a workload needs an additional host port to be open—for example, a third-party component that listens directly on the node—you can open it by adding a firewalld policy with a `MachineConfig` object. The policy is written as a separate file, so the platform's preconfigured ports are left unchanged.
+
+## Prerequisite: Verify the Firewall Backend
+
+The procedure below applies a firewall reload, which is safe only when the host firewall uses the `nftables` backend. Confirm the backend on a node:
+
+```bash
+grep FirewallBackend /etc/firewalld/firewalld.conf
+```
+
+The output should be `FirewallBackend=nftables`. If the backend is `iptables`, reloading the firewall can disrupt cluster networking; in that case use a `Reboot` node disruption policy instead of `Reload` for the policy file.
+
+## Opening an Additional Port
+
+The following example opens TCP port `19999`.
+
+1. Create the firewalld policy file. It accepts ingress from any zone to the host and opens the port:
+
+   ```xml
+   <?xml version="1.0" encoding="utf-8"?>
+   <policy target="CONTINUE">
+     <ingress-zone name="ANY"/>
+     <egress-zone name="HOST"/>
+     <port port="19999" protocol="tcp"/>
+   </policy>
+   ```
+
+2. Base64-encode the contents:
+
+   ```bash
+   base64 -w0 acp-extra-ports.xml
+   ```
+
+3. Create a `MachineConfig` object that writes the policy file under `/etc/firewalld/policies/`:
+
+   ```yaml
+   apiVersion: machineconfiguration.alauda.io/v1alpha1
+   kind: MachineConfig
+   metadata:
+     name: 99-worker-extra-ports
+     labels:
+       machineconfiguration.alauda.io/role: worker
+   spec:
+     config:
+       ignition:
+         version: 3.4.0
+       storage:
+         files:
+           - path: /etc/firewalld/policies/acp-extra-ports.xml
+             mode: 0o644
+             overwrite: true
+             contents:
+               source: 'data:text/plain;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPHBvbGljeSB0YXJnZXQ9IkNPTlRJTlVFIj4KICA8aW5ncmVzcy16b25lIG5hbWU9IkFOWSIvPgogIDxlZ3Jlc3Mtem9uZSBuYW1lPSJIT1NUIi8+CiAgPHBvcnQgcG9ydD0iMTk5OTkiIHByb3RvY29sPSJ0Y3AiLz4KPC9wb2xpY3k+Cg=='
+   ```
+
+4. Configure a node disruption policy that reloads the firewall when this file changes. Add the following to the `cluster` `MachineConfiguration` object in the `cpaas-system` namespace, and confirm it is reflected in `status.nodeDisruptionPolicyStatus` **before** applying the `MachineConfig`:
+
+   ```yaml
+   apiVersion: machineconfiguration.alauda.io/v1alpha1
+   kind: MachineConfiguration
+   metadata:
+     name: cluster
+   spec:
+     nodeDisruptionPolicy:
+       files:
+         - path: /etc/firewalld/policies/acp-extra-ports.xml
+           actions:
+             - type: Reload
+               reload:
+                 serviceName: firewalld.service
+       sshkey:
+         actions:
+           - type: None
+   ```
+
+After the configuration is applied, the firewall reloads and the new port is open. The node is not rebooted, and the platform's preconfigured ports remain unchanged. To close the port again, delete the `MachineConfig` object; the firewall reloads and the policy file is removed.
