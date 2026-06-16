@@ -842,7 +842,8 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: DCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for Alauda OS.
-- Keep the release manifest's non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries.
+- Keep the `KubeadmControlPlane.spec.kubeadmConfigSpec.users` entry with a non-empty `sshAuthorizedKeys` list (the `boot` user). The DCS `ignition` format rejects an empty SSH key list, so this field is required even for a `global` cluster you do not plan to access over SSH. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders) for what to supply when no interactive key is needed.
+- Keep the non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries. The file contents (the PodSecurity admission config, the kubelet patch, and the audit policy), together with the full `clusterConfiguration`, `preKubeadmCommands`, `postKubeadmCommands`, and the init and join node-registration patches, are identical to a workload cluster. Copy them from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, or reference the `dcs-kubernetes-<major.minor>-files` Secret documented there. The wiring fragment below shows only the `global`-specific fields layered on top of that base.
 - For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef` and do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Keep `/var/cpaas` as platform state. If you need the disk to survive rolling replacement, declare it in `DCSIpHostnamePool.spec.pool[].persistentDisk`; do not rely on `DCSMachineTemplate` template disks as preserved state.
 - Use concrete `datastoreName` values for DCS local storage unless you have verified that the selected datastore cluster can place volumes on hosts that can run the target VM.
@@ -2161,6 +2162,14 @@ The installation is successful when all of the following conditions are true:
 - All `global` cluster nodes are `Ready`.
 - Critical Pods in `cpaas-system` are `Running` or `Completed`.
 - `ClusterModule/global` reports the base module as healthy.
+
+## Decommission the Bootstrap Host \{#decommission-bootstrap-host}
+
+After the installer reports success, the `global` cluster runs its own Cluster API providers and no longer depends on the temporary `minialauda` KIND cluster on the bootstrap host. Once [Verification](#verification) passes, decommission the bootstrap host by removing only the local `minialauda` KIND cluster and its container network on that host.
+
+<Directive type="warning" title="Do not delete the Cluster API objects to clean up">
+  Do not run `kubectl delete cluster global`, and do not delete the `Cluster`, `KubeadmControlPlane`, or provider infrastructure objects as a cleanup step. After installation these objects own the live `global` control plane machines, so deleting them cascades into deleting the control plane VMs and destroys the cluster you just installed. Decommissioning is limited to removing the local KIND cluster on the bootstrap host; leave the Cluster API objects in place.
+</Directive>
 
 ## Next Steps
 
