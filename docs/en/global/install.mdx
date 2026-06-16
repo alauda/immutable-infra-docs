@@ -904,7 +904,7 @@ spec:
     infrastructureRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: DCSMachineTemplate
-      name: global-master-template
+      name: global-cp-template
   kubeadmConfigSpec:
     format: ignition
     clusterConfiguration:
@@ -1005,7 +1005,7 @@ spec:
     infrastructureRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: VSphereMachineTemplate
-      name: global-master-machine-template
+      name: global-cp-machine-template
   kubeadmConfigSpec:
     format: cloud-init
     clusterConfiguration:
@@ -1102,7 +1102,7 @@ spec:
     infrastructureRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: HCSMachineTemplate
-      name: global-master-machine-template
+      name: global-cp-machine-template
   kubeadmConfigSpec:
     format: cloud-init
     clusterConfiguration:
@@ -2205,21 +2205,21 @@ stringData:
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: DCSIpHostnamePool
 metadata:
-  name: global-master-pool
+  name: global-cp-pool
   namespace: cpaas-system
   labels:
     cpaas.io/cluster-name: "global"
 spec:
   pool:
-  - {ip: "192.0.2.11", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-master-1", machineName: "global-master-1"}
-  - {ip: "192.0.2.12", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-master-2", machineName: "global-master-2"}
-  - {ip: "192.0.2.13", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-master-3", machineName: "global-master-3"}
+  - {ip: "192.0.2.11", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-cp-1", machineName: "global-cp-1"}
+  - {ip: "192.0.2.12", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-cp-2", machineName: "global-cp-2"}
+  - {ip: "192.0.2.13", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-cp-3", machineName: "global-cp-3"}
 ---
 # 3. Control-plane VM spec.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: DCSMachineTemplate
 metadata:
-  name: global-master-template
+  name: global-cp-template
   namespace: cpaas-system
   labels:
     cpaas.io/cluster-name: "global"
@@ -2246,7 +2246,7 @@ spec:
         # so it survives node replacement (see Infrastructure Resources).
         - {quantity: 100, datastoreName: <datastore-name>, path: /var/cpaas,          format: xfs}
       ipHostPoolRef:
-        name: global-master-pool
+        name: global-cp-pool
 ---
 # 4. Control plane.
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
@@ -2270,7 +2270,7 @@ spec:
     infrastructureRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: DCSMachineTemplate
-      name: global-master-template
+      name: global-cp-template
   kubeadmConfigSpec:
     format: ignition
     users:
@@ -2326,7 +2326,7 @@ spec:
       patches: {directory: /etc/kubernetes/patches}
       nodeRegistration:
         kubeletExtraArgs:
-          node-labels: "kube-ovn/role=master"
+          node-labels: "kube-ovn/role=master"   # kube-ovn-recognized role value; do not rename
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           protect-kernel-defaults: "true"
@@ -2334,7 +2334,7 @@ spec:
       patches: {directory: /etc/kubernetes/patches}
       nodeRegistration:
         kubeletExtraArgs:
-          node-labels: "kube-ovn/role=master"
+          node-labels: "kube-ovn/role=master"   # kube-ovn-recognized role value; do not rename
           provider-id: PROVIDER_ID
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           protect-kernel-defaults: "true"
