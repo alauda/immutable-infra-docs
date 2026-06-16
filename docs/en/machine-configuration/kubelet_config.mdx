@@ -18,6 +18,12 @@ Configuring the kubelet is a two-part task:
 
 The kubelet only reads the drop-in directory when it is started with the `--config-dir` option. Enabling this option is a one-time operation per machine config pool. If your nodes already have it enabled, skip this section.
 
+:::warning
+Machine Configuration manages a systemd unit as a single, complete object—the unit together with its configuration, not just the part you add. If you declare a unit such as `kubelet.service` under `systemd.units` in a `MachineConfig` object—even only to attach a drop-in—Machine Configuration takes ownership of the entire unit. When that `MachineConfig` object is later removed, the unit is removed with it, **including the base `kubelet.service` that the node was provisioned with**. The kubelet is then left with no service definition and the node becomes `NotReady`.
+
+For this reason, the steps below enable `--config-dir` by writing the drop-in as a **file** (under `storage.files`, into the unit's `.d` directory) instead of declaring `kubelet.service` under `systemd.units`. Machine Configuration then manages only that file, so the change can be added and removed safely without affecting the base unit.
+:::
+
 1. Create the systemd drop-in that adds the `--config-dir` option to the kubelet service. The drop-in contents are:
 
    ```text
