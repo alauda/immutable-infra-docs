@@ -57,6 +57,29 @@ To configure the Chrony time synchronization service (`chronyd`) and specify the
 
    This configuration creates a `MachineConfig` object that applies a customized `chrony.conf` file to nodes associated with the `worker` machine configuration pool. The file will be written to `/etc/chrony.conf` on each node, with file permissions set to `0o644`.
 
+   To make the change take effect, configure a [node disruption policy](./node_disruption.mdx) for `/etc/chrony.conf` that restarts the service:
+
+   ```yaml
+   apiVersion: machineconfiguration.alauda.io/v1alpha1
+   kind: MachineConfiguration
+   metadata:
+     name: cluster
+   spec:
+     nodeDisruptionPolicy:
+       files:
+         - path: /etc/chrony.conf
+           actions:
+             - type: DaemonReload
+             - type: Restart
+               restart:
+                 serviceName: chronyd.service
+       sshkey:
+         actions:
+           - type: None
+   ```
+
+   Use `Restart` for `chronyd`; the service does not support a reload action. Confirm the policy appears in `status.nodeDisruptionPolicyStatus` before applying the `MachineConfig`.
+
 ## Disabling the Chrony Time Service
 
 To disable the Chrony time synchronization service on nodes with a specific role, you can create a `MachineConfig` object that overrides the systemd unit definition and disables the service.

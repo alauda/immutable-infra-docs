@@ -1,0 +1,165 @@
+---
+weight: 25
+title: Configuring Kubelet
+---
+
+# Configuring Kubelet
+
+You can adjust kubelet settings—such as the maximum number of pods per node, reserved resources, and eviction thresholds—declaratively using `MachineConfig` objects. On immutable nodes you do not edit kubelet configuration files on the node directly; instead, you deliver a configuration snippet that the kubelet merges at startup, and the change is rolled out and applied by the Machine Configuration Operator.
+
+The kubelet reads additional configuration from a drop-in directory, `/etc/kubernetes/kubelet.conf.d/`. Each file in this directory holds a partial `KubeletConfiguration` object that is merged on top of the node's base kubelet configuration. Because this directory is separate from the kubelet configuration generated during node bootstrap, writing to it with a `MachineConfig` object does not conflict with the platform-managed kubelet configuration.
+
+Configuring the kubelet is a two-part task:
+
+1. **One-time:** enable the kubelet configuration directory on the nodes (if it is not already enabled).
+2. **Day-to-day:** write `KubeletConfiguration` snippets into that directory to change settings.
+
+## Enabling the Kubelet Configuration Directory
+
+The kubelet only reads the drop-in directory when it is started with the `--config-dir` option. Enabling this option is a one-time operation per machine config pool. If your nodes already have it enabled, skip this section.
+
+1. Create the systemd drop-in that adds the `--config-dir` option to the kubelet service. The drop-in contents are:
+
+   ```text
+   [Service]
+   ExecStart=
+   ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS --config-dir=/etc/kubernetes/kubelet.conf.d
+   ```
+
+2. Base64-encode the contents:
+
+   ```bash
+   base64 -w0 drop-in.conf
+   ```
+
+3. Create a `MachineConfig` object that writes the drop-in **as a file** under `storage.files`. Writing it as a file (rather than declaring the kubelet service under `systemd.units`) ensures the drop-in can be added and removed safely:
+
+   ```yaml
+   apiVersion: machineconfiguration.alauda.io/v1alpha1
+   kind: MachineConfig
+   metadata:
+     name: 99-worker-kubelet-config-dir
+     labels:
+       machineconfiguration.alauda.io/role: worker
+   spec:
+     config:
+       ignition:
+         version: 3.4.0
+       storage:
+         files:
+           - path: /etc/systemd/system/kubelet.service.d/25-config-dir.conf
+             mode: 0o644
+             overwrite: true
+             contents:
+               source: 'data:text/plain;base64,W1NlcnZpY2VdCkV4ZWNTdGFydD0KRXhlY1N0YXJ0PS91c3IvYmluL2t1YmVsZXQgJEtVQkVMRVRfS1VCRUNPTkZJR19BUkdTICRLVUJFTEVUX0NPTkZJR19BUkdTICRLVUJFTEVUX0tVQkVBRE1fQVJHUyAtLWNvbmZpZy1kaXI9L2V0Yy9rdWJlcm5ldGVzL2t1YmVsZXQuY29uZi5kCg=='
+   ```
+
+4. Configure a node disruption policy for this file so that the kubelet is reloaded and restarted when the drop-in is applied. Add the following to the `cluster` `MachineConfiguration` object in the `cpaas-system` namespace, and confirm it is reflected in `status.nodeDisruptionPolicyStatus` **before** applying the `MachineConfig` from the previous step:
+
+   ```yaml
+   apiVersion: machineconfiguration.alauda.io/v1alpha1
+   kind: MachineConfiguration
+   metadata:
+     name: cluster
+   spec:
+     nodeDisruptionPolicy:
+       files:
+         - path: /etc/systemd/system/kubelet.service.d/25-config-dir.conf
+           actions:
+             - type: DaemonReload
+             - type: Restart
+               restart:
+                 serviceName: kubelet.service
+       sshkey:
+         actions:
+           - type: None
+   ```
+
+   With this policy, applying the drop-in reloads the systemd configuration and restarts the kubelet. The node is **not** rebooted, and running pods are not evicted.
+
+## Changing a Kubelet Setting
+
+Once the configuration directory is enabled, change a kubelet setting by writing a `KubeletConfiguration` snippet into it. The following example sets `maxPods` to `200`.
+
+1. Create the snippet. It must include `apiVersion` and `kind`:
+
+   ```text
+   apiVersion: kubelet.config.k8s.io/v1beta1
+   kind: KubeletConfiguration
+   maxPods: 200
+   ```
+
+2. Base64-encode the contents:
+
+   ```bash
+   base64 -w0 maxpods.conf
+   ```
+
+3. Create a `MachineConfig` object that writes the snippet into the drop-in directory:
+
+   ```yaml
+   apiVersion: machineconfiguration.alauda.io/v1alpha1
+   kind: MachineConfig
+   metadata:
+     name: 99-worker-kubelet-maxpods
+     labels:
+       machineconfiguration.alauda.io/role: worker
+   spec:
+     config:
+       ignition:
+         version: 3.4.0
+       storage:
+         files:
+           - path: /etc/kubernetes/kubelet.conf.d/30-maxpods.conf
+             mode: 0o644
+             overwrite: true
+             contents:
+               source: 'data:text/plain;base64,YXBpVmVyc2lvbjoga3ViZWxldC5jb25maWcuazhzLmlvL3YxYmV0YTEKa2luZDogS3ViZWxldENvbmZpZ3VyYXRpb24KbWF4UG9kczogMjAwCg=='
+   ```
+
+4. Add a node disruption policy for this file path (`DaemonReload` and `Restart` of `kubelet.service`), as shown in the previous section, and confirm it is reflected in `status.nodeDisruptionPolicyStatus` before applying the `MachineConfig`.
+
+After the configuration is applied, the kubelet restarts and the new value takes effect. To change additional settings, add more fields to the snippet or create additional files in the drop-in directory.
+
+## Settings You Can Change
+
+The fields below are passed directly to the kubelet. For the full list of valid values, see the upstream [Kubelet Configuration (v1beta1)](https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/) reference.
+
+| Field | Purpose | Recommended value |
+|---|---|---|
+| `maxPods` | Maximum number of pods on a node | Default `110`; commonly `110`–`250` depending on node size and Pod CIDR capacity |
+| `podsPerCore` | Maximum pods per CPU core (the effective limit is the smaller of this and `maxPods`) | Default `0` (disabled) |
+| `systemReserved` | CPU/memory/ephemeral-storage reserved for the OS and system daemons | No default; size to the node, for example `cpu=500m,memory=1Gi` |
+| `kubeReserved` | Resources reserved for the kubelet and container runtime | No default; for example `cpu=500m,memory=1Gi` |
+| `evictionHard` | Hard eviction thresholds | Default `memory.available<100Mi`, `nodefs.available<10%`, `imagefs.available<15%`, `nodefs.inodesFree<5%` |
+| `evictionSoft` | Soft eviction thresholds (used with `evictionSoftGracePeriod`) | No default |
+| `topologyManagerPolicy` | NUMA topology alignment policy | `none` (default), `best-effort`, `restricted`, `single-numa-node` |
+| `topologyManagerScope` | Granularity of topology alignment | `container` (default), `pod` |
+| `podPidsLimit` | Maximum number of PIDs per pod | Default `-1` (unlimited); commonly `1024`–`4096` |
+| `kubeAPIQPS` / `kubeAPIBurst` | Kubelet-to-API-server request rate limits | Defaults `50` / `100` |
+| `containerLogMaxSize` / `containerLogMaxFiles` | Container log rotation size / retained files | Defaults `10Mi` / `5` |
+| `imageGCHighThresholdPercent` / `imageGCLowThresholdPercent` | Disk-usage thresholds that trigger image garbage collection | Defaults `85` / `80`; the high value must be greater than the low value |
+
+For `cpuManagerPolicy` and `memoryManagerPolicy` (static CPU/memory pinning for NUMA workloads), see <ExternalSiteLink name="acp" href="/configure/scalability/resource_manager_policies.html" children="Optimize Pod Performance with Manager Policies" />.
+
+:::warning
+Invalid values can make a node unavailable. The kubelet validates the type and range of a value, but not whether it is appropriate for your node. Use the recommended values above and change one setting at a time.
+:::
+
+## Settings Managed by the Platform
+
+Do not change the following settings. They are determined by the platform, and changing them can cause the node to fail to start or to leave the cluster:
+
+- `cgroupDriver`
+- `clusterDomain`
+- `staticPodPath`
+
+The `clusterDNS` setting is also platform-managed. When NodeLocal DNSCache is enabled, `clusterDNS` is configured by that feature; do not set it through a kubelet drop-in.
+
+## When Changes Take Effect
+
+After a `MachineConfig` change is applied with a `DaemonReload` and `Restart` policy, the kubelet restarts without rebooting the node. How quickly the change is reflected depends on the setting:
+
+- **Applied on restart:** Most settings—such as `maxPods`, `systemReserved`, `kubeReserved`, `evictionHard`, `podPidsLimit`, and log/image-GC settings—take effect when the kubelet restarts. Running pods are not affected; the new value applies to the node and to newly created pods.
+- **Applied to new pods only:** Settings such as `topologyManagerPolicy` and `topologyManagerScope` apply only to pods created after the change. Existing pods must be recreated to be affected.
+- **Require additional handling:** Changing `cpuManagerPolicy` or `memoryManagerPolicy` requires draining the node and resetting the kubelet manager state in addition to a restart. See <ExternalSiteLink name="acp" href="/configure/scalability/resource_manager_policies.html" children="Optimize Pod Performance with Manager Policies" />.
