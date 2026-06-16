@@ -23,7 +23,7 @@ This page covers only the Kubernetes step of the upgrade. The full ACP upgrade f
 - <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster (Core, Aligned, Agnostic)" />
 - <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html" children="Upgrade workload clusters (Core, Aligned, Agnostic)" />
 
-Use this page when the same cluster runs on an immutable operating system, because the Kubernetes step on immutable OS replaces nodes from a new MicroOS-based VM template rather than upgrading binaries in place.
+Use this page when the same cluster runs on an immutable operating system, because the Kubernetes step on immutable OS replaces nodes from a new Alauda OS-based VM template rather than upgrading binaries in place.
 :::
 
 :::info
@@ -62,9 +62,11 @@ Before you start, ensure all of the following prerequisites are met:
 - All nodes are healthy and in Ready state
 - The IP Pool has sufficient capacity for rolling updates
 - The VM template supports the target Kubernetes version. See [OS Support Matrix](../overview/os-support-matrix.mdx) for version mapping
+- For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM templates are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation)
 - The target Kubernetes version is compatible with your workloads and add-ons
 - DCS VM templates are `4.2.1` or later if you use pool-managed persistent disks, because safe shutdown and disk detach depend on guest tools
 - If you rely on pool-managed persistent disks, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`
+- If the cluster uses additional NICs, keep the required `DCSIpHostnamePool.spec.pool[].additionNic[]` entries in place and confirm that the DCS DVS and Port Groups are reachable from the hosts that may receive replacement VMs
 
 :::warning
 **Disk Preservation Model**
@@ -85,6 +87,12 @@ Pool-managed preservation requires one-by-one replacement, so keep `maxSurge = 0
 If your existing cluster still keeps preserved data in the old template-disk layout, migrate it first by following [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx).
 :::
 
+:::info
+**Additional NICs During Rolling Replacement**
+
+Additional NICs are declared in `DCSIpHostnamePool.spec.pool[].additionNic[]`, not in `DCSMachineTemplate`. During an upgrade, each replacement VM uses the additional NICs from the Pool slot it claims. The upgrade template steps below should not move additional NIC settings into `DCSMachineTemplate`.
+:::
+
 :::warning
 **Templates Cannot Be Modified In Place**
 
@@ -99,13 +107,13 @@ YAML-based upgrades do not depend on Fleet Essentials.
 
 ### Required Values From the OS Support Matrix \{#required-values}
 
-The authoritative mapping between an ACP release, its MicroOS image, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the YAML steps below need.
+The authoritative mapping between an ACP release, its Alauda OS image, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the YAML steps below need.
 
 The cells you read from that row map to the upgrade manifests as follows:
 
 | OS Support Matrix column | Used to set | Where it lands |
 |---|---|---|
-| **MicroOS Image Version** | `DCSMachineTemplate.spec.template.spec.vmTemplateName` (new VM template the cloned nodes are built from) | Control plane and worker `DCSMachineTemplate` |
+| **Alauda OS Image Version** | `DCSMachineTemplate.spec.template.spec.vmTemplateName` (new VM template the cloned nodes are built from) | Control plane and worker `DCSMachineTemplate` |
 | **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
 | **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
 | **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
@@ -113,7 +121,7 @@ The cells you read from that row map to the upgrade manifests as follows:
 
 The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags. The Kube-OVN annotation lives on the `Cluster` resource, not on `KubeadmControlPlane`, because the DCS provider watches it independently of the Kubernetes control plane rollout.
 
-Confirm with the cluster's platform owner that the target MicroOS image has already been uploaded to the DCS platform under the same name as the **MicroOS Image Version** value in the matrix row. The upgrade fails if that VM template is not present on DCS when the `DCSMachineTemplate` is applied.
+Confirm with the cluster's platform owner that the target Alauda OS image has already been uploaded to the DCS platform under the same name as the **Alauda OS Image Version** value in the matrix row. The upgrade fails if that VM template is not present on DCS when the `DCSMachineTemplate` is applied.
 
 ### Upgrade Control Plane Infrastructure
 
@@ -140,7 +148,7 @@ Upgrading the control plane machine template lets you roll out updated VM specif
    - Strip server-generated metadata (`resourceVersion`, `uid`, `generation`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration` annotation) and the entire `status` field from the copied manifest.
    - Leave `spec.template.spec.providerID` unset. The DCS provider sets `providerID` to `dcs://<machine-name>` once the VM is created; pre-filling it in the template breaks the controller's identity binding.
 
-   Keep pool-managed persistent disks, including `/var/cpaas`, in `DCSIpHostnamePool.spec.pool[].persistentDisk`.
+   Keep pool-managed persistent disks, including `/var/cpaas`, in `DCSIpHostnamePool.spec.pool[].persistentDisk`. Keep additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]`.
 
 3. **Apply the updated template**
 
@@ -165,7 +173,7 @@ Upgrading the control plane machine template lets you roll out updated VM specif
 
 ### Upgrade Control Plane Kubernetes Version
 
-Upgrading the control plane Kubernetes version on immutable OS is a delete-recreate workflow. The control plane VMs are replaced one by one from a new `DCSMachineTemplate` that points at the target MicroOS VM template, and the `KubeadmControlPlane` resource is patched to carry the matching Kubernetes version, CoreDNS image tag, and etcd image tag.
+Upgrading the control plane Kubernetes version on immutable OS is a delete-recreate workflow. The control plane VMs are replaced one by one from a new `DCSMachineTemplate` that points at the target Alauda OS VM template, and the `KubeadmControlPlane` resource is patched to carry the matching Kubernetes version, CoreDNS image tag, and etcd image tag.
 
 Before you start, collect every required value from the target ACP row in the OS Support Matrix as described in [Required Values From the OS Support Matrix](#required-values).
 
@@ -173,7 +181,7 @@ Before you start, collect every required value from the target ACP row in the OS
 
 1. **Create a new `DCSMachineTemplate` for the target Kubernetes version**
 
-   Copy the existing control-plane template and update `metadata.name` to a new name and `spec.template.spec.vmTemplateName` to the **MicroOS Image Version** value read from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx). Keep pool-managed persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` rather than reintroducing them as template disks.
+   Copy the existing control-plane template and update `metadata.name` to a new name and `spec.template.spec.vmTemplateName` to the **Alauda OS Image Version** value read from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx). Keep pool-managed persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` and additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]` rather than reintroducing them as template fields.
 
    ```bash
    kubectl get dcsmachinetemplate <current-cp-template-name> -n cpaas-system -o yaml > new-cp-template.yaml
@@ -183,7 +191,7 @@ Before you start, collect every required value from the target ACP row in the OS
 
 2. **Patch the `KubeadmControlPlane` with the target Kubernetes values**
 
-   Update the `KubeadmControlPlane` resource in a single edit to keep `spec.version`, the CoreDNS image tag, the etcd image tag, and the infrastructure template reference consistent with the same MicroOS release:
+   Update the `KubeadmControlPlane` resource in a single edit to keep `spec.version`, the CoreDNS image tag, the etcd image tag, and the infrastructure template reference consistent with the same Alauda OS release:
 
    - `spec.version` ← **Kubernetes Version** from the OS Support Matrix row
    - `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` ← **coredns** column from the same row
@@ -194,7 +202,7 @@ Before you start, collect every required value from the target ACP row in the OS
      kubectl edit kubeadmcontrolplane <kcp-name> -n cpaas-system
      ```
 
-   Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same MicroOS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
+   Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same Alauda OS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
 3. **Upgrade the Kube-OVN chart on the workload cluster**
 
@@ -267,13 +275,14 @@ Before you start, collect every required value from the target ACP row in the OS
 
 Worker node Kubernetes upgrades are managed through `MachineDeployment` resources. Worker upgrades carry fewer fields than the control plane: the CoreDNS and etcd image tags are part of `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration`, which `MachineDeployment` does not have. Worker nodes inherit Kubernetes component versions from the new VM template; the `MachineDeployment` only needs the target Kubernetes version and the new template reference.
 
-Before you start, read the **MicroOS Image Version** and **Kubernetes Version** cells from the target ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx) as described in [Required Values From the OS Support Matrix](#required-values).
+Before you start, read the **Alauda OS Image Version** and **Kubernetes Version** cells from the target ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx) as described in [Required Values From the OS Support Matrix](#required-values).
 
 #### Procedure
 
 1. **Create a new `DCSMachineTemplate` for worker nodes**
-   - Create a new `DCSMachineTemplate` with a `vmTemplateName` set to the **MicroOS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx)
+   - Create a new `DCSMachineTemplate` with a `vmTemplateName` set to the **Alauda OS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx)
    - Keep `/var/cpaas` and any other upgrade-preserved disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` rather than reintroducing them as template disks
+   - Keep additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]`
 
 2. **Update the `MachineDeployment`**
    - Set `spec.template.spec.version` to the **Kubernetes Version** value from the same OS Support Matrix row
@@ -393,17 +402,6 @@ Worker Node Pools cannot be upgraded until the Control Plane Node Pool upgrade c
 | Control Plane not started | ❌ Disabled: "Upgrade the Control Plane Node Pool first" |
 | Control Plane upgrading | ❌ Disabled: "Wait for the Control Plane Node Pool upgrade to complete" |
 | Control Plane upgraded | ✅ Enabled |
-
-### Cross-Version Upgrades
-
-When upgrading across multiple minor versions (for example, v1.32 → v1.34):
-
-1. Upgrade Control Plane to v1.33
-2. Wait for completion
-3. Upgrade Control Plane to v1.34
-4. Repeat for Worker Pools
-
-**Why**: Kubernetes only supports single minor version upgrades.
 
 ### Troubleshooting
 

@@ -69,7 +69,8 @@ Before you start, ensure all of the following prerequisites are met:
 - The Distribution Version upgrade is complete.
 - The control plane is reachable.
 - All nodes are healthy and in `Ready` state.
-- The target VM image is present in the HCS environment under the same name as the **MicroOS Image Version** value in the OS Support Matrix row. The upgrade fails if the image is not present when the new `HCSMachineTemplate` is applied.
+- The target VM image is present in the HCS environment under the same name as the **Alauda OS Image Version** value in the OS Support Matrix row. The upgrade fails if the image is not present when the new `HCSMachineTemplate` is applied.
+- For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM images are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
 - The target Kubernetes version is compatible with your workloads and add-ons.
 - Review the Kubernetes upgrade path and version skew policy.
 - Any node-local state that must survive replacement is declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`, not in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
@@ -175,13 +176,13 @@ Upgrading the Kubernetes version involves updating both the control plane softwa
 
 #### Required Values From the OS Support Matrix \{#required-values}
 
-The authoritative mapping between an ACP release, its MicroOS image, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the procedure below needs.
+The authoritative mapping between an ACP release, its Alauda OS image, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the procedure below needs.
 
 The cells you read from that row map to the upgrade manifests as follows:
 
 | OS Support Matrix column | Used to set | Where it lands |
 |---|---|---|
-| **MicroOS Image Version** | `HCSMachineTemplate.spec.template.spec.imageName` | Control plane and worker `HCSMachineTemplate` |
+| **Alauda OS Image Version** | `HCSMachineTemplate.spec.template.spec.imageName` | Control plane and worker `HCSMachineTemplate` |
 | **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
 | **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
 | **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
@@ -201,7 +202,7 @@ The CoreDNS and etcd image tags are control-plane-only because `clusterConfigura
 
    In `new-cp-template.yaml`:
    - Set `metadata.name` to `<new-template-name>`.
-   - Set `spec.template.spec.imageName` to the **MicroOS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
+   - Set `spec.template.spec.imageName` to the **Alauda OS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
    - Strip server-generated metadata (`resourceVersion`, `uid`, `generation`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration` annotation) and the entire `status` field.
    - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`. The HCS provider sets `providerID` to `hcs://<cluster-name>/<machine-name>` and `serverId` to the HCS ECS instance ID after the VM is created; pre-filling them in the template breaks the controller's identity binding.
 
@@ -211,7 +212,7 @@ The CoreDNS and etcd image tags are control-plane-only because `clusterConfigura
 
 2. **Patch the `KubeadmControlPlane` with the target Kubernetes values**
 
-   Update the `KubeadmControlPlane` resource in a single edit to keep `spec.version`, the CoreDNS image tag, the etcd image tag, and the infrastructure template reference consistent with the same MicroOS release:
+   Update the `KubeadmControlPlane` resource in a single edit to keep `spec.version`, the CoreDNS image tag, the etcd image tag, and the infrastructure template reference consistent with the same Alauda OS release:
 
    - `spec.version` ← **Kubernetes Version** from the OS Support Matrix row
    - `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` ← **coredns** column from the same row
@@ -222,7 +223,7 @@ The CoreDNS and etcd image tags are control-plane-only because `clusterConfigura
      kubectl edit kubeadmcontrolplane <kcp-name> -n cpaas-system
      ```
 
-   Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same MicroOS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
+   Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same Alauda OS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
    Keep `spec.rolloutStrategy.rollingUpdate.maxSurge: 0` when the referenced control plane pool uses persistent disks. The replacement machine must reuse the same fixed hostname and disk slot after the old machine is removed.
 

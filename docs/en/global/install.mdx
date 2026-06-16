@@ -3,7 +3,7 @@ weight: 20
 title: Installing the global Cluster
 queries:
   - install global cluster on immutable infrastructure
-  - microos global cluster installation
+  - alauda os global cluster installation
   - install platform on huawei dcs huawei cloud stack
   - install global cluster on vmware vsphere immutable infrastructure
   - immutable os global install
@@ -12,13 +12,13 @@ queries:
 
 # Installing the global Cluster
 
-This document describes how to install the `global` cluster onto Immutable Infrastructure. The `global` cluster is the platform control plane and is provisioned through Cluster API. Use this path when the platform control plane must run on an immutable operating system such as MicroOS.
+This document describes how to install the `global` cluster onto Immutable Infrastructure. The `global` cluster is the platform control plane and is provisioned through Cluster API. Use this path when the platform control plane must run on an immutable operating system such as Alauda OS.
 
 ## When to Use This Path
 
 Choose this installation path when all of the following conditions apply:
 
-- You want the `global` cluster to run on an immutable operating system. MicroOS is the supported image today.
+- You want the `global` cluster to run on an immutable operating system. Alauda OS is the supported image today.
 - Your infrastructure is one of the documented providers: Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal.
 - You can run a temporary KIND host that has network access to the target IaaS platform.
 
@@ -36,7 +36,7 @@ The following prerequisites apply to every provider:
 - IP and hostname planning for the `global` control plane and worker nodes. See [Infrastructure Resources](../infrastructure/index.mdx) for the resource model used by each provider.
 - A stable Kubernetes API endpoint for the `global` cluster, such as a VIP or load balancer address.
 - A platform access address, registry address, and Pod and Service CIDR ranges.
-- For x86_64 nodes that use ACP-provided MicroOS images, the underlying CPUs must support the `x86-64-v2` ISA baseline. See [OS Support Matrix](../overview/os-support-matrix.mdx).
+- For x86_64 nodes that use ACP-provided Alauda OS images, the underlying CPUs must support the `x86-64-v2` ISA baseline. See [OS Support Matrix](../overview/os-support-matrix.mdx).
 
 <Directive type="warning" title="Naming Convention (Required)">
   This rule applies to **every** infrastructure provider supported by this install path — Huawei DCS, Huawei Cloud Stack, VMware vSphere, and any provider added in the future. Every manifest you author in Step 4 must follow it. Misnaming these resources has two distinct failure modes, both detailed below; one breaks initial provisioning, the other only surfaces during disaster recovery.
@@ -55,8 +55,8 @@ Before installation, record the supported version set for the delivery package:
 | Core Package version | Provides the installer, local registry, and base platform payload. |
 | Kubeadm provider chart version | Must match the Cluster API control plane resources used by the global manifest. |
 | Infrastructure provider chart version | Use the VMware vSphere, DCS, HCS, or Bare Metal provider chart version delivered with the target release. |
-| MicroOS image or VM template | Must contain the Kubernetes version used by `K8S_VERSION`. |
-| `K8S_VERSION` | Use v-prefixed semver that matches the target MicroOS image, such as `v<major>.<minor>.<patch>`. |
+| Alauda OS image or VM template | Must contain the Kubernetes version used by `K8S_VERSION`. |
+| `K8S_VERSION` | Use v-prefixed semver that matches the target Alauda OS image, such as `v<major>.<minor>.<patch>`. |
 
 ## Procedure
 
@@ -78,7 +78,7 @@ export KUBE_OVN_JOIN_CIDR="<kube-ovn-join-cidr>"
 export K8S_VERSION="<target-kubernetes-version>"
 export INGRESS_CLASS_NAME="global-alb2"
 export HCS_SECRET_NAME="global-secret"
-# Use v-prefixed semver that matches the target MicroOS image.
+# Use v-prefixed semver that matches the target Alauda OS image.
 ```
 
 Use `LOCAL_REGISTRY_ADDRESS` when pushing packages from the KIND host. Use `BOOTSTRAP_REGISTRY_ADDRESS` in AppRelease chart repository values because provider Pods read the chart repository from inside the bootstrap KIND network. Use `NODE_REGISTRY_ADDRESS` in Cluster API registry annotations because provisioned `global` nodes must pull images through an address reachable from their subnet.
@@ -841,7 +841,7 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 - Set `Cluster.metadata.name` and `DCSCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kcp`.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: DCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
-- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for MicroOS.
+- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for Alauda OS.
 - Keep the release manifest's non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries.
 - For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef` and do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Keep `/var/cpaas` as platform state. If you need the disk to survive rolling replacement, declare it in `DCSIpHostnamePool.spec.pool[].persistentDisk`; do not rely on `DCSMachineTemplate` template disks as preserved state.
@@ -1773,7 +1773,7 @@ After the installer accepts the request, the install runs through several phases
 | Phase | What is happening | First place to watch |
 |---|---|---|
 | Bootstrap | The bootstrap KIND, embedded registry, and Cluster API providers are running on the KIND host. Completed in Step 2 and Step 3. | KIND host terminal; `kubectl get pods -n cpaas-system` |
-| Infrastructure provisioning | The Cluster API provider creates VMs from the MicroOS template on the target IaaS platform. | `kubectl get machines -n cpaas-system` |
+| Infrastructure provisioning | The Cluster API provider creates VMs from the Alauda OS template on the target IaaS platform. | `kubectl get machines -n cpaas-system` |
 | Control plane bootstrap | `KubeadmControlPlane` bootstraps the first control plane node, etcd starts, and additional control plane nodes join. | `kubectl get kubeadmcontrolplane -n cpaas-system` |
 | Network and core add-ons | The CAPI provider reconciles Kube-OVN, CoreDNS, and kube-proxy on the new cluster. | `kubectl --kubeconfig <global-kubeconfig> get pods -n kube-system` |
 | Platform installation | The installer imports Cluster API resources into the new `global` cluster, deploys the base operator, and installs the selected plugins. | Installer progress API; installer log |

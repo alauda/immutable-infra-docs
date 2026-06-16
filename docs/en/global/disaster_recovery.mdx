@@ -4,7 +4,7 @@ title: Global Cluster Disaster Recovery
 queries:
   - global cluster disaster recovery on immutable infrastructure
   - immutable infra etcd sync
-  - microos global dr
+  - alauda os global dr
   - vmware vsphere global cluster disaster recovery
   - immutable os disaster recovery
 ---
@@ -38,6 +38,10 @@ After the primary and standby clusters are installed, operate DR as a separate l
 - Validate the primary and standby control plane VIPs and the platform access path before a planned failover.
 - Execute failover and failback with an approved operations procedure.
 - Reconcile provider-specific resources after a failover.
+
+<Directive type="warning" title="Verify consistency before uninstalling the etcd synchronization plugin">
+A disaster recovery switchover and a DR-aware `global` cluster upgrade both uninstall the etcd synchronization plugin. Before that uninstall, confirm that the standby `global` cluster data is consistent with the primary. On Immutable Infrastructure, workload-cluster nodes are backed by Cluster API `Machine` objects, so an incorrect owner-reference resolution after an inconsistent sync can delete those `Machine` objects and destroy the backing virtual machines. If the consistency check reports missing or surplus keys, do not uninstall the plugin; resolve the inconsistency or contact technical support first. For the detailed switchover and upgrade procedures, see <ExternalSiteLink name="acp" href="/install/global_dr.html" children="Global Cluster Disaster Recovery" /> and <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />.
+</Directive>
 
 ## Bare Metal DR Model
 

@@ -35,7 +35,7 @@ Worker nodes are managed through Cluster API `Machine` resources, providing decl
 
 ### Step 1: Configure IP-Hostname Pool
 
-The IP-Hostname Pool defines the network configuration for worker node virtual machines. You must plan and configure the IP addresses, hostnames, DNS servers, and other network parameters before deployment.
+The IP-Hostname Pool defines the network configuration for worker node virtual machines. You must plan and configure the IP addresses, hostnames, DNS servers, additional NICs, and other network parameters before deployment.
 
 On Huawei DCS, the IP pool is also where you declare persistent disks that must survive VM replacement. Use `persistentDisk` for the platform-required `/var/cpaas` disk and for any other worker-node disk that must be preserved during delete-recreate operations. This workflow requires DCS provider `v1.0.16` or later.
 
@@ -57,11 +57,18 @@ metadata:
 spec:
   pool:
   - ip: "<worker-ip-1>"
-    mask: "<worker-mask>"
+    mask: "<worker-cidr-prefix-length>"
     gateway: "<worker-gateway>"
     dns: "<worker-dns>"
     hostname: "<worker-hostname-1>"
     machineName: "<worker-machine-name-1>"
+    additionNic:
+    - ip: "<worker-additional-ip-1>"
+      mask: "<worker-additional-cidr-prefix-length>"
+      gateway: "<worker-additional-gateway>"
+      dns: "<worker-additional-dns>"
+      dvSwitchName: "<additional-dvs>"
+      portGroupName: "<additional-port-group>"
     persistentDisk:
     - slot: 0
       quantityGB: 40
@@ -69,7 +76,7 @@ spec:
       path: /var/cpaas
       format: xfs
   - ip: "<worker-ip-2>"
-    mask: "<worker-mask>"
+    mask: "<worker-cidr-prefix-length>"
     gateway: "<worker-gateway>"
     dns: "<worker-dns>"
     hostname: "<worker-hostname-2>"
@@ -81,7 +88,7 @@ spec:
       path: /var/cpaas
       format: xfs
   - ip: "<worker-ip-3>"
-    mask: "<worker-mask>"
+    mask: "<worker-cidr-prefix-length>"
     gateway: "<worker-gateway>"
     dns: "<worker-dns>"
     hostname: "<worker-hostname-3>"
@@ -99,12 +106,21 @@ spec:
 | Parameter | Type | Description | Required |
 |-----------|------|-------------|----------|
 | `.spec.pool[].ip` | string | IP address for the worker virtual machine | Yes |
-| `.spec.pool[].mask` | string | Subnet mask for the network | Yes |
+| `.spec.pool[].mask` | string | Subnet mask in CIDR prefix-length format without `/`, for example `24` | Yes |
 | `.spec.pool[].gateway` | string | Gateway IP address | Yes |
-| `.spec.pool[].dns` | string | DNS server IP addresses (comma-separated for multiple) | No |
+| `.spec.pool[].dns` | string | DNS server IP addresses (semicolon-separated for multiple) | No |
 | `.spec.pool[].machineName` | string | Virtual machine name in the DCS platform | No |
 | `.spec.pool[].hostname` | string | Hostname for the virtual machine | No |
+| `.spec.pool[].additionNic[]` | []object | Additional NICs bound to this IP slot. Use this for storage, management, or isolated application networks. | No |
+| `.spec.pool[].additionNic[].ip` | string | Additional NIC IP address for the generated guest network configuration. | Recommended* |
+| `.spec.pool[].additionNic[].mask` | string | Additional NIC subnet mask in CIDR prefix-length format without `/`, for example `24`. | Recommended* |
+| `.spec.pool[].additionNic[].gateway` | string | Gateway for the additional NIC network. Confirm route behavior before setting this value. | No |
+| `.spec.pool[].additionNic[].dns` | string | DNS server IPs for the additional NIC network, separated by semicolons when multiple values are required. | No |
+| `.spec.pool[].additionNic[].dvSwitchName` | string | DCS distributed virtual switch used to resolve the Port Group for the additional NIC. | Yes* |
+| `.spec.pool[].additionNic[].portGroupName` | string | DCS Port Group used to attach the additional NIC. | Yes* |
 | `.spec.pool[].persistentDisk[]` | []object | Persistent disks bound to this IP slot. Use this for `/var/cpaas` and any disk that must survive node replacement. | No |
+
+\*Fields marked `Yes*` are required for the provider to resolve the target network and attach the additional NIC. Fields marked `Recommended*` are needed for the generated static guest network configuration. The CRD does not enforce these fields.
 
 ### Step 2: Configure Machine Template
 
@@ -197,13 +213,33 @@ Declare any upgrade-preserved disk in the matching `DCSIpHostnamePool.spec.pool[
 - On replacement nodes, the guest disk setup logic checks for an existing filesystem. If the disk is already formatted, it skips `mkfs` and mounts the disk directly.
 - Persistent-disk workflows require one-by-one replacement, so keep `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0`.
 - You can append new `persistentDisk` entries, but deleting existing entries is not supported. The controller attaches the newly added disk to the running VM on the DCS side, but it does not format or mount the disk inside the guest OS. Guest formatting and mounting take effect only after the VM is replaced and the replacement VM runs the generated disk setup during bootstrap.
+- The controller creates new persistent volumes as independent persistent normal volumes. When it reuses an existing volume, it only requires the volume to be independent and persistent; it does not require a specific DCS volume type.
 - Treat `format`, `options`, and `pciType` as immutable after creation.
-- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort validation against the DCS platform when it has enough cluster context.
+- Use `isThin` only when the DCS environment requires an explicit thin-provisioning value for newly created persistent volumes. If omitted, the provider does not send `isThin` and DCS uses the platform default.
+- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort validation against the DCS platform when it has enough cluster context. `isThin` is creation-only: changing it does not validate, reconcile, or convert existing volumes, and affects only persistent volumes created later.
 
 To inspect the runtime state of persistent disks during node operations, check `status.persistentDiskStatus` on the pool:
 
 ```bash
 kubectl get dcsiphostnamepool <cluster-name>-worker-pool -n cpaas-system -o yaml
+```
+
+### Additional NICs Managed by the IP Pool
+
+Declare worker additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]`.
+
+- The provider applies `additionNic[]` only when it creates a new VM.
+- Existing worker VMs are not hot-updated when you edit the Pool.
+- New worker Machines use the `additionNic[]` values from the Pool slot they claim.
+- Each additional NIC should include both `dvSwitchName` and `portGroupName` so the provider can resolve the target DCS Port Group before VM clone.
+- If you also use `persistentDisk[]`, keep `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0` so fixed IP slots and preserved disks move one node at a time.
+- If an additional NIC has a gateway, verify that the guest OS route table still prefers the intended primary network for the default route.
+
+To inspect the runtime state of additional NICs, check `DCSMachine.status.additionalNic`:
+
+```bash
+kubectl -n cpaas-system get dcsmachine -l cluster.x-k8s.io/cluster-name=<cluster-name> \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.networkConfig.ip}{"\t"}{.status.additionalNic}{"\n"}{end}'
 ```
 
 ### Step 3: Configure Bootstrap Template
@@ -407,7 +443,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
        "pool": [
          {
            "ip": "<existing-ip-1>",
-           "mask": "<worker-mask>",
+           "mask": "<worker-cidr-prefix-length>",
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<existing-hostname-1>",
@@ -424,7 +460,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "<existing-ip-2>",
-           "mask": "<worker-mask>",
+           "mask": "<worker-cidr-prefix-length>",
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<existing-hostname-2>",
@@ -441,7 +477,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "<new-worker-ip-1>",
-           "mask": "<worker-mask>",
+           "mask": "<worker-cidr-prefix-length>",
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<new-worker-hostname-1>",
@@ -458,7 +494,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "<new-worker-ip-2>",
-           "mask": "<worker-mask>",
+           "mask": "<worker-cidr-prefix-length>",
            "gateway": "<worker-gateway>",
            "dns": "<worker-dns>",
            "hostname": "<new-worker-hostname-2>",
@@ -481,7 +517,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
    **Important Notes**
    - The `pool` array must include **all existing entries** plus the new entries you want to add
    - Copy the existing entries from the exported YAML to avoid data loss
-   - `kubectl patch --type='merge'` replaces the entire `spec.pool` array, so copy every existing `persistentDisk` block unchanged unless you are intentionally adding new disks
+   - `kubectl patch --type='merge'` replaces the entire `spec.pool` array, so copy every existing `persistentDisk` block unchanged, including `isThin` if it is present, unless you are intentionally adding new disks
    - Ensure each new entry has unique `ip`, `hostname`, and `machineName` values
    - If new worker nodes also need the platform-required `/var/cpaas` disk, declare it in each new entry's `persistentDisk`
    - Network parameters (`mask`, `gateway`, `dns`) typically match existing entries
@@ -499,7 +535,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
        "pool": [
          {
            "ip": "10.0.1.11",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-1",
@@ -516,7 +552,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "10.0.1.12",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-2",
@@ -533,7 +569,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "10.0.1.13",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-3",
@@ -550,7 +586,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "10.0.1.14",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-4",
@@ -567,7 +603,7 @@ Increase the number of worker nodes to handle increased workload or add new capa
          },
          {
            "ip": "10.0.1.15",
-           "mask": "255.255.255.0",
+           "mask": "24",
            "gateway": "10.0.1.1",
            "dns": "10.0.0.2",
            "hostname": "worker-node-5",

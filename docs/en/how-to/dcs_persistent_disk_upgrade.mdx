@@ -34,7 +34,7 @@ The current model moves upgrade-preserved disks into `DCSIpHostnamePool.spec.poo
 1. Claims the existing disk from the old VM.
 2. Safely stops the old VM.
 3. Detaches the disk.
-4. Converts stock volumes to independent shared volumes when needed.
+4. Converts stock volumes to independent persistent volumes when needed.
 5. Deletes the old VM.
 6. Reattaches the disk to the replacement VM.
 7. Boots the replacement VM, which mounts the existing filesystem without reformatting it.
@@ -161,6 +161,8 @@ The spec interacts with the live disk attributes in three ways:
 - `datastoreName` or `datastoreClusterName` — must point to the same storage target as the live disk
 - `pciType` — must match the live disk PCI type. If omitted, the provider uses the default `VIRTIO`; verify the live disk PCI type before omitting this field, because a non-`VIRTIO` live disk can fail the strict claim match
 
+`isThin` is creation-only. It is sent only when the provider creates a new DCS persistent volume. It is not compared during existing-volume claim and does not convert existing volumes.
+
 **Filesystem (affects guest-side initialization, not the claim check):**
 
 - `format` — used only when initializing a fresh disk. If the live disk already has a filesystem, the existing format is preserved and `mkfs` is skipped.
@@ -248,7 +250,7 @@ kubectl get dcsiphostnamepool <iphostname-pool-name> -n cpaas-system -o yaml
 During the transition, each record appears under `status.persistentDiskStatus`. The stable phases to watch for are:
 
 - `phase: Attached` while the old VM still owns the disk
-- `phase: Available` after the disk is detached (and converted from a stock volume to an independent shared volume when needed)
+- `phase: Available` after the disk is detached (and converted from a stock volume to an independent persistent volume when needed)
 - `phase: Attached` again after the replacement VM reattaches the disk
 
 Transient phases (`Attaching`, `Detaching`) may briefly appear during the corresponding operations; `Deleting` appears when a disk is being permanently removed, for example during pool or cluster cleanup. The full phase set is `Creating`, `Available`, `Attaching`, `Attached`, `Detaching`, `Deleting`, `Error`.

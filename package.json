@@ -1,6 +1,6 @@
 {
   "devDependencies": {
-    "@alauda/doom": "^2.5.1"
+    "@alauda/doom": "^2.5.2"
   },
   "scripts": {
     "dev": "doom dev",

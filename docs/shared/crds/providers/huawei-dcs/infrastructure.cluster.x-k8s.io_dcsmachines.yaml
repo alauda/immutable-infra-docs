@@ -203,8 +203,12 @@ spec:
                 type: array
               cdRomDatastoreUrn:
                 type: string
+              cdRomDetached:
+                type: boolean
               cdRomFile:
                 type: string
+              cdRomFileDeleted:
+                type: boolean
               conditions:
                 description: Conditions provide observations of the operational state
                   of a Cluster API resource.

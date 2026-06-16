@@ -170,6 +170,8 @@ DCS Provider supports two credential user types, selected by the optional Secret
 
 IP pools define the network configuration (IP addresses, subnet masks, gateways, DNS) for cluster nodes. Each pool can contain multiple node entries, and each node can have multiple network interface configurations.
 
+For DCS multi-NIC clusters, each IP entry can declare `additionNic` items. These additional NICs are bound to the IP slot and are applied when the provider creates a new VM. Updating `additionNic` on an existing Pool does not hot-add NICs to already-running VMs.
+
 For DCS persistent disks, each IP entry can also declare `persistentDisk` items. These disks are bound to the IP slot instead of the VM lifecycle, so they can be detached from an old VM and reattached to a replacement VM during rolling upgrades. Use this mechanism for the platform-required `/var/cpaas` disk and for any other node-local data that must survive delete-recreate operations. Since DCS provider `v1.0.16`, this `persistentDisk` declaration is supported through YAML only.
 
 ### Using the Web UI
@@ -179,7 +181,7 @@ For DCS persistent disks, each IP entry can also declare `persistentDisk` items.
 - Cloud Credential has been created
 
 :::info
-Since DCS provider `v1.0.16`, the IP Pool web UI covers IP, hostname, and NIC settings only. It does not expose `DCSIpHostnamePool.spec.pool[].persistentDisk`. Configure persistent disks through YAML manifests.
+Since DCS provider `v1.0.16`, the IP Pool web UI covers standard IP, hostname, and network settings only. It does not expose `DCSIpHostnamePool.spec.pool[].persistentDisk`. Configure persistent disks through YAML manifests.
 :::
 
 #### Creating an IP Pool
@@ -198,9 +200,9 @@ The IP Pool form consists of a list of **Pools**. Each Pool represents one node 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | IP | IP address | Yes | IP address for the Kubernetes Node |
-| Subnet Mask | CIDR | Yes | Subnet mask for the network |
+| Subnet Mask | CIDR prefix length | Yes | Subnet mask for the network, entered as a prefix length such as `24` |
 | Gateway | IP address | Yes | Gateway IP address |
-| DNS | IP address | No | DNS server addresses (comma-separated for multiple) |
+| DNS | IP address | No | DNS server addresses (semicolon-separated for multiple) |
 | Hostname | text | No | Hostname for the virtual machine |
 | Machine Name | text | No | Virtual machine name in the DCS platform |
 | dvSwitch Name | dropdown | No | Virtual switch name (from DCS platform) |
@@ -211,23 +213,23 @@ The IP Pool form consists of a list of **Pools**. Each Pool represents one node 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | IP | IP address | Yes | Non-Node IP address (e.g., storage network) |
-| Subnet Mask | CIDR | Yes | Subnet mask for the network |
+| Subnet Mask | CIDR prefix length | Yes | Subnet mask for the network, entered as a prefix length such as `24` |
 | Gateway | IP address | Yes | Gateway IP address |
-| DNS | IP address | No | DNS server addresses |
+| DNS | IP address | No | DNS server addresses (semicolon-separated for multiple) |
 | dvSwitch Name | dropdown | Yes | Virtual switch name (from DCS platform) |
 | Port Group Name | dropdown | Yes | Port group name (from DCS platform) |
 
 **Validation Rules**:
 - IP addresses must be unique within the same IP Pool
 - IP addresses must be valid IPv4 format
-- Subnet mask must be valid format
+- Subnet mask must be entered as a valid CIDR prefix length, such as `24`. Do not include `/` or use dotted-decimal format such as `255.255.255.0`.
 - IP address must be within the configured subnet range
 - Gateway must be a valid IPv4 address within the subnet range
 
 **Tips**:
 - At least one node entry is required
 - Exactly one Node IP configuration is required per node
-- Additional NIC IPs are optional for multi-NIC scenarios (e.g., storage network separation)
+- `additionNic[]` entries are optional for multi-NIC scenarios, such as storage network separation
 
 #### Managing IP Pools
 
@@ -250,19 +252,26 @@ metadata:
 spec:
   pool:
   - ip: "<ip-1>"
-    mask: "<mask>"
+    mask: "<cidr-prefix-length>"
     gateway: "<gateway>"
     dns: "<dns>"
     hostname: "<hostname-1>"
     machineName: "<machine-name-1>"
+    additionNic:
+    - ip: "<additional-ip-1>"
+      mask: "<additional-cidr-prefix-length>"
+      gateway: "<additional-gateway>"
+      dns: "<additional-dns>"
+      dvSwitchName: "<additional-dvs>"
+      portGroupName: "<additional-port-group>"
   - ip: "<ip-2>"
-    mask: "<mask>"
+    mask: "<cidr-prefix-length>"
     gateway: "<gateway>"
     dns: "<dns>"
     hostname: "<hostname-2>"
     machineName: "<machine-name-2>"
   - ip: "<ip-3>"
-    mask: "<mask>"
+    mask: "<cidr-prefix-length>"
     gateway: "<gateway>"
     dns: "<dns>"
     hostname: "<hostname-3>"
@@ -274,15 +283,45 @@ spec:
 | Parameter | Type | Description | Required |
 |-----------|------|-------------|----------|
 | `.spec.pool[].ip` | string | IP address for the virtual machine to be created | Yes |
-| `.spec.pool[].mask` | string | Subnet mask | Yes |
+| `.spec.pool[].mask` | string | Subnet mask in CIDR prefix-length format without `/`, for example `24` | Yes |
 | `.spec.pool[].gateway` | string | Gateway IP address | Yes |
-| `.spec.pool[].dns` | string | DNS server IP (use ',' to separate multiple servers) | No |
+| `.spec.pool[].dns` | string | DNS server IPs (use `;` to separate multiple servers) | No |
 | `.spec.pool[].machineName` | string | Name of the virtual machine in the DCS platform | No |
 | `.spec.pool[].hostname` | string | Hostname of the virtual machine | No |
+| `.spec.pool[].additionNic[]` | []object | Additional NICs for the VM created from this IP slot. The provider applies them only when creating a new VM. | No |
+| `.spec.pool[].additionNic[].ip` | string | Additional NIC IP address for the generated guest network configuration. This is not the Kubernetes Node IP. | Recommended* |
+| `.spec.pool[].additionNic[].mask` | string | Additional NIC subnet mask in CIDR prefix-length format without `/`, for example `24`. | Recommended* |
+| `.spec.pool[].additionNic[].gateway` | string | Gateway for the additional NIC network. Confirm route behavior before setting this value. | No |
+| `.spec.pool[].additionNic[].dns` | string | DNS server IPs for the additional NIC network, separated by semicolons when multiple values are required. | No |
+| `.spec.pool[].additionNic[].dvSwitchName` | string | DCS distributed virtual switch used to resolve the Port Group for the additional NIC. | Yes* |
+| `.spec.pool[].additionNic[].portGroupName` | string | DCS Port Group used to attach the additional NIC. | Yes* |
+
+\*Fields marked `Yes*` are required for the provider to resolve the target network and attach the additional NIC. Fields marked `Recommended*` are needed for the generated static guest network configuration. The CRD does not enforce these fields.
 
 :::warning
 You must configure machine information for a number of machines greater than or equal to the number of nodes you plan to deploy. Insufficient entries will prevent node deployment.
 :::
+
+### Additional NICs in the IP Pool \{#additional-nics}
+
+Declare additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]`.
+
+Use this field when a node needs a secondary network, such as a storage, management, or application-isolation network. Keep the primary `.spec.pool[].ip` as the Kubernetes Node IP unless you intentionally plan a Node IP change.
+
+**How it takes effect:**
+
+- The provider copies `additionNic[]` from the Pool slot into `DCSMachine.status.additionalNic` when a new `DCSMachine` claims that slot.
+- The provider adds those NICs when it clones the DCS VM.
+- The guest OS configures the interfaces during first boot through the generated NetworkManager configuration.
+- Existing VMs are not hot-updated when the Pool is edited later.
+
+**Network boundaries:**
+
+- The DCS provider does not reserve additional NIC IP addresses on the DCS platform. Avoid IP conflicts before applying the Pool.
+- The referenced DVS and Port Group must already exist, and the target DCS hosts must be able to access them.
+- Provide both `dvSwitchName` and `portGroupName` for each additional NIC. The provider uses them to resolve the Port Group URN before cloning the VM.
+- The provider models IP, mask, gateway, DNS, DVS, and Port Group only. Route metrics, static routes, and NIC roles must be handled through MCP or guest OS configuration.
+- If an additional NIC has a gateway, verify that it does not unexpectedly take over the default route from the primary NIC.
 
 ### Persistent Disks in the IP Pool
 
@@ -309,7 +348,7 @@ metadata:
 spec:
   pool:
   - ip: "<ip-1>"
-    mask: "<mask>"
+    mask: "<cidr-prefix-length>"
     gateway: "<gateway>"
     dns: "<dns>"
     hostname: "<hostname-1>"
@@ -331,6 +370,7 @@ spec:
 | `slot` | Disk position within the IP slot. It determines attach order, guest device naming, and the sequence number used during volume claim and reattach. |
 | `quantityGB` | Disk size in GB. |
 | `datastoreName` / `datastoreClusterName` | Specify exactly one storage target for the persistent disk. |
+| `isThin` | Optional. Controls DCS thin provisioning for newly created persistent volumes. If omitted, the provider does not send `isThin` and DCS uses the platform default. |
 | `path` | Mount path inside the guest OS. `/var/cpaas` is the platform-required path. |
 | `format` | Filesystem used when the disk is first initialized. If the replacement VM sees an existing filesystem, formatting is skipped. |
 | `options` | `mkfs` options applied only when the disk is first formatted. |
@@ -340,9 +380,10 @@ spec:
 **Update rules:**
 
 - You can append new `persistentDisk` entries to an existing IP slot. The controller attaches the newly added disk to the running VM on the DCS side, but it does not format or mount the disk inside the guest OS. Guest formatting and mounting take effect only after the VM is replaced and the replacement VM runs the generated disk setup during bootstrap.
+- The controller creates new persistent volumes as independent persistent normal volumes. When it reuses an existing volume, it only requires the volume to be independent and persistent; it does not require a specific DCS volume type.
 - Do not delete existing `persistentDisk` entries from the spec. The webhook rejects removal.
 - Treat `format`, `options`, and `pciType` as immutable after creation.
-- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort platform validation when the pool carries a cluster label.
+- Treat `quantityGB` and datastore changes as rollout-sensitive changes. The webhook performs best-effort platform validation when the pool carries a cluster label. `isThin` is creation-only: changing it does not validate, reconcile, or convert existing volumes, and affects only persistent volumes created later.
 - Treat `path` and `mountOptions` changes as guest-side changes that take effect on replacement machines during rolling updates.
 
 ---
@@ -487,12 +528,12 @@ Machine templates define the virtual machine specifications (VM template, CPU, m
 #### Prerequisites
 
 - IP Pool has been created
-- VM Template has been created in the DCS platform using MicroOS image
+- VM Template has been created in the DCS platform using Alauda OS image
 - ConfigMap YAML has been applied to the global cluster
 
 **VM Template and ConfigMap**:
 
-Each MicroOS release includes a ConfigMap YAML that maps VM templates to Kubernetes versions. Apply this YAML before creating machine templates:
+Each Alauda OS release includes a ConfigMap YAML that maps VM templates to Kubernetes versions. Apply this YAML before creating machine templates:
 
 ```yaml
 apiVersion: v1
@@ -500,11 +541,11 @@ data:
   corednsTag: 1.12.4-v4.2.3
   etcdTag: v3.5.21-251117
   kubernetesVersion: v1.33.6
-  vmImageVersion: MicroOS-5.5-v4.2.0
+  vmImageVersion: alaudaos-42.m55.202512081125-0.x86_64
 kind: ConfigMap
 metadata:
   labels:
-    cpaas.io/dcs-vm-template: microos5.5-4.2.0
+    cpaas.io/dcs-vm-template: <vm-template-name>
     cpaas.io/distribution-version: v4.2.0
     cpaas.io/kubernetes-version: v1.33
   name: 420-dcs-vm-template
