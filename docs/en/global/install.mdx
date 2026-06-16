@@ -19,7 +19,7 @@ This document describes how to install the `global` cluster onto Immutable Infra
 Choose this installation path when all of the following conditions apply:
 
 - You want the `global` cluster to run on an immutable operating system. MicroOS is the supported image today.
-- Your infrastructure is one of the documented providers: Huawei DCS, VMware vSphere, or Huawei Cloud Stack. Bare-metal support for the `global` cluster is planned.
+- Your infrastructure is one of the documented providers: Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal.
 - You can run a temporary KIND host that has network access to the target IaaS platform.
 
 For traditional operating systems such as Ubuntu or RHEL, use <ExternalSiteLink name="acp" href="/install/index.html" children="the standard installation path" /> instead.
@@ -54,7 +54,7 @@ Before installation, record the supported version set for the delivery package:
 |-------|---------|
 | Core Package version | Provides the installer, local registry, and base platform payload. |
 | Kubeadm provider chart version | Must match the Cluster API control plane resources used by the global manifest. |
-| Infrastructure provider chart version | Use the VMware vSphere, DCS, or HCS provider chart version delivered with the target release. |
+| Infrastructure provider chart version | Use the VMware vSphere, DCS, HCS, or Bare Metal provider chart version delivered with the target release. |
 | MicroOS image or VM template | Must contain the Kubernetes version used by `K8S_VERSION`. |
 | `K8S_VERSION` | Use v-prefixed semver that matches the target MicroOS image, such as `v<major>.<minor>.<patch>`. |
 
@@ -74,6 +74,7 @@ export PLATFORM_HOST="<platform-access-domain-or-vip>"
 export REGISTRY_DOMAIN="<platform-registry-domain-or-vip>:11443"
 export CLUSTER_CIDR="100.3.0.0/16"
 export SERVICE_CIDR="100.4.0.0/16"
+export KUBE_OVN_JOIN_CIDR="<kube-ovn-join-cidr>"
 export K8S_VERSION="<target-kubernetes-version>"
 export INGRESS_CLASS_NAME="global-alb2"
 export HCS_SECRET_NAME="global-secret"
@@ -102,7 +103,7 @@ The bootstrap script provisions an embedded registry, the Cluster API control pl
 Upload the Kubeadm provider package and the infrastructure provider package to the local registry.
 
 <Directive type="info" title="Why cluster.type is Baremetal for every provider">
-  The AppRelease values in the tabs below all set `global.cluster.type: Baremetal`. This is a chart-internal classifier, not the IaaS provider name. Keep `Baremetal` for the Huawei DCS, VMware vSphere, and Huawei Cloud Stack `global` installations. The value drives how the platform configures node-level components; it does not select the infrastructure provider.
+  The AppRelease values in the tabs below all set `global.cluster.type: Baremetal`. This is a chart-internal classifier, not the IaaS provider name. Keep `Baremetal` for the Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal `global` installations. The value drives how the platform configures node-level components; it does not select the infrastructure provider.
 </Directive>
 
 <Tabs>
@@ -511,9 +512,285 @@ done
 
   </Tab>
   <Tab label="Bare Metal">
-    <Directive type="info" title="Status: Planned">
-      Bare-metal support for the `global` cluster on Immutable Infrastructure is planned.
-    </Directive>
+
+Set the provider package paths and chart versions.
+
+```shell
+export BAREMETAL_PROVIDER_PACK="/root/cluster-api-provider-baremetal.amd64.<version>.tgz"
+export KUBEADM_PROVIDER_PACK="/root/cluster-api-provider-kubeadm.amd64.<version>.tgz"
+export BAREMETAL_PROVIDER_VERSION="<baremetal-provider-chart-version>"
+export KUBEADM_PROVIDER_VERSION="<kubeadm-provider-chart-version>"
+```
+
+Upload the packages.
+
+```shell
+/root/cpaas-install/installer/res/amd64/packtool pack push \
+  -r "${LOCAL_REGISTRY_ADDRESS}" -c "${BAREMETAL_PROVIDER_PACK}"
+
+/root/cpaas-install/installer/res/amd64/packtool pack push \
+  -r "${LOCAL_REGISTRY_ADDRESS}" -c "${KUBEADM_PROVIDER_PACK}"
+```
+
+Create and apply the AppRelease resources for the Kubeadm provider and the Bare Metal provider.
+
+<Directive type="warning" title="Bare Metal Bootstrap Endpoint">
+  During bootstrap, the `global` cluster has not handed control to the final VIP yet. Keep the bare-metal registration path on the bootstrap KIND host: `global.platformUrl` points to the bootstrap host, and `elemental.server.url` points to `https://<kind-host-ip>:12443`. Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the `global` machines during this phase. The handoff job changes the `global` machines to `https://<CONTROL_PLANE_VIP>/kubernetes/global` after the platform installation completes.
+</Directive>
+
+Prepare the bootstrap HTTPS certificate used by `global-alb2` before you install the Bare Metal provider. The `elemental-operator` mounts the CA from `cpaas-system/dex.tls`, and `elemental-system-agent` uses that CA when `elemental.tls.agentTLSMode` is `strict`. The Secret must contain `tls.crt`, `tls.key`, and the CA bundle key that you configure in the AppRelease, shown below as `ca.crt`. The serving certificate must include `${HOST_IP}` as an IP SAN because the bootstrap endpoint is `https://${HOST_IP}:12443`.
+
+If cert-manager is available in the bootstrap KIND cluster, create or refresh `dex.tls` with a bootstrap-local CA:
+
+```shell
+kubectl get crd certificates.cert-manager.io issuers.cert-manager.io
+
+kubectl -n cpaas-system apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: baremetal-bootstrap-selfsigned
+  namespace: cpaas-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: baremetal-bootstrap-ca
+  namespace: cpaas-system
+spec:
+  secretName: baremetal-bootstrap-ca
+  commonName: baremetal-bootstrap-ca
+  duration: 87600h
+  renewBefore: 720h
+  isCA: true
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - cert sign
+    - crl sign
+  issuerRef:
+    name: baremetal-bootstrap-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: baremetal-bootstrap-ca
+  namespace: cpaas-system
+spec:
+  ca:
+    secretName: baremetal-bootstrap-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dex-tls-bootstrap
+  namespace: cpaas-system
+spec:
+  secretName: dex.tls
+  commonName: ${HOST_IP}
+  duration: 87600h
+  renewBefore: 720h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  ipAddresses:
+    - "${HOST_IP}"
+    - "127.0.0.1"
+  dnsNames:
+    - global-alb2
+    - global-alb2.cpaas-system.svc
+    - global-alb2.cpaas-system.svc.cluster.local
+  issuerRef:
+    name: baremetal-bootstrap-ca
+    kind: Issuer
+EOF
+
+kubectl -n cpaas-system wait certificate/baremetal-bootstrap-ca \
+  --for=condition=Ready \
+  --timeout=120s
+kubectl -n cpaas-system wait certificate/dex-tls-bootstrap \
+  --for=condition=Ready \
+  --timeout=120s
+```
+
+Verify that the Secret has the expected keys and that the certificate is valid for the bootstrap endpoint:
+
+```shell
+kubectl -n cpaas-system get secret dex.tls \
+  -o jsonpath='{.data.tls\.crt}{" "}{.data.tls\.key}{" "}{.data.ca\.crt}{"\n"}'
+
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "${tmp_dir}"' EXIT
+kubectl -n cpaas-system get secret dex.tls \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > "${tmp_dir}/ca.crt"
+kubectl -n cpaas-system get secret dex.tls \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > "${tmp_dir}/tls.crt"
+
+openssl verify -CAfile "${tmp_dir}/ca.crt" "${tmp_dir}/tls.crt"
+openssl x509 -in "${tmp_dir}/tls.crt" -noout -text | grep "IP Address:${HOST_IP}"
+
+echo | openssl s_client \
+  -connect "${HOST_IP}:12443" \
+  -servername "${HOST_IP}" \
+  -CAfile "${tmp_dir}/ca.crt" \
+  -verify_return_error 2>&1 | grep "Verify return code: 0 (ok)"
+```
+
+If the bootstrap ALB keeps serving an older certificate, restart it and verify again:
+
+```shell
+kubectl -n cpaas-system rollout restart deploy/global-alb2
+kubectl -n cpaas-system rollout status deploy/global-alb2
+```
+
+Do not include this bootstrap `dex.tls` in `dcs-import-extra-resources`. It is only for the temporary bootstrap endpoint. The final `global` cluster's `dex.tls` is created or maintained by the installer platform certificate flow. For DR, use the `thirdParty` console certificate guidance in Step 8 so the final platform certificate chain covers the platform domain, the primary VIP, and the standby VIP.
+
+```shell
+mkdir -p /root/yamls
+export BAREMETAL_PROVIDER_APPRELEASES="/root/yamls/baremetal-provider-appreleases.yaml"
+
+cat > "${BAREMETAL_PROVIDER_APPRELEASES}" <<EOF
+---
+apiVersion: operator.alauda.io/v1alpha1
+kind: AppRelease
+metadata:
+  annotations:
+    auto-recycle: "true"
+    interval-sync: "true"
+  name: cluster-api-provider-kubeadm
+  namespace: cpaas-system
+spec:
+  destination:
+    cluster: ""
+    namespace: ""
+  source:
+    chartPullSecret: global-registry-auth
+    charts:
+      - name: ait/chart-cluster-api-provider-kubeadm
+        releaseName: cluster-api-provider-kubeadm
+        targetRevision: ${KUBEADM_PROVIDER_VERSION}
+    repoURL: ${BOOTSTRAP_REGISTRY_ADDRESS}
+  timeout: 120
+  values:
+    global:
+      albName: ${INGRESS_CLASS_NAME}
+      auth:
+        default_admin: admin@cpaas.io
+      cluster:
+        isGlobal: true
+        name: global
+        networkType: kube-ovn
+        type: Baremetal
+      host: ${PLATFORM_HOST}
+      ingress:
+        ingressClassName: ${INGRESS_CLASS_NAME}
+      labelBaseDomain: cpaas.io
+      namespace: cpaas-system
+      platformUrl: https://${PLATFORM_HOST}
+      protectSecretFiles:
+        enabled: false
+      region: global
+      registry:
+        address: ${BOOTSTRAP_REGISTRY_ADDRESS}
+        imagePullSecrets:
+          - global-registry-auth
+      replicas: 1
+      scheme: https
+---
+apiVersion: operator.alauda.io/v1alpha1
+kind: AppRelease
+metadata:
+  annotations:
+    auto-recycle: "true"
+    interval-sync: "true"
+  name: cluster-api-provider-baremetal
+  namespace: cpaas-system
+spec:
+  destination:
+    cluster: ""
+    namespace: ""
+  source:
+    chartPullSecret: global-registry-auth
+    charts:
+      - name: ait/chart-cluster-api-provider-baremetal
+        releaseName: cluster-api-provider-baremetal
+        targetRevision: ${BAREMETAL_PROVIDER_VERSION}
+    repoURL: ${BOOTSTRAP_REGISTRY_ADDRESS}
+  timeout: 120
+  values:
+    global:
+      albName: ${INGRESS_CLASS_NAME}
+      auth:
+        default_admin: admin@cpaas.io
+      cluster:
+        isGlobal: true
+        name: global
+        networkType: kube-ovn
+        type: Baremetal
+      host: ${PLATFORM_HOST}
+      ingress:
+        ingressClassName: ${INGRESS_CLASS_NAME}
+        tls:
+          secretName: dex.tls
+      labelBaseDomain: cpaas.io
+      namespace: cpaas-system
+      platformUrl: https://${HOST_IP}
+      protectSecretFiles:
+        enabled: false
+      region: global
+      registry:
+        address: ${BOOTSTRAP_REGISTRY_ADDRESS}
+        imagePullSecrets:
+          - global-registry-auth
+      replicas: 1
+      scheme: https
+    handoffHook:
+      controlPlaneVIP: ${CONTROL_PLANE_VIP}
+      delivery:
+        enabled: true
+        mode: always
+    elemental:
+      server:
+        url: https://${HOST_IP}:12443
+      systemAgent:
+        authMode: shared
+        serviceAccountName: baremetal-system-agent
+      tls:
+        agentTLSMode: strict
+        caCertSecretName: dex.tls
+        caCertSecretKey: ca.crt
+EOF
+
+kubectl apply -f "${BAREMETAL_PROVIDER_APPRELEASES}"
+
+until kubectl get crd kubeadmcontrolplanes.controlplane.cluster.x-k8s.io --ignore-not-found 2>/dev/null | grep -q kubeadmcontrolplanes.controlplane.cluster.x-k8s.io; do
+  sleep 10
+done
+
+until kubectl get crd baremetalclusters.infrastructure.cluster.x-k8s.io --ignore-not-found 2>/dev/null | grep -q baremetalclusters.infrastructure.cluster.x-k8s.io; do
+  sleep 10
+done
+
+until kubectl get crd machineinventories.elemental.cattle.io --ignore-not-found 2>/dev/null | grep -q machineinventories.elemental.cattle.io; do
+  sleep 10
+done
+```
+
+After the provider starts, verify that the chart values were accepted. A CrashLoopBackOff with an unknown flag such as `--system-agent-auth-mode` means the AppRelease chart and the elemental-operator image do not match; install a chart and image from the same release payload before continuing.
+
+```shell
+kubectl -n cpaas-system get pods | grep -E 'cluster-api-provider-baremetal|elemental'
+kubectl -n cpaas-system logs deploy/elemental-operator --tail=100
+```
+
   </Tab>
 </Tabs>
 
@@ -536,6 +813,7 @@ Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format` to the value that the ta
 | Huawei DCS | `ignition` (provider-enforced; the DCS provider rejects any other format with `invalid format, expected ignition, got <other>`). |
 | VMware vSphere | `cloud-init` (provider default; setting `ignition` is not supported). |
 | Huawei Cloud Stack | `cloud-init` (provider-enforced; the HCS provider rejects `ignition` with `ignition format is not supported`). |
+| Bare Metal | `cloud-init` (the bare-metal provider consumes CAPI bootstrap data and renders elemental plans). |
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -836,9 +1114,167 @@ spec:
 
   </Tab>
   <Tab label="Bare Metal">
-    <Directive type="info" title="Status: Planned">
-      Bare-metal manifest requirements for the `global` cluster on Immutable Infrastructure are planned.
-    </Directive>
+
+Set the output path for the Bare Metal `global` manifest before you render it.
+
+```shell
+export GLOBAL_BAREMETAL_YAML="/root/yamls/new-global.yaml"
+```
+
+The Bare Metal `global` manifest must contain the following resources in the `cpaas-system` namespace:
+
+| Resource | Purpose |
+|----------|---------|
+| `MachineRegistration` | Provides the live-ISO registration endpoint and the first-install elemental configuration for the `global` hosts. |
+| `SeedImage` | Builds the bootstrap ISO used to install the `global` hosts. This ISO belongs to the bootstrap lifecycle and is not reused after handoff. |
+| `MachineInventory` | Long-lived host identity created by registration. Wait for the expected inventories before applying the CAPI objects. |
+| `MachineInventoryPool` for control plane nodes | Lists the exact `MachineInventory` names that can back the `global` control plane. |
+| `BaremetalMachineTemplate` for control plane nodes | References the control-plane inventory pool. |
+| `KubeadmControlPlane` | Bootstraps the Kubernetes control plane. Set `spec.version` to `${K8S_VERSION}`. |
+| `BaremetalCluster` | Defines the control-plane VIP, VIP port, VRID, endpoint, and optional encryption provider config Secret reference. |
+| `Cluster` | Connects the Cluster API `Cluster` to `BaremetalCluster` and `KubeadmControlPlane`. |
+| Optional worker `MachineInventoryPool`, `BaremetalMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` | Creates `global` worker nodes when the topology includes them. |
+
+Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managing Nodes on Bare Metal](../manage-nodes/bare-metal.mdx), and [Bare Metal Provider](../overview/providers/bare-metal.mdx) as the resource references. For the `global` cluster, keep these additional requirements:
+
+- Set `Cluster.metadata.name` and `BaremetalCluster.metadata.name` to `global`. Prefix every other CAPI, bare-metal, and elemental resource with `global-`.
+- Add `Cluster.metadata.labels.cluster-type: ProviderBaremetal`.
+- Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
+- Add `Cluster.metadata.annotations["cpaas.io/kube-ovn-join-cidr"]`, `Cluster.metadata.annotations["cpaas.io/sentry-deploy-type"]: Baremetal`, and `Cluster.metadata.annotations["cpaas.io/alb-address-type"]: ClusterAddress`.
+- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-init`, or leave it unset because `cloud-init` is the provider path used by Bare Metal.
+- Set `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0`. Bare-metal pools cannot over-provision physical hosts.
+- Keep `controlplane.cluster.x-k8s.io/skip-kube-proxy: ""` on the `KubeadmControlPlane` when the release manifest uses kube-ovn.
+- Put `${CONTROL_PLANE_VIP}` and `${PLATFORM_HOST}` in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`.
+- Set `BaremetalCluster.spec.controlPlaneLoadBalancer.host` to `${CONTROL_PLANE_VIP}`, `port` to `6443`, and use a `vrid` that is unique in the control-plane Layer-2 domain.
+- For a normal non-DR deployment, `BaremetalCluster.spec.encryptionProviderConfigRef` can be omitted. For DR, set it as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment); do not deliver `/etc/kubernetes/encryption-provider.conf` by adding it to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
+- Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the bootstrap `global` hosts. The bootstrap ISO must register through the bootstrap host; the handoff job later moves the `global` machines to the VIP.
+- If a `global` VM or physical host does not have DHCP during the live-ISO boot, configure the NIC manually from the host console before waiting for `MachineInventory` registration. Use the same NetworkManager procedure described in [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx#network-connectivity), replacing the example address, gateway, DNS, and connection name with the values for that host.
+- Do not depend on OS hostname side effects. The bare-metal provider normalizes kubeadm node names and provider IDs from the CAPI and inventory objects.
+- The `SeedImage` created in the bootstrap KIND environment is a bootstrap artifact. After handoff, create any new `MachineRegistration` or `SeedImage` on the active `global` cluster.
+- When adding new machines to an already installed `global` cluster, explicitly set the `baremetal.cluster.io/system-agent-server-url` annotation on that `MachineRegistration` to the current active `global` control-plane VIP. New `global` machines do not pass through the bootstrap handoff job, so this annotation is what makes their system-agent watch plan Secrets through `https://<CONTROL_PLANE_VIP>/kubernetes/global`. Non-`global` workload-cluster machines should continue to use the platform domain path.
+
+  ```yaml
+  apiVersion: elemental.cattle.io/v1beta1
+  kind: MachineRegistration
+  metadata:
+    name: global-<purpose>
+    namespace: cpaas-system
+    annotations:
+      baremetal.cluster.io/system-agent-server-url: https://<CONTROL_PLANE_VIP>
+  ```
+
+<Directive type="warning" title="Fragment Scope">
+  The following YAML is a differential fragment, not a complete manifest that you can apply directly. Merge these `global`-specific changes into the manifest that you prepare from the Bare Metal create-cluster references, then apply the complete manifest file.
+</Directive>
+
+The following fragment shows the `global`-specific Cluster API wiring. Fill the inventory names, registration configuration, image references, and optional worker resources by using the Bare Metal create-cluster reference.
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: global
+  namespace: cpaas-system
+  labels:
+    cluster-type: ProviderBaremetal
+  annotations:
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: BaremetalCluster
+    cpaas.io/kube-ovn-join-cidr: "${KUBE_OVN_JOIN_CIDR}"
+    cpaas.io/registry-address: "${NODE_REGISTRY_ADDRESS}"
+    cpaas.io/sentry-deploy-type: Baremetal
+    cpaas.io/alb-address-type: ClusterAddress
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - ${CLUSTER_CIDR}
+    services:
+      cidrBlocks:
+        - ${SERVICE_CIDR}
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: global-kcp
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: BaremetalCluster
+    name: global
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: BaremetalCluster
+metadata:
+  name: global
+  namespace: cpaas-system
+spec:
+  controlPlaneLoadBalancer:
+    type: Internal
+    host: ${CONTROL_PLANE_VIP}
+    port: 6443
+    vrid: <unique-vrid>
+    # vipMode defaults to nic. Set it explicitly only when the environment
+    # requires another supported mode, such as arp or policy_route.
+    # vipMode: nic
+  # Required for DR. Omit this field for a normal non-DR deployment unless
+  # you need to provide a pre-existing encryption-provider.conf.
+  # encryptionProviderConfigRef:
+  #   name: global-encryption-provider-config
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: MachineInventoryPool
+metadata:
+  name: global-control-plane-pool
+  namespace: cpaas-system
+spec:
+  clusterName: global
+  machineInventories:
+    - global-cp-1
+    - global-cp-2
+    - global-cp-3
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: BaremetalMachineTemplate
+metadata:
+  name: global-control-plane-template
+  namespace: cpaas-system
+spec:
+  template:
+    spec:
+      machineInventoryPoolRef:
+        name: global-control-plane-pool
+      allocationPolicy: Ordered
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: global-kcp
+  namespace: cpaas-system
+  annotations:
+    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
+spec:
+  replicas: 3
+  version: "${K8S_VERSION}"
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: BaremetalMachineTemplate
+      name: global-control-plane-template
+  kubeadmConfigSpec:
+    format: cloud-init
+    clusterConfiguration:
+      etcd:
+        local:
+          serverCertSANs:
+            - "${CONTROL_PLANE_VIP}"
+            - "${PLATFORM_HOST}"
+```
+
   </Tab>
 </Tabs>
 
@@ -869,15 +1305,25 @@ kubectl apply -f "${GLOBAL_HCS_YAML}"
 
   </Tab>
   <Tab label="Bare Metal">
-    <Directive type="info" title="Status: Planned">
-      Bare-metal apply steps for the `global` cluster on Immutable Infrastructure are planned.
-    </Directive>
+
+```shell
+kubectl apply -f "${GLOBAL_BAREMETAL_YAML}"
+```
+
+Wait for the bootstrap registrations to produce the expected inventories before you expect Cluster API reconciliation to progress.
+
+```shell
+kubectl -n cpaas-system get machineinventory.elemental.cattle.io
+kubectl -n cpaas-system get machineinventorypool
+kubectl -n cpaas-system get baremetalcluster,baremetalmachine
+```
+
   </Tab>
 </Tabs>
 
 ### Step 6 — Wait for the Control Plane
 
-Wait for the Cluster API provider to provision the virtual machines and bring up the Kubernetes control plane.
+Wait for the Cluster API provider to provision the machines and bring up the Kubernetes control plane.
 
 ```shell
 kubectl get clusters.cluster.x-k8s.io -n cpaas-system
@@ -891,7 +1337,7 @@ The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` 
 
 Before triggering the installer, create the `dcs-import-extra-resources` ConfigMap in the `cpaas-system` namespace for providers that require extra resource import. The ConfigMap name keeps the `dcs` prefix for historical installer compatibility, even when the provider is not Huawei DCS.
 
-VMware vSphere and Huawei Cloud Stack require this ConfigMap for both normal and disaster recovery `global` installations. Huawei DCS does not require it for the default installation because DCS provider resources are migrated by the built-in flow; create it for DCS only when you need to import additional resources beyond the built-in provider resource migration.
+VMware vSphere, Huawei Cloud Stack, and Bare Metal require this ConfigMap for both normal and disaster recovery `global` installations. Huawei DCS does not require it for the default installation because DCS provider resources are migrated by the built-in flow; create it for DCS only when you need to import additional resources beyond the built-in provider resource migration.
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -977,9 +1423,105 @@ kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
 
   </Tab>
   <Tab label="Bare Metal">
-    <Directive type="info" title="Status: Planned">
-      Bare-metal provider resource import for the `global` cluster on Immutable Infrastructure is planned.
-    </Directive>
+
+Create and apply the Bare Metal import ConfigMap before you trigger the installer. This ConfigMap is required because the installer must import the bare-metal and elemental resources that were created in the bootstrap KIND cluster before the `global` cluster exists.
+
+<Directive type="warning" title="Import Before DCS API">
+  Create `dcs-import-extra-resources` before calling `POST /cpaas-installer/api/config/dcs`. If it is missing, the handoff job can run with an empty target list because the new `global` cluster does not contain the `BaremetalMachine`, `MachineInventory`, `MachineRegistration`, or plan Secret objects that describe the bootstrap `global` machines.
+</Directive>
+
+Collect the plan Secret names and kubeadm bootstrap data Secret names after the `global` Cluster API resources have reconciled. These names do not exist before CAPI creates the Machines. For DR, also include the Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef` so the final `global` cluster contains the same encryption-provider configuration. Do not import arbitrary platform credential Secrets, and do not import the MachineRegistration token Secret.
+
+```shell
+kubectl -n cpaas-system get machineinventory.elemental.cattle.io \
+  -o jsonpath='{range .items[*]}{.status.plan.secretRef.name}{"\n"}{end}'
+kubectl -n cpaas-system get baremetalmachine \
+  -o jsonpath='{range .items[*]}{.status.planSecretRef.name}{"\n"}{end}'
+kubectl -n cpaas-system get machine -l cluster.x-k8s.io/cluster-name=global \
+  -o jsonpath='{range .items[*]}{.spec.bootstrap.dataSecretName}{"\n"}{end}'
+```
+
+Create the ConfigMap. Replace the placeholder inventory, plan Secret, and bootstrap data Secret names with the values from the commands above.
+
+```shell
+mkdir -p /root/yamls
+cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+    - resource: "customresourcedefinitions.apiextensions.k8s.io"
+      names:
+        - baremetalclusters.infrastructure.cluster.x-k8s.io
+        - baremetalmachines.infrastructure.cluster.x-k8s.io
+        - baremetalmachinetemplates.infrastructure.cluster.x-k8s.io
+        - machineinventorypools.infrastructure.cluster.x-k8s.io
+        - machineinventories.elemental.cattle.io
+        - machineregistrations.elemental.cattle.io
+        - seedimages.elemental.cattle.io
+      method: kubectl
+    - resource: "baremetalclusters.infrastructure.cluster.x-k8s.io"
+      names: ["global"]
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/baremetalclusters/cpaas-system/"
+      method: etcdctl
+    - resource: "baremetalmachinetemplates.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/baremetalmachinetemplates/cpaas-system/"
+      method: etcdctl
+    - resource: "baremetalmachines.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/baremetalmachines/cpaas-system/"
+      method: etcdctl
+    - resource: "machineinventorypools.infrastructure.cluster.x-k8s.io"
+      etcdKeyBase: "/registry/infrastructure.cluster.x-k8s.io/machineinventorypools/cpaas-system/"
+      method: etcdctl
+    - resource: "machineinventories.elemental.cattle.io"
+      names:
+        - "<global-machine-inventory-1>"
+        - "<global-machine-inventory-2>"
+        - "<global-machine-inventory-3>"
+      etcdKeyBase: "/registry/elemental.cattle.io/machineinventories/cpaas-system/"
+      method: etcdctl
+    - resource: "machineregistrations.elemental.cattle.io"
+      names: ["<global-machine-registration>"]
+      etcdKeyBase: "/registry/elemental.cattle.io/machineregistrations/cpaas-system/"
+      method: etcdctl
+    - resource: "secrets"
+      names:
+        - "<global-machine-plan-secret-1>"
+        - "<global-machine-plan-secret-2>"
+        - "<global-machine-plan-secret-3>"
+      method: kubectl
+    - resource: "secrets"
+      names:
+        - "<global-kubeadm-bootstrap-data-secret-1>"
+        - "<global-kubeadm-bootstrap-data-secret-2>"
+        - "<global-kubeadm-bootstrap-data-secret-3>"
+      method: kubectl
+    # Required for DR when BaremetalCluster.spec.encryptionProviderConfigRef is set.
+    # The name must match the Secret referenced by BaremetalCluster.
+    - resource: "secrets"
+      names:
+        - "<global-encryption-provider-config-secret>"
+      method: kubectl
+EOF
+
+kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+kubectl -n cpaas-system get cm dcs-import-extra-resources -o yaml
+```
+
+Do not add `SeedImage` objects or MachineRegistration token Secrets to this import list. A bootstrap `SeedImage` produces an ISO that points at the bootstrap environment and is no longer the correct lifecycle object after the `global` cluster has been handed off. The `seedimages.elemental.cattle.io` CRD is imported only so the new `global` cluster understands the API type.
+
+For DR, verify after installation that the final `global` cluster has the imported encryption-provider Secret.
+
+```shell
+kubectl --kubeconfig <global-kubeconfig> -n cpaas-system \
+  get secret <global-encryption-provider-config-secret> \
+  -o jsonpath='{.data.encryption-provider\.conf}{"\n"}'
+```
+
   </Tab>
 </Tabs>
 
@@ -996,16 +1538,16 @@ export INSTALLER_IP=$(kubectl get pods -n cpaas-system -l service_name=cpaas-ins
   `INSTALLER_IP` is the Pod IP of the embedded installer in `minialauda`. The endpoint is used only during installation.
 </Directive>
 
-Create the provider-specific installer configuration JSON file on the current KIND host, then submit it to the installer endpoint. DCS, VMware vSphere, and HCS use the same endpoint path, but their request bodies are different.
+Create the provider-specific installer configuration JSON file on the current KIND host, then submit it to the installer endpoint. All providers in this install path use the same endpoint path, but their request bodies are different.
 
-| Field | Huawei DCS | VMware vSphere | Huawei Cloud Stack |
-|-------|------------|----------------|--------------------|
-| Endpoint path | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` |
-| `console.host` | Local `global` HA VIP list | Empty list, `[]` | Empty list, `[]` |
-| `console.globalHost` | Platform access address | Platform access address | Platform access address |
-| `cluster.clusterCIDR` and `cluster.serviceCIDR` | Required | Not set; cluster CIDRs are declared in the VMware vSphere `Cluster` manifest | Not set |
-| `cluster.features.ha` | Required, points to the local HA VIP with `isThirdParty: true` | Not set; the control plane endpoint is declared in `VSphereCluster.spec.controlPlaneEndpoint.host` | Not set; HCS ELB is declared in `HCSCluster` |
-| `hostIP` | Current KIND host IP | Current KIND host IP | Current KIND host IP |
+| Field | Huawei DCS | VMware vSphere | Huawei Cloud Stack | Bare Metal |
+|-------|------------|----------------|--------------------|------------|
+| Endpoint path | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` |
+| `console.host` | Local `global` HA VIP list | Empty list, `[]` | Empty list, `[]` | Local `global` control-plane VIP list |
+| `console.globalHost` | Platform access address | Platform access address | Platform access address | Platform access address |
+| `cluster.clusterCIDR` and `cluster.serviceCIDR` | Required | Not set; cluster CIDRs are declared in the VMware vSphere `Cluster` manifest | Not set | Required |
+| `cluster.features.ha` | Required, points to the local HA VIP with `isThirdParty: true` | Not set; the control plane endpoint is declared in `VSphereCluster.spec.controlPlaneEndpoint.host` | Not set; HCS ELB is declared in `HCSCluster` | Required, points to the bare-metal control-plane VIP with `isThirdParty: true` |
+| `hostIP` | Current KIND host IP | Current KIND host IP | Current KIND host IP | Current KIND host IP |
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -1155,14 +1697,71 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
 
   </Tab>
   <Tab label="Bare Metal">
-    <Directive type="info" title="Status: Planned">
-      Bare-metal installer request details for the `global` cluster on Immutable Infrastructure are planned.
-    </Directive>
+
+The Bare Metal installer request includes the control-plane VIP because the `global` cluster uses the VIP exposed by `alive` after handoff. Set `REGISTRY_DOMAIN` to the platform registry address that the final `global` cluster should use. For DR, use `${PLATFORM_HOST}:11443` on both primary and standby so the registry follows the platform-domain switch. For a non-DR deployment, `${CONTROL_PLANE_VIP}:11443` is also valid. Do not use the bootstrap registry address in this field.
+
+```shell
+mkdir -p /root/yamls
+export INSTALLER_CONFIG_JSON="/root/yamls/installer-config-baremetal.json"
+
+cat > "${INSTALLER_CONFIG_JSON}" <<EOF
+{
+  "basic": {
+    "username": "admin@cpaas.io",
+    "password": "<base64-platform-admin-password>"
+  },
+  "registry": {
+    "domain": "${REGISTRY_DOMAIN}",
+    "username": "<registry-username>",
+    "password": "<base64-registry-password>"
+  },
+  "console": {
+    "host": [
+      "${CONTROL_PLANE_VIP}"
+    ],
+    "globalHost": "${PLATFORM_HOST}",
+    "httpPort": 80,
+    "httpsPort": 443,
+    "cert": {
+      "selfSigned": {}
+    }
+  },
+  "cluster": {
+    "clusterCIDR": "${CLUSTER_CIDR}",
+    "serviceCIDR": "${SERVICE_CIDR}",
+    "features": {
+      "ha": {
+        "vip": "${CONTROL_PLANE_VIP}",
+        "vport": 6443,
+        "isThirdParty": true
+      }
+    }
+  },
+  "product": [
+    "base",
+    "acp"
+  ],
+  "deployMode": "normal",
+  "hostIP": "${HOST_IP}"
+}
+EOF
+
+curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
+  -H 'Content-Type: application/json' \
+  -d @"${INSTALLER_CONFIG_JSON}"
+```
+
+Set `console.host` and `cluster.features.ha.vip` to the local Bare Metal `global` control-plane VIP. Use `console.globalHost` for the stable platform domain.
+
   </Tab>
 </Tabs>
 
 <Directive type="info" title="Third-Party Console Certificates">
   The examples use a self-signed console certificate. If the environment requires a third-party certificate, replace `console.cert` with a `thirdParty` block that contains the base64 full certificate chain, private key, and optional PKCS#12 values before you submit the installer request.
+</Directive>
+
+<Directive type="warning" title="DR Certificate Requirement">
+  For a primary/standby Bare Metal `global` DR deployment, do not let each side generate an unrelated self-signed certificate. Use a `thirdParty` certificate chain trusted by both sides. The certificate SAN list must cover `${PLATFORM_HOST}`, the primary control-plane VIP, the standby control-plane VIP, and any required platform ingress service names. Otherwise existing system-agents can fail TLS verification after DNS is switched to the standby cluster.
 </Directive>
 
 ### Step 9 — Monitor the Installation
@@ -1221,7 +1820,7 @@ Issues that are not listed here usually point to environment-specific causes. Ca
 
 Use this section when you deploy primary and standby `global` clusters for disaster recovery. Complete these additions before you apply the provider-specific manifest for each `global` cluster.
 
-Primary and standby clusters must use the same encryption provider configuration. For DCS and HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`; for DCS, normal non-DR deployments also do not set `DCSCluster.spec.encryptionProviderConfigRef`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
+Primary and standby clusters must use the same encryption provider configuration. For Bare Metal, primary and standby must also use the same Kubernetes ServiceAccount signing key so that the fixed `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
 
 ### Prepare Shared DR Variables
 
@@ -1232,8 +1831,10 @@ export ENCRYPTION_PROVIDER_CONF="/root/yamls/encryption-provider.conf"
 export ENCRYPTION_PROVIDER_SECRET_B64="<base64-shared-etcd-encryption-key>"
 export PRIMARY_CLUSTER_VIP="<primary-ha-vip>"
 export STANDBY_CLUSTER_VIP="<standby-ha-vip>"
+export BAREMETAL_ENCRYPTION_PROVIDER_SECRET="global-encryption-provider-config"
 export ETCD_SYNC_VERSION="<global-etcd-sync-version>"
 export ETCD_SYNC_MODULEINFO="/root/yamls/global-etcd-sync-moduleinfo.json"
+export SERVICE_ACCOUNT_ISSUER="https://kubernetes.default.svc.cluster.local"
 ```
 
 Create the encryption provider configuration file on both installation environments.
@@ -1252,6 +1853,63 @@ resources:
       - name: key1
         secret: ${ENCRYPTION_PROVIDER_SECRET_B64}
 EOF_CONF
+```
+
+### Prepare Shared ServiceAccount Signing Key \{#prepare-shared-serviceaccount-signing-key}
+
+For Bare Metal DR, generate the ServiceAccount signing key once and use the same files in both the primary and standby `KubeadmControlPlane` manifests.
+
+```shell
+mkdir -p /root/global-dr-sa
+openssl genrsa -out /root/global-dr-sa/sa.key 2048
+openssl rsa -in /root/global-dr-sa/sa.key -pubout -out /root/global-dr-sa/sa.pub
+chmod 0600 /root/global-dr-sa/sa.key
+chmod 0644 /root/global-dr-sa/sa.pub
+
+kubectl -n cpaas-system create secret generic global-sa-signing-key \
+  --from-file=sa.key=/root/global-dr-sa/sa.key \
+  --from-file=sa.pub=/root/global-dr-sa/sa.pub \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Add the following entries to the primary and standby `KubeadmControlPlane.spec.kubeadmConfigSpec`. The file content and the issuer/audience values must be identical on both sides.
+
+```yaml
+files:
+  - path: /etc/kubernetes/pki/sa.key
+    owner: root:root
+    permissions: "0600"
+    contentFrom:
+      secret:
+        name: global-sa-signing-key
+        key: sa.key
+  - path: /etc/kubernetes/pki/sa.pub
+    owner: root:root
+    permissions: "0644"
+    contentFrom:
+      secret:
+        name: global-sa-signing-key
+        key: sa.pub
+clusterConfiguration:
+  apiServer:
+    extraArgs:
+      service-account-key-file: /etc/kubernetes/pki/sa.pub
+      service-account-signing-key-file: /etc/kubernetes/pki/sa.key
+      service-account-issuer: https://kubernetes.default.svc.cluster.local
+      api-audiences: https://kubernetes.default.svc.cluster.local
+  controllerManager:
+    extraArgs:
+      service-account-private-key-file: /etc/kubernetes/pki/sa.key
+```
+
+After the clusters are installed, verify the files and kubeadm static pod arguments on one control-plane node from each side.
+
+```shell
+sha256sum /etc/kubernetes/pki/sa.key /etc/kubernetes/pki/sa.pub
+grep -E 'service-account-issuer|api-audiences|service-account-key-file|service-account-signing-key-file' \
+  /etc/kubernetes/manifests/kube-apiserver.yaml
+grep -E 'service-account-private-key-file' \
+  /etc/kubernetes/manifests/kube-controller-manager.yaml
 ```
 
 ### Add DR Certificate SANs to KubeadmControlPlane
@@ -1344,15 +2002,68 @@ Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 on both instal
 
   </Tab>
   <Tab label="Bare Metal">
-    <Directive type="info" title="Status: Planned">
-      Bare-metal disaster recovery settings for the `global` cluster on Immutable Infrastructure are planned.
-    </Directive>
+
+Create the encryption provider Secret in `minialauda` on both the primary and standby installation environments. The Secret must be in the same namespace as `BaremetalCluster` and must contain a key named `encryption-provider.conf`.
+
+```shell
+kubectl create secret generic "${BAREMETAL_ENCRYPTION_PROVIDER_SECRET}" \
+  --from-file=encryption-provider.conf="${ENCRYPTION_PROVIDER_CONF}" \
+  -n cpaas-system \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Reference that Secret from `BaremetalCluster.spec.encryptionProviderConfigRef`.
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: BaremetalCluster
+metadata:
+  name: global
+  namespace: cpaas-system
+spec:
+  encryptionProviderConfigRef:
+    name: global-encryption-provider-config
+```
+
+The bare-metal provider reads this Secret and injects `/etc/kubernetes/encryption-provider.conf` into the generated control-plane bootstrap data. Do not also add the file manually to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for Bare Metal DR; the `BaremetalCluster` reference is the source of truth.
+
+This Secret must also be included in the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. It cannot remain only in the bootstrap KIND cluster because the handed-off `global` cluster keeps the imported `BaremetalCluster` object and must also have the referenced Secret for later provider reconciliation.
+
+Keep the same DR `serverCertSANs` list on both the primary and standby installation environments.
+
+Also keep the shared ServiceAccount signing key configuration from [Prepare Shared ServiceAccount Signing Key](#prepare-shared-serviceaccount-signing-key). Without that key, the standby API server cannot validate the `baremetal-system-agent` token that existing hosts received before failover.
+
+Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. The ConfigMap must import the bare-metal and elemental resources required by handoff, including the encryption-provider Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef`, and must not import `SeedImage`.
+
+The Bare Metal provider AppRelease on both sides must enable shared system-agent auth and handoff delivery:
+
+```yaml
+handoffHook:
+  controlPlaneVIP: <current-side-control-plane-vip>
+  delivery:
+    enabled: true
+    mode: always
+
+elemental:
+  systemAgent:
+    authMode: shared
+    serviceAccountName: baremetal-system-agent
+  tls:
+    agentTLSMode: strict
+    caCertSecretName: dex.tls
+    caCertSecretKey: ca.crt
+```
+
+The generated `Role/cpaas-system/baremetal-system-agent` must restrict `secrets` access with `resourceNames` that contain only plan Secret names. Do not grant namespace-wide Secret access and do not include registry, bootstrap, or platform credential Secrets.
+
   </Tab>
 </Tabs>
 
 ### Install Primary and Standby Clusters
 
 Run Steps 1 through 9 for both the primary and standby `global` clusters.
+
+For Bare Metal DR, use two independent bootstrap KIND hosts: one for the primary installation and one for the standby installation. Do not reuse the same bootstrap KIND cluster for both sides. The bootstrap environment contains installer state, AppRelease objects, registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it can pollute the two `global` installations and can make handoff or cleanup affect the wrong side.
 
 Use the provider-specific installer configuration differences for both sides:
 
@@ -1361,10 +2072,11 @@ Use the provider-specific installer configuration differences for both sides:
 | Huawei DCS | Set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. | Set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. |
 | VMware vSphere | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the primary HA VIP used by the primary manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the standby HA VIP used by the standby manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. |
 | Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
+| Bare Metal | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the primary control-plane VIP. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the standby control-plane VIP. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. |
 
-For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB.
+For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB. For Bare Metal, set both the manifest VIP and the installer VIP fields to the primary control-plane VIP.
 
-After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. In Step 8 on the standby KIND host, set `hostIP` to the standby KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby KIND host; do not reuse the primary KIND host value.
+After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby KIND host, set `hostIP` to the standby KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` as `${PLATFORM_HOST}:11443` on both sides. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby KIND host; do not reuse the primary KIND host value.
 
 After both clusters are installed, get the primary `k8sadmin` token on a primary control plane node. `etcd-sync` is installed only on the standby cluster, and its `active_cluster_*` values point to the primary cluster. Keep this value in its original base64 Secret form for `active_cluster_token`.
 

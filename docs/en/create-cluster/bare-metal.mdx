@@ -38,11 +38,24 @@ kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 
 Every value used as `Machine.spec.version` (for both the control plane and worker `MachineDeployment` resources) must appear as a key in this ConfigMap, with the leading `v` preserved. The provider resolves the image at reprovision time by substituting the platform registry address for the registry portion of the entry. If a target version is missing, no `reprovision` plan is written and `BaremetalMachine` ends up in `Failed / Reason=ImageCatalogMiss` until the entry is added.
 
-### 3. Network Connectivity
+### 3. Network Connectivity \{#network-connectivity}
 
 - Every physical host must be able to reach `global.platformUrl` (`elemental-system-agent` registration, plan secret polling).
 - Every physical host must be able to pull from the platform registry (`global.registry.address`) for both `elemental install` (during the first boot) and `elemental upgrade` (during every reprovision).
 - The control-plane VIP must live in the same Layer-2 broadcast domain as the control-plane node IPs. The `vrid` chosen for the VIP must be unique within that broadcast domain.
+
+If the target VM or physical host does not receive an address from DHCP while booted into the live ISO, configure the network manually from the host console before waiting for registration. Check the NetworkManager connection name first, then apply the site-specific address, gateway, and DNS values:
+
+```bash
+nmcli connection show
+nmcli connection modify "Wired connection 1" \
+  ipv4.method manual \
+  ipv4.addresses 192.168.254.73/24 \
+  ipv4.gateway 192.168.254.1 \
+  ipv4.dns 192.168.16.19 \
+  ipv4.ignore-auto-dns yes
+nmcli connection up "Wired connection 1"
+```
 
 ### 4. TPM Decision
 
@@ -89,8 +102,9 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 | `<base-image-iso>` | Same ConfigMap entry, with `-iso` appended to the repository. Tag/digest matches the catalog value. | See the [SeedImage step](#step-1-machineregistration-seedimage). |
 | `<registry-address>` | Platform registry (same value as `global.registry.address` on the install chart). | `kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'` (when one exists). |
 | `<control-plane-vip>` / `<control-plane-port>` / `<vrid>` | Operator-supplied. The VIP must be free in the control-plane Layer-2 domain; `<vrid>` must be unique in that domain. | n/a |
+| `<install-device>` | Target disk for `elemental install`, such as `/dev/vda`, `/dev/sda`, or `/dev/nvme0n1`. | Confirm from the host console or inventory hardware data. Do not leave this implicit in virtualized tests. |
 | `<dns-image-tag>` / `<etcd-image-tag>` | Component versions baked into the bare-metal base image for `<kubernetes-version>`. | See [OS Support Matrix](../overview/os-support-matrix.mdx). |
-| `<dns-server>` | Operator-supplied. Written into `/etc/resolv.conf` by both `MachineRegistration.config.cloud-config` and `SeedImage.cloud-config`. | n/a |
+| `<dns-server>` | Operator-supplied when the first-boot registration path needs an explicit resolver. | Prefer `MachineRegistration.config.cloud-config` or later kubeadm cloud-init. Do not write `/etc/resolv.conf` from `SeedImage.cloud-config`. |
 | `<ssh-authorized-keys>` | Operator-supplied OpenSSH public key — required for any interactive debugging on the node. | n/a |
 | `<inventory-name>` | Allocated by `elemental-operator` after the host boots the ISO and registers. Cannot be predicted before registration. | `kubectl -n cpaas-system get machineinventories.elemental.cattle.io` |
 | `<pool-name>` | Name of the `MachineInventoryPool` that claims an inventory. | Use `<cluster-name>-control-plane-pool` or `<cluster-name>-worker-pool` in the examples below. |
@@ -130,14 +144,17 @@ spec:
   config:
     elemental:
       install:
-        reboot: false
+        device: <install-device>
+        eject-cd: true
+        reboot: true
         snapshotter:
           type: btrfs
           maxSnaps: 4
       registration:
-        # Remove emulate-tpm for production hardware with a real TPM.
-        emulate-tpm: true
-        emulated-tpm-seed: -1
+        # Keep false for production hardware and for VM tests that already
+        # expose stable SMBIOS identity. Set true only for lab hosts without
+        # a usable TPM or stable identity source.
+        emulate-tpm: false
 ---
 apiVersion: elemental.cattle.io/v1beta1
 kind: SeedImage
@@ -156,21 +173,12 @@ spec:
     namespace: cpaas-system
   targetPlatform: linux/amd64
   size: 20Gi
-  cleanupAfterMinutes: 60
-  cloud-config:
-    write_files:
-      - path: /etc/resolv.conf
-        permissions: "0644"
-        content: |
-          nameserver <dns-server>
-      - path: /etc/elemental/config.d/partitions.yaml
-        permissions: "0644"
-        content: |
-          install:
-            partitions:
-              state:
-                size: 20480
+  cleanupAfterMinutes: 120
 ```
+
+Do not add `/etc/resolv.conf` to `SeedImage.spec.cloud-config`. Keep the ISO generic, and put site-specific resolver configuration in `MachineRegistration.spec.config.cloud-config` only when the first-boot registration path needs it. During the tested Global deployment flow, the ISO did not carry resolver files; node DNS was configured later by the kubeadm bootstrap data.
+
+`install.device`, `install.eject-cd`, and `install.reboot` are intentional. If the target disk is omitted, `elemental install` can select the live ISO device in VM-based tests. If `eject-cd` or `reboot` is false, a host can remain in the live environment after the first install and never become usable inventory for Cluster API.
 
 Apply the manifest and wait for the SeedImage build to finish:
 
@@ -188,7 +196,7 @@ kubectl -n cpaas-system get seedimage <cluster-name>-registration-iso \
   -o jsonpath='{.status.checksumURL}{"\n"}'
 ```
 
-Boot every target host from this ISO. `elemental-register` runs first (creates the `MachineInventory` and uploads `observedNetwork`), then `elemental install` writes the on-disk OS. After install completes, the host stays available for plan execution.
+Boot every target host from this ISO. `elemental-register` runs first (creates the `MachineInventory` and uploads `observedNetwork`), then `elemental install` writes the on-disk OS. After install completes, the host stays available for plan execution. If the live ISO environment has no DHCP address, configure NetworkManager manually on the host console as described in [Network Connectivity](#network-connectivity) before waiting for the `MachineInventory`.
 
 Confirm registration:
 
