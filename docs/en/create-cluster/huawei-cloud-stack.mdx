@@ -427,7 +427,7 @@ The HCS controller also injects files while resolving cloud-init data. It writes
 
 Use the [OS Support Matrix](../overview/os-support-matrix.mdx) only for the component versions it explicitly lists, such as coredns and etcd image tags for supported Alauda OS images. It is not a complete source for all HCS manifest values. Before you apply this YAML, also use the approved release baseline for values such as `imageRepository`, DNS image repository, Kube-OVN version, Kube-OVN join CIDR, Pod CIDR, and Service CIDR.
 
-### Configure HCSCluster
+### Configure HCSCluster \{#configure-hcscluster}
 
 The `HCSCluster` resource defines the HCS infrastructure configuration.
 
@@ -450,6 +450,10 @@ metadata:
   name: <cluster-name>
   namespace: cpaas-system
 spec:
+  # Optional. Include only when you want provider-managed control-plane ECS placement.
+  controlPlaneHA:
+    enabled: true
+    policy: soft-anti-affinity
   controlPlaneLoadBalancer:
     vipAddress: <control-plane-vip-address>
     vipSubnetName: <vip-subnet-name>
@@ -489,6 +493,8 @@ spec:
 | `.spec.network.subnets[].secondaryDNS` | string | Recommended | Secondary DNS kept in the cluster subnet inventory |
 | `.spec.network.securityGroup.name` | string | Yes | Security group name |
 | `.spec.identityRef.name` | string | Yes | Non-empty credential Secret name referenced by `HCSCluster`; this value does not need to match the cluster name |
+| `.spec.controlPlaneHA.enabled` | bool | Required when `controlPlaneHA` is set | Enables a provider-managed server group for control-plane ECS placement |
+| `.spec.controlPlaneHA.policy` | string | Required when `controlPlaneHA` is set | Server group placement policy. Allowed values are `anti-affinity` and `soft-anti-affinity` |
 | `.spec.controlPlaneLoadBalancer` | object | Yes | ELB settings for the provider-created control plane ELB |
 | `.spec.controlPlaneLoadBalancer.vipAddress` | string | Yes | Fixed VIP for the control plane ELB |
 | `.spec.controlPlaneLoadBalancer.vipSubnetName` | string | Yes | Subnet name that contains the ELB VIP. This subnet must also appear in `.spec.network.subnets` |
@@ -501,6 +507,8 @@ spec:
 | `.spec.controlPlaneLoadBalancer.elbVirsubnetL7Ips[].ips[]` | string | Yes | Two fixed L7 virtual subnet IPs |
 
 Do not include `spec.controlPlaneEndpoint` in the create manifest. In the HCS create flow, the controller derives and populates this field from `spec.controlPlaneLoadBalancer` after the `HCSCluster` is created. Do not set `controlPlaneEndpoint` manually, and do not add an empty `controlPlaneEndpoint` object. If `controlPlaneEndpoint` is explicitly present in the manifest, it must include both `host` and `port`.
+
+`controlPlaneHA` is optional. When you include it, both `enabled` and `policy` are required. Use `anti-affinity` for strict host separation. Use `soft-anti-affinity` when you prefer host spread but do not want ECS creation to fail only because HCS cannot satisfy the hard placement rule. For planning guidance, including the rolling replacement requirement when enabling the feature on an existing cluster, see [Control Plane HA Placement Plan](../infrastructure/huawei-cloud-stack.mdx#control-plane-ha-placement).
 
 ### Configure Cluster
 
@@ -567,6 +575,32 @@ kubectl get machines -n cpaas-system
 # Verify cluster deployment status
 kubectl get clustermodule <cluster-name> -o jsonpath='{.status.base.deployStatus}'
 ```
+
+### Verify Control Plane HA \{#verify-control-plane-ha}
+
+If you enabled `HCSCluster.spec.controlPlaneHA`, inspect the `HCSCluster` condition first:
+
+```bash
+kubectl get hcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{range .status.conditions[?(@.type=="ControlPlaneHAReady")]}{.status}{" "}{.reason}{" "}{.message}{"\n"}{end}'
+```
+
+Interpret the condition as follows:
+
+| Status and reason | Meaning | Next step |
+|-------------------|---------|-----------|
+| `True ControlPlaneHAReady` | The provider-managed server group exists and the current control-plane ECS members are tracked. | No action is required. |
+| `False ControlPlaneHAPending` | The provider is waiting for a recoverable state, such as ECS creation or server group membership convergence. | Read the message and wait for the referenced control-plane machine or ECS operation to finish. |
+| `False ControlPlaneHAFailed` | The provider could not create, validate, update, or clean up the server group, or HCS rejected ECS scheduling for the selected policy. | Read the message, then check HCS capacity, the selected policy, and controller logs if needed. |
+
+Inspect the observed server group and membership snapshot:
+
+```bash
+kubectl get hcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='serverGroup={.status.controlPlaneHA.name}{" id="}{.status.controlPlaneHA.id}{" policy="}{.status.controlPlaneHA.policy}{"\n"}{range .status.controlPlaneHA.members[*]}{.machineName}{" "}{.serverID}{"\n"}{end}'
+```
+
+For `anti-affinity`, HCS treats the server group policy as a hard scheduling constraint. If capacity is insufficient, ECS creation can fail and the condition message should be used as the first diagnostic signal. For `soft-anti-affinity`, HCS tries to spread members but may still place multiple ECS instances on the same host.
 
 ### Expected Results
 

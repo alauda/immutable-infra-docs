@@ -57,6 +57,17 @@ spec:
                 - host
                 - port
                 type: object
+              controlPlaneHA:
+                description: |-
+                  ControlPlaneHA enables provider-managed DRS mutual-exclusion rules for
+                  control-plane VMs. The controller maintains the rule after VM URNs exist;
+                  DCS is responsible for executing DRS placement.
+                properties:
+                  enabled:
+                    description: Enabled turns on provider-managed DRS mutual exclusion
+                      for control-plane VMs.
+                    type: boolean
+                type: object
               controlPlaneLoadBalancer:
                 properties:
                   host:
@@ -174,6 +185,42 @@ spec:
                   - type
                   type: object
                 type: array
+              controlPlaneHA:
+                description: |-
+                  ControlPlaneHA records the provider-managed DRS rule currently owned by
+                  this cluster. Members are a snapshot from the latest reconcile.
+                properties:
+                  clusterUrn:
+                    description: ClusterUrn is the DCS compute cluster URN where the
+                      rule is maintained.
+                    type: string
+                  members:
+                    description: Members is the latest control-plane VM membership
+                      snapshot.
+                    items:
+                      description: ControlPlaneHAMember records one control-plane
+                        VM included in the DRS rule.
+                      properties:
+                        machineName:
+                          description: MachineName is the owning CAPI Machine name
+                            when known.
+                          type: string
+                        vmUrn:
+                          description: VMUrn is the DCS VM URN used as the DRS rule
+                            member.
+                          type: string
+                      type: object
+                    type: array
+                  ruleIndex:
+                    description: |-
+                      RuleIndex is the DCS rule index returned by cluster detail. It must be
+                      used together with RuleName validation.
+                    type: integer
+                  ruleName:
+                    description: RuleName is the deterministic provider-generated
+                      DRS rule name.
+                    type: string
+                type: object
               failureDomains:
                 additionalProperties:
                   description: |-

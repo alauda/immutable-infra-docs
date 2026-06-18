@@ -55,6 +55,25 @@ spec:
                 - host
                 - port
                 type: object
+              controlPlaneHA:
+                description: ControlPlaneHA configures the provider-managed control-plane
+                  server group.
+                properties:
+                  enabled:
+                    description: Enabled controls whether provider creates and uses
+                      a control-plane server group.
+                    type: boolean
+                  policy:
+                    description: Policy is the HCS server group policy used for control-plane
+                      ECS placement.
+                    enum:
+                    - anti-affinity
+                    - soft-anti-affinity
+                    type: string
+                required:
+                - enabled
+                - policy
+                type: object
               controlPlaneLoadBalancer:
                 properties:
                   elbVirsubnetL4Ips:
@@ -357,6 +376,26 @@ spec:
                   - type
                   type: object
                 type: array
+              controlPlaneHA:
+                description: ControlPlaneHA records the provider-managed control-plane
+                  server group observed state.
+                properties:
+                  id:
+                    type: string
+                  members:
+                    items:
+                      properties:
+                        machineName:
+                          type: string
+                        serverID:
+                          type: string
+                      type: object
+                    type: array
+                  name:
+                    type: string
+                  policy:
+                    type: string
+                type: object
               ready:
                 default: false
                 description: Ready indicates whether the cluster is in a ready state.
