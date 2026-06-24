@@ -1811,7 +1811,6 @@ kubectl --kubeconfig <global-kubeconfig> get clustermodule global
 |---|---|---|
 | Machines stay in `Pending` or do not appear | `kubectl describe machine -n cpaas-system <machine>` | The provider-specific failure reason on the machine `Bootstrap` and `Infrastructure` conditions. IaaS quota, network, and credential issues surface here. |
 | `KubeadmControlPlane` does not reach `Ready` | `kubectl get nodes` with the new cluster kubeconfig and `kubectl describe kubeadmcontrolplane -n cpaas-system` | etcd health on the first control plane node and join progress for the remaining nodes. |
-| `KubeadmControlPlane` stays not `Ready` (often `EtcdClusterHealthy=Unknown`) and the installer hangs, even though the control-plane VMs are up, and the bootstrap (KIND) Pods cannot reach the control-plane subnet | NAT rules on the bootstrap (KIND) host | Stopping the host firewall after KIND started can flush the KIND bridge's SNAT masquerade, so the CAPI controller Pods running in KIND cannot route to the new control-plane subnet. Re-add it: `iptables -t nat -A POSTROUTING -s 172.18.0.0/16 ! -d 172.18.0.0/16 -j MASQUERADE` (`172.18.0.0/16` is the default KIND subnet). |
 | Pods in `kube-system` stay `Pending` or fail to pull images | `kubectl --kubeconfig <global-kubeconfig> describe pod -n kube-system <pod>` | Image pull errors usually mean the node-facing registry address is not reachable from the new cluster's subnet. |
 | Installer progress API shows a stalled stage | `/var/cpaas/data/installer.log` | The most recent phase line and the most recent error message. Retried errors repeat on a short interval; persistent errors do not advance. |
 | `ClusterModule/global` does not reach a healthy phase | `kubectl --kubeconfig <global-kubeconfig> describe clustermodule global` | The `Status.conditions` describe which module is blocking the cluster from completing. |
@@ -2216,9 +2215,33 @@ metadata:
     cpaas.io/cluster-name: "global"
 spec:
   pool:
-  - {ip: "192.0.2.11", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-cp-1", machineName: "global-cp-1"}
-  - {ip: "192.0.2.12", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-cp-2", machineName: "global-cp-2"}
-  - {ip: "192.0.2.13", mask: "24", gateway: "192.0.2.1", dns: "192.0.2.2", hostname: "global-cp-3", machineName: "global-cp-3"}
+  # /var/cpaas holds platform state and must survive node replacement, so it is
+  # declared here as a persistentDisk bound to the IP slot (not as a
+  # DCSMachineTemplate disk). Requires a DCS VM template 4.2.1+ and maxSurge: 0.
+  - ip: "192.0.2.11"
+    mask: "24"
+    gateway: "192.0.2.1"
+    dns: "192.0.2.2"
+    hostname: "global-cp-1"
+    machineName: "global-cp-1"
+    persistentDisk:
+    - {slot: 0, quantityGB: 100, datastoreName: <datastore-name>, path: /var/cpaas, format: xfs, mountOptions: [defaults]}
+  - ip: "192.0.2.12"
+    mask: "24"
+    gateway: "192.0.2.1"
+    dns: "192.0.2.2"
+    hostname: "global-cp-2"
+    machineName: "global-cp-2"
+    persistentDisk:
+    - {slot: 0, quantityGB: 100, datastoreName: <datastore-name>, path: /var/cpaas, format: xfs, mountOptions: [defaults]}
+  - ip: "192.0.2.13"
+    mask: "24"
+    gateway: "192.0.2.1"
+    dns: "192.0.2.2"
+    hostname: "global-cp-3"
+    machineName: "global-cp-3"
+    persistentDisk:
+    - {slot: 0, quantityGB: 100, datastoreName: <datastore-name>, path: /var/cpaas, format: xfs, mountOptions: [defaults]}
 ---
 # 3. Control-plane VM spec.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -2246,10 +2269,8 @@ spec:
         - {quantity: 10,  datastoreName: <datastore-name>, path: /var/lib/etcd,       format: xfs}
         - {quantity: 100, datastoreName: <datastore-name>, path: /var/lib/kubelet,    format: xfs}
         - {quantity: 100, datastoreName: <datastore-name>, path: /var/lib/containerd, format: xfs}
-        # This example keeps /var/cpaas as a template disk for simplicity. For
-        # production, declare it in DCSIpHostnamePool.spec.pool[].persistentDisk
-        # so it survives node replacement (see Infrastructure Resources).
-        - {quantity: 100, datastoreName: <datastore-name>, path: /var/cpaas,          format: xfs}
+        # /var/cpaas is intentionally NOT a template disk — it is declared as a
+        # persistentDisk on the IP pool above so it survives node replacement.
       ipHostPoolRef:
         name: global-cp-pool
 ---
@@ -2375,7 +2396,7 @@ metadata:
     capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
     capi.cpaas.io/resource-kind: DCSCluster
     cpaas.io/registry-address: "${NODE_REGISTRY_ADDRESS}"
-    cpaas.io/kube-ovn-join-cidr: 100.5.0.0/16
+    cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>   # a /16 you choose; must not overlap the pod / service CIDRs or another cluster's join CIDR
     cpaas.io/kube-ovn-version: <kube-ovn-chart-version>
     cpaas.io/os-family: <os-family>   # OS family of the Alauda OS image, for example slemicro
 spec:
@@ -2400,7 +2421,7 @@ spec:
 | `<dcs-api-user>` / `<dcs-api-password>` / `<dcs-api-host>` / `<dcs-site-id>` | DCS platform credentials and site. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). |
 | `<vm-template-name>`, `<dns-image-tag>`, `<etcd-image-tag>` | The `cpaas.io/dcs-vm-template` ConfigMap. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders). |
 | `<dcs-cluster-name>`, `<dvswitch-name>`, `<port-group-name>`, `<datastore-name>` | DCS platform objects. Confirm with the DCS administrator. |
-| `192.0.2.x`, `<os-family>`, `<kube-ovn-chart-version>` | Node IPs/gateway/DNS for your network; the OS family of the image; and the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx). |
+| `192.0.2.x`, `<kube-ovn-join-cidr>`, `<os-family>`, `<kube-ovn-chart-version>` | Node IPs/gateway/DNS for your network; a `/16` Kube-OVN join CIDR that does not overlap the pod / service CIDRs or another cluster's join CIDR; the OS family of the image; and the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx). |
 | `ssh-ed25519 AAAA...` | A real OpenSSH public key. The `ignition` format rejects an empty list; supply any valid key even if you do not plan to SSH in. |
 
 <Directive type="info" title="Secret encryption and disaster recovery">
