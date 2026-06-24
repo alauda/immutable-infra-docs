@@ -2167,8 +2167,8 @@ The installation is successful when all of the following conditions are true:
 
 After the installer reports success, the `global` cluster runs its own Cluster API providers and no longer depends on the temporary `minialauda` KIND cluster on the bootstrap host. Once verification passes, decommission the bootstrap host by removing only the local `minialauda` KIND cluster and its container network on that host.
 
-<Directive type="info" title="Migrate the DCS credential Secret to the global cluster first">
-  The installer migrates the DCS credential Secret to the `global` cluster automatically only when it is named `ait-credential-secret` (the name used in the [worked example](#dcs-worked-example)). If your `DCSCluster.spec.credentialSecretRef` points to a Secret with a different name, it is not carried over — copy that Secret into the `global` cluster's `cpaas-system` namespace before you remove the bootstrap host. Without it, the `global` cluster's DCS provider has no DCS API credentials and cannot reconcile; for example, scaling the cluster out later fails. Verify with `kubectl --kubeconfig <global-kubeconfig> get secret <name> -n cpaas-system`.
+<Directive type="info" title="Verify the DCS credential Secret reached the global cluster">
+  The installer copies the DCS credential Secret to the `global` cluster during installation. It is copied automatically when the Secret is named `ait-credential-secret` (as in this example — no extra ConfigMap needed), or — for any other name — when you list that Secret in the `dcs-import-extra-resources` ConfigMap (`resource: secrets`, `names: [<your-secret>]`, `method: kubectl`), the same name-matched import that VMware vSphere and Huawei Cloud Stack use. Before you remove the bootstrap host, verify it is present: `kubectl --kubeconfig <global-kubeconfig> get secret <name> -n cpaas-system`. If it is missing, copy it over first — without it the `global` cluster's DCS provider has no DCS API credentials and cannot reconcile (for example, scale-out later fails).
 </Directive>
 
 <Directive type="warning" title="Do not delete the Cluster API objects to clean up">
@@ -2206,7 +2206,7 @@ With those prepared, apply the manifest below.
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ait-credential-secret   # this exact name lets the installer migrate the credential to the global cluster (see Decommission)
+  name: ait-credential-secret   # built-in import copies this name to the global cluster automatically; any other name works too if listed in the import ConfigMap (see Decommission)
   namespace: cpaas-system
   labels:
     cpaas.io/cluster-name: "global"
