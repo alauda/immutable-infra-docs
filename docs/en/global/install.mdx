@@ -2186,7 +2186,7 @@ After the installer reports success, the `global` cluster runs its own Cluster A
 
 This is a complete, single-file manifest for a three-replica control-plane `global` cluster on Huawei DCS. It is the same set of resources described in Step 4, already assembled so you do not have to merge fragments across pages. It uses documentation-only example values: replace every `<placeholder>`, and reuse the `${...}` variables you exported in Step 1. Apply it in Step 5.
 
-This example targets a non-DR cluster. The three large kubeadm files (the PodSecurity admission config, the kubelet patch, and the audit policy) are identical to a workload cluster, so they are pulled from the `dcs-kubernetes-<major.minor>-files` Secret shipped by the DCS provider plugin. If that Secret is not present on the bootstrap cluster, inline the file contents from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix instead.
+This example targets a non-DR cluster. To avoid maintaining two copies of it, the `KubeadmControlPlane` `kubeadmConfigSpec` body is not repeated here — it is identical to a workload cluster and is taken from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, with the two `global` / non-DR deltas noted inline in resource 4 below.
 
 ```yaml
 ---
@@ -2303,68 +2303,20 @@ spec:
     - name: boot
       sshAuthorizedKeys:
       - "ssh-ed25519 AAAA...replace-with-your-public-key... global-boot"
-    files:
-    - contentFrom: {secret: {name: dcs-kubernetes-<major.minor>-files, key: psa-config.yaml}}
-      path: /etc/kubernetes/admission/psa-config.yaml
-      owner: "root:root"
-      permissions: "0644"
-    - contentFrom: {secret: {name: dcs-kubernetes-<major.minor>-files, key: control-plane-kubelet-patch.json}}
-      path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
-      owner: "root:root"
-      permissions: "0644"
-    - contentFrom: {secret: {name: dcs-kubernetes-<major.minor>-files, key: audit-policy.yaml}}
-      path: /etc/kubernetes/audit/policy.yaml
-      owner: "root:root"
-      permissions: "0644"
-    preKubeadmCommands:
-    - while ! ip route | grep -q "default via"; do sleep 1; done; echo "NetworkManager started"
-    - mkdir -p /run/cluster-api && restorecon -Rv /run/cluster-api
-    - if [ -f /etc/disk-setup.sh ]; then bash /etc/disk-setup.sh; fi
-    postKubeadmCommands:
-    - chmod 600 /var/lib/kubelet/config.yaml
-    clusterConfiguration:
-      imageRepository: cloud.alauda.io/alauda
-      dns: {imageTag: <dns-image-tag>}
-      etcd:
-        local:
-          imageTag: <etcd-image-tag>
-          serverCertSANs: ["${CONTROL_PLANE_VIP}", "etcd.kube-system"]
-      apiServer:
-        extraArgs:
-          audit-log-format: json
-          audit-log-maxage: "30"
-          audit-log-maxbackup: "10"
-          audit-log-maxsize: "200"
-          audit-log-mode: batch
-          audit-log-path: /etc/kubernetes/audit/audit.log
-          audit-policy-file: /etc/kubernetes/audit/policy.yaml
-          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
-          admission-control-config-file: /etc/kubernetes/admission/psa-config.yaml
-          profiling: "false"
-          tls-min-version: VersionTLS12
-          kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
-        extraVolumes:
-        - {name: vol-dir-0, hostPath: /etc/kubernetes, mountPath: /etc/kubernetes, pathType: Directory}
-      controllerManager:
-        extraArgs: {bind-address: "::", profiling: "false", tls-min-version: VersionTLS12, flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"}
-      scheduler:
-        extraArgs: {bind-address: "::", tls-min-version: VersionTLS12, profiling: "false"}
-    initConfiguration:
-      patches: {directory: /etc/kubernetes/patches}
-      nodeRegistration:
-        kubeletExtraArgs:
-          node-labels: "kube-ovn/role=master"   # kube-ovn-recognized role value; do not rename
-          provider-id: PROVIDER_ID
-          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
-          protect-kernel-defaults: "true"
-    joinConfiguration:
-      patches: {directory: /etc/kubernetes/patches}
-      nodeRegistration:
-        kubeletExtraArgs:
-          node-labels: "kube-ovn/role=master"   # kube-ovn-recognized role value; do not rename
-          provider-id: PROVIDER_ID
-          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
-          protect-kernel-defaults: "true"
+    # The rest of kubeadmConfigSpec — files, clusterConfiguration,
+    # preKubeadmCommands, postKubeadmCommands, initConfiguration,
+    # joinConfiguration — is identical to a workload cluster, so it is not
+    # duplicated here. Take it verbatim from the Complete KubeadmControlPlane
+    # Configuration appendix in the DCS create-cluster guide
+    # (#complete-kubeadmcontrolplane-configuration). The three large files
+    # (psa-config.yaml, control-plane-kubelet-patch.json, audit-policy.yaml) may
+    # use contentFrom the dcs-kubernetes-<major.minor>-files Secret. Apply these
+    # global / non-DR deltas to that body:
+    #   1. Add clusterConfiguration.etcd.local.serverCertSANs:
+    #        ["${CONTROL_PLANE_VIP}", "etcd.kube-system"]
+    #   2. Non-DR: omit the /etc/kubernetes/encryption-provider.conf file AND the
+    #        apiServer.extraArgs.encryption-provider-config argument (keep both for
+    #        DR / at-rest encryption — see the note after this example).
 ---
 # 5. DCS infrastructure cluster.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
