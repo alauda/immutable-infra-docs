@@ -2338,6 +2338,7 @@ spec:
           audit-log-mode: batch
           audit-log-path: /etc/kubernetes/audit/audit.log
           audit-policy-file: /etc/kubernetes/audit/policy.yaml
+          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
           admission-control-config-file: /etc/kubernetes/admission/psa-config.yaml
           profiling: "false"
           tls-min-version: VersionTLS12
@@ -2395,7 +2396,9 @@ metadata:
   annotations:
     capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
     capi.cpaas.io/resource-kind: DCSCluster
+    capi.cpaas.io/kubernetes: ${K8S_VERSION}   # same value as KubeadmControlPlane.spec.version
     cpaas.io/registry-address: "${NODE_REGISTRY_ADDRESS}"
+    cpaas.io/nodes-mode: self-managed   # node lifecycle managed by CAPI + the DCS provider
     cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>   # a /16 you choose; must not overlap the pod / service CIDRs or another cluster's join CIDR
     cpaas.io/kube-ovn-version: <kube-ovn-chart-version>
     cpaas.io/os-family: <os-family>   # OS family of the Alauda OS image, for example slemicro
