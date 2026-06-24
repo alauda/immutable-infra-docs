@@ -2188,6 +2188,18 @@ This is a complete, single-file manifest for a three-replica control-plane `glob
 
 This example targets a non-DR cluster. To avoid maintaining two copies of it, the `KubeadmControlPlane` `kubeadmConfigSpec` body is not repeated here — it is identical to a workload cluster and is taken from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, with the two `global` / non-DR deltas noted inline in resource 4 below.
 
+### Before You Apply: Prepare These on DCS \{#dcs-worked-example-prereqs}
+
+The manifest references these but does not create them. Prepare them first, in order:
+
+1. **DCS API access** — the endpoint (`https://<host>:7443`), an `administrator` user and password, and the site ID. These fill the `Secret` and `DCSCluster.spec.site`. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials).
+2. **A VM template** — upload the Alauda OS image and create a VM template from it; record its name for `vmTemplateName`. Use a `4.2.1+` template so the `/var/cpaas` persistent disk can be detached and reattached during node replacement. See [Machine Templates](../infrastructure/huawei-dcs.mdx#machine-templates).
+3. **DCS placement objects** — the target compute cluster, a distributed virtual switch, a port group, and a datastore with enough free capacity. These fill `resource`, `dvSwitchName`, `portGroupName`, and `datastoreName`. See [DCS Platform Capacity and Placement](../infrastructure/huawei-dcs.mdx#capacity-and-placement).
+4. **IPs and the API load balancer** — three free node IPs (with gateway and DNS) for the control plane, and a control-plane VIP / load balancer that balances at least port `6443` across the three nodes (the DCS provider does not create it). These fill the `DCSIpHostnamePool` and `DCSCluster.spec.controlPlaneLoadBalancer` / `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
+5. **Versions and IDs to read** — `${K8S_VERSION}` plus the CoreDNS and etcd image tags from the `cpaas.io/dcs-vm-template` ConfigMap (see [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders)); the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx); and the registry address, VIP, and CIDR values you exported in Step 1.
+
+With those prepared, apply the manifest below.
+
 ```yaml
 ---
 # 1. DCS API credential. See Infrastructure Resources for the field sources.
