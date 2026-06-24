@@ -81,7 +81,7 @@ export HCS_SECRET_NAME="global-secret"
 # Use v-prefixed semver that matches the target Alauda OS image.
 ```
 
-Use `LOCAL_REGISTRY_ADDRESS` when pushing packages from the bootstrap host. Use `BOOTSTRAP_REGISTRY_ADDRESS` in AppRelease chart repository values because provider Pods read the chart repository from inside the bootstrap cluster's network. Use `NODE_REGISTRY_ADDRESS` in Cluster API registry annotations because provisioned `global` nodes must pull images through an address reachable from their subnet.
+Use `LOCAL_REGISTRY_ADDRESS` when pushing packages from the bootstrap host. Use `BOOTSTRAP_REGISTRY_ADDRESS` in AppRelease chart repository values because provider Pods read the chart repository from inside the bootstrap cluster's network. Use `NODE_REGISTRY_ADDRESS` (the bootstrap host's registry, `<bootstrap-host-ip>:11443`) in the Cluster API registry annotations, because provisioned `global` nodes must pull images through an address reachable from their subnet during provisioning. This is a temporary value: after the `global` cluster's own registry comes up, the installer automatically rewrites the `cpaas.io/registry-address` annotation on the `Cluster` and `DCSCluster` to the permanent platform registry, so later reconciles pull from the `global` cluster instead of the bootstrap host.
 
 ### Step 2 — Create the Bootstrap Cluster
 
