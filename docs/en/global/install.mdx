@@ -1338,12 +1338,31 @@ The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` 
 
 Before triggering the installer, create the `dcs-import-extra-resources` ConfigMap in the `cpaas-system` namespace for providers that require extra resource import. The ConfigMap name keeps the `dcs` prefix for historical installer compatibility, even when the provider is not Huawei DCS.
 
-VMware vSphere, Huawei Cloud Stack, and Bare Metal require this ConfigMap for both normal and disaster recovery `global` installations. Huawei DCS does not require it for the default installation because DCS provider resources are migrated by the built-in flow; create it for DCS only when you need to import additional resources beyond the built-in provider resource migration.
+Every provider uses this ConfigMap to import the IaaS credential `Secret` into the new `global` cluster. For VMware vSphere, Huawei Cloud Stack, and Bare Metal it also imports the provider's Cluster API resources; for Huawei DCS those resources are migrated by the built-in flow, so the DCS ConfigMap only needs the credential `Secret` entry. VMware vSphere, Huawei Cloud Stack, and Bare Metal require it for both normal and disaster recovery `global` installations.
 
 <Tabs>
   <Tab label="Huawei DCS">
 
-Do not create the DCS `dcs-import-extra-resources` ConfigMap for the default DCS installation path. DCS provider resources are migrated by the built-in flow.
+The DCS provider's Cluster API resources are migrated by the built-in flow, so the ConfigMap only needs to import the credential `Secret` referenced by `DCSCluster.spec.credentialSecretRef`. Use the same Secret name you set in the `global` manifest.
+
+```shell
+mkdir -p /root/yamls
+cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+    - resource: "secrets"
+      names: ["global-dcs-credentials"]
+      method: kubectl
+EOF
+
+kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+```
 
   </Tab>
   <Tab label="VMware vSphere">
@@ -2168,7 +2187,7 @@ The installation is successful when all of the following conditions are true:
 After the installer reports success, the `global` cluster runs its own Cluster API providers and no longer depends on the temporary `minialauda` KIND cluster on the bootstrap host. Once verification passes, decommission the bootstrap host by removing only the local `minialauda` KIND cluster and its container network on that host.
 
 <Directive type="info" title="Verify the DCS credential Secret reached the global cluster">
-  The installer copies the DCS credential Secret to the `global` cluster during installation. It is copied automatically when the Secret is named `ait-credential-secret` (as in this example — no extra ConfigMap needed), or — for any other name — when you list that Secret in the `dcs-import-extra-resources` ConfigMap (`resource: secrets`, `names: [<your-secret>]`, `method: kubectl`), the same name-matched import that VMware vSphere and Huawei Cloud Stack use. Before you remove the bootstrap host, verify it is present: `kubectl --kubeconfig <global-kubeconfig> get secret <name> -n cpaas-system`. If it is missing, copy it over first — without it the `global` cluster's DCS provider has no DCS API credentials and cannot reconcile (for example, scale-out later fails).
+  The DCS API credential `Secret` is copied to the `global` cluster during installation by the `dcs-import-extra-resources` ConfigMap you create in Step 7 — it imports the Secret named in your `DCSCluster.spec.credentialSecretRef`. Before you remove the bootstrap host, verify it is present: `kubectl --kubeconfig <global-kubeconfig> get secret <name> -n cpaas-system`. If it is missing, copy it over first — without it the `global` cluster's DCS provider has no DCS API credentials and cannot reconcile (for example, scale-out later fails).
 </Directive>
 
 <Directive type="warning" title="Do not delete the Cluster API objects to clean up">
@@ -2206,7 +2225,7 @@ With those prepared, apply the manifest below.
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ait-credential-secret   # built-in import copies this name to the global cluster automatically; any other name works too if listed in the import ConfigMap (see Decommission)
+  name: global-dcs-credentials   # imported to the global cluster via the dcs-import-extra-resources ConfigMap in Step 7
   namespace: cpaas-system
   labels:
     cpaas.io/cluster-name: "global"
@@ -2343,7 +2362,7 @@ metadata:
 spec:
   controlPlaneLoadBalancer: {host: "${CONTROL_PLANE_VIP}", port: 6443, type: external}
   controlPlaneEndpoint: {host: "${CONTROL_PLANE_VIP}", port: 6443}
-  credentialSecretRef: {name: ait-credential-secret}
+  credentialSecretRef: {name: global-dcs-credentials}
   networkType: kube-ovn
   site: <dcs-site-id>
 ---
