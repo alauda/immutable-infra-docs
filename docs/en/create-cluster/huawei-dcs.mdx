@@ -376,7 +376,7 @@ spec:
 
 For component versions (e.g., `<dns-image-tag>`, `<etcd-image-tag>`), refer to [OS Support Matrix](../overview/os-support-matrix.mdx).
 
-### Configure DCSCluster
+### Configure DCSCluster \{#configure-dcscluster}
 
 DCSCluster is the infrastructure cluster declaration that references the load balancer and DCS platform credentials.
 
@@ -396,6 +396,9 @@ spec:
   controlPlaneEndpoint:
     host: <load-balancer-ip-or-domain-name>
     port: 6443
+  # Optional. Enable only when the target DCS compute cluster has DRS enabled.
+  controlPlaneHA:
+    enabled: true
   networkType: kube-ovn
   site: <site>
 ```
@@ -408,8 +411,11 @@ spec:
 | `.spec.controlPlaneLoadBalancer.type` | string | Currently only supports "external" | Yes |
 | `.spec.controlPlaneLoadBalancer.host` | string | Load balancer IP or domain name | Yes |
 | `.spec.credentialSecretRef.name` | string | DCS authentication Secret name. The Secret defines whether DCS Provider authenticates as an interface interconnection user (default) or a domain user — see [Credential User Types](../infrastructure/huawei-dcs.mdx#user-types). | Yes |
+| `.spec.controlPlaneHA.enabled` | bool | Enables a provider-managed DCS DRS mutual-exclusion rule for control-plane VMs. Set it to `true` only when the target DCS compute cluster has DRS enabled and has enough hosts and capacity for cross-host placement. | No |
 | `.spec.networkType` | string | Currently only supports "kube-ovn" | Yes |
 | `.spec.site` | string | DCS platform site ID | Yes |
+
+`controlPlaneHA` is optional. When enabled, the provider creates and maintains one DRS `ruleType=2` mutual-exclusion rule for the current control-plane VMs in this workload cluster. DCS performs the actual placement and runtime migration. The provider does not run DRS or apply DRS recommendations. If the rule is maintained but placement has not converged, wait for the DCS scheduling mechanism or trigger/apply DRS from the DCS platform side. For infrastructure prerequisites, see [Cross-Host High Availability for Control Plane](../infrastructure/huawei-dcs.mdx#cross-host-ha).
 
 #### Single-Control-Plane (No External LB) Layout \{#single-control-plane-layout}
 
@@ -533,6 +539,32 @@ For clusters that use additional NICs, also verify that the provider recorded th
 kubectl -n cpaas-system get dcsmachine -l cluster.x-k8s.io/cluster-name=<cluster-name> \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.networkConfig.ip}{"\t"}{.status.additionalNic}{"\n"}{end}'
 ```
+
+### Verify Control Plane HA \{#verify-control-plane-ha}
+
+If you enabled `DCSCluster.spec.controlPlaneHA.enabled`, inspect the `DCSCluster` condition first:
+
+```bash
+kubectl get dcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{range .status.conditions[?(@.type=="ControlPlaneHAReady")]}{.status}{" "}{.reason}{" "}{.message}{"\n"}{end}'
+```
+
+Interpret the condition as follows:
+
+| Status and reason | Meaning | Next step |
+|-------------------|---------|-----------|
+| `True ControlPlaneHAReady` | The provider-managed DRS rule exists and the provider has observed the current control-plane VMs on different DCS hosts. | No action is required. |
+| `False ControlPlaneHAPending` | The provider is waiting for a recoverable state, such as enough VM URNs, enough members, or DCS-side placement. | Read the message. If it mentions placement, check DCS host capacity, DRS status, and whether runtime migration is blocked. |
+| `False ControlPlaneHAFailed` | The provider could not query, validate, create, update, delete, or check the DRS rule. | Read the message, then check the DCS credential, DRS settings, rule-name conflicts, and controller logs if needed. |
+
+Inspect the observed rule and membership snapshot:
+
+```bash
+kubectl get dcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='rule={.status.controlPlaneHA.ruleName}{" index="}{.status.controlPlaneHA.ruleIndex}{" cluster="}{.status.controlPlaneHA.clusterUrn}{"\n"}{range .status.controlPlaneHA.members[*]}{.machineName}{" "}{.vmUrn}{"\n"}{end}'
+```
+
+The `members[]` list contains the CAPI Machine name and DCS VM URN for each control-plane VM in the rule. The current DCS status snapshot does not include the DCS host name. If you need to confirm the exact host placement, query the VM details from the DCS platform or DCS API and compare the VM `hostName` or `hostUrn` values.
 
 ### Expected Results
 
