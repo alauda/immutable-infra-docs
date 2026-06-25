@@ -111,7 +111,7 @@ kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 
 The key must include the leading `v` (for example `v1.34.5`). If the key is missing when CAPI creates the replacement `Machine`, the resulting `BaremetalMachine` enters `Failed` with `ImageResolved=False / Reason=ImageCatalogMiss` and no `reprovision` plan is written — adding the key later restarts the reconciliation automatically.
 
-When the new version corresponds to a new MicroOS / base-image release, the ISO variant for that release should also be available before the upgrade. The bare-metal provider does not rebuild SeedImages automatically, but you may want to refresh `MachineRegistration` / `SeedImage` for **future** host onboarding so the new hosts come up on the new release. The ISO repository is the same as the base-image repository with `-iso` appended.
+When the new version corresponds to a new Alauda OS / base-image release, the ISO variant for that release should also be available before the upgrade. The bare-metal provider does not rebuild SeedImages automatically, but you may want to refresh `MachineRegistration` / `SeedImage` for **future** host onboarding so the new hosts come up on the new release. The ISO repository is the same as the base-image repository with `-iso` appended.
 
 ## Upgrade the Control Plane \{#upgrade-control-plane}
 
