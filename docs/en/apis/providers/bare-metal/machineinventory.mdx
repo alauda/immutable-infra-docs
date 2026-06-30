@@ -1,0 +1,17 @@
+---
+weight: 70
+---
+
+# MachineInventory [elemental.cattle.io/v1beta1]
+
+`MachineInventory` is the long-lived identity object for a physical host. It is created by `elemental-register` after a host boots the seed ISO, and it survives reprovisioning — `BaremetalMachine` only borrows it for the lifetime of one Kubernetes node.
+
+The bare-metal provider reads two parts of this resource:
+
+- `metadata.name` — must appear in a `MachineInventoryPool.spec.inventoryNames` entry for the host to be allocatable.
+- `spec.observedNetwork` — an Alauda-fork-only field captured during registration; the provider replays it as cloud-init `network-config` v2 on every reprovision, so the host comes back with the same interface/bond/VLAN/IP layout as when it was first inventoried.
+
+The provider also writes `metadata.annotations` (`baremetal.alauda.io/owner-*`, `baremetal.alauda.io/plan.type`) and updates `status.plan` / `status.conditions` during clean/reprovision.
+
+{/* cspell:disable-next-line */}
+<K8sCrd name="machineinventories.elemental.cattle.io" />
