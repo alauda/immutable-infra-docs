@@ -8,6 +8,7 @@ queries:
   - hcs node management
   - hcs machine deployment
   - hcs worker persistent disks
+  - hcs node pools web ui manage ips
 ---
 
 # Managing Nodes on Huawei Cloud Stack
@@ -33,11 +34,65 @@ Worker nodes are managed through Cluster API `Machine` resources, providing decl
 3. **Bootstrap Configuration** - Node initialization settings
 4. **Machine Deployment** - Orchestration of node creation and management
 
-## Worker Node Deployment
+You can manage these resources through the web UI or with YAML manifests. The web UI provides a guided experience and is available when the version requirements below are met; YAML works on every supported provider version.
+
+## Using the Web UI \{#managing-node-pools-using-the-web-ui}
+
+**Version requirement**: This workflow requires Fleet Essentials `1.0.2` or later and the Alauda Container Platform HCS Infrastructure Provider `v1.0.3` or later. On earlier provider versions, manage node pools with the YAML workflows in the [Using YAML](#using-yaml) section.
+
+The Node Pools tab lets you view the control plane and worker node pools, add or delete worker node pools, and edit the reserved IP addresses of an existing pool.
+
+:::info
+**Navigation**: Clusters → Clusters → Select cluster → Node Pools tab
+:::
+
+### Viewing Node Pools
+
+The Node Pools tab shows the Control Plane Node Pool and each Worker Node Pool as a card. Both card types share the same fields:
+
+| Field | Description |
+|-------|-------------|
+| Name | Resource name. Links to the underlying `KubeadmControlPlane` (control plane) or `MachineDeployment` (worker). The control plane card carries a **Control Plane** tag. |
+| Status | Badge showing pool health. |
+| Conditions | Count of status conditions; click to view the condition list. |
+| Ready Replicas | Ready node count over the desired count (for example, `3 / 3`). |
+| Kubernetes Version | Current Kubernetes version of the pool. |
+| Machine Template | Associated `HCSMachineTemplate`; click to open it. |
+| Config Pool | Associated `HCSMachineConfigPool`; click to open it. |
+| SSH Authorized Keys | Number of configured public keys. |
+| Update Strategy | For the control plane, nodes are replaced one at a time, each keeping its node IP. For workers, a rolling update governed by the pool's Max Surge and Max Unavailable values. |
+
+### Adding a Worker Node Pool
+
+Click **Add Worker Node Pool** and complete the dialog. The fields match Step 5 of the [creation wizard](../create-cluster/huawei-cloud-stack.mdx#using-the-web-ui): pool name (prefixed with `<cluster-name>-`), Flavor, Availability Zone, Machine Configs (hostname, networks, persistent disks), System Disk, Data Volumes, Replicas, Rollout Strategy, and SSH Authorized Keys. New nodes appear in the Nodes tab after the pool is created.
+
+### Managing Node IP Addresses \{#manage-ips}
+
+Each node in an HCS pool uses a reserved static IP address from its subnet. To change which addresses a pool reserves — for example, to add capacity before scaling the pool up — open the pool card's action menu and select **Update Config Pool** to open the **Manage IPs** dialog.
+
+The dialog edits the machine configurations of the pool's `HCSMachineConfigPool`. For each node you can set the hostname, the networks (each an IP address chosen from its subnet, plus the subnet), and the persistent disks. IP selection follows the same rules as the creation wizard: choose the subnet first, then pick an assignable address from the list; addresses already in use are not offered.
+
+:::warning
+HCS clusters use static IP addresses with no DHCP. Reserve enough addresses in the pool before you scale a node pool up — a new node cannot start unless the pool provides an address for it.
+:::
+
+### Deleting a Worker Node Pool
+
+Open the Worker Node Pool card's action menu, select **Delete**, and confirm.
+
+:::warning
+Deleting a worker node pool permanently removes all of its nodes and the underlying ECS instances. Ensure workloads can tolerate the loss of these nodes through proper replication. The Control Plane Node Pool cannot be deleted.
+:::
+
+## Using YAML \{#using-yaml}
+
+Manage worker nodes with Cluster API manifests. This workflow is available on every supported provider version.
+
+### Deploying Worker Nodes
 
 Before you prepare worker YAML, complete the HCS input checklist in [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx). In particular, list every worker subnet in `HCSCluster.spec.network.subnets`, allocate worker IPs from planned free IP ranges, and collect the provider-recognized `flavorName` and `availabilityZone` API values. If you add a new worker subnet to an existing Ready cluster, patch `HCSCluster.spec.network.subnets` with the full subnet object instead of adding only the subnet name.
 
-### Step 1: Configure Machine Configuration Pool
+#### Step 1: Configure Machine Configuration Pool
 
 The `HCSMachineConfigPool` defines the network configuration and any pool-managed persistent disks for worker node VMs. You must plan and configure the IP addresses, hostnames, persistent disk slots, and other parameters before deployment.
 
@@ -119,7 +174,7 @@ Use `persistentDisks[]` for node-local state that must survive worker replacemen
 
 **Note:** `networks[]` can contain more than one entry when a worker node needs multiple NICs. The current provider only uses each entry to attach a NIC with a subnet selector and static IP. It does not support per-NIC role declarations, default gateway selection, static routes, route metrics, or per-NIC DNS settings.
 
-### Pool-Managed Persistent Disks for Workers
+#### Pool-Managed Persistent Disks for Workers
 
 Declare worker-node disks that must survive replacement in the matching `HCSMachineConfigPool.spec.configs[].persistentDisks[]` entry. Use this model for `/var/cpaas` and for any other node-local state that must be retained during rolling replacement.
 
@@ -135,7 +190,7 @@ To inspect persistent-disk runtime state during worker operations, check the poo
 kubectl get hcsmachineconfigpool <cluster-name>-worker-pool -n cpaas-system -o yaml
 ```
 
-### Step 2: Configure Machine Template
+#### Step 2: Configure Machine Template
 
 The `HCSMachineTemplate` defines the VM specifications for worker nodes.
 
@@ -193,7 +248,7 @@ spec:
 
 **Note:** Tenant administrators cannot retrieve the provider-recognized `flavorName` and `availabilityZone` values from the HCS UI. Get the exact values from the HCS administrator before you apply the manifest.
 
-### Step 3: Configure Bootstrap Template
+#### Step 3: Configure Bootstrap Template
 
 The `KubeadmConfigTemplate` defines the bootstrap configuration for worker nodes.
 
@@ -233,7 +288,7 @@ spec:
 
 The HCS controller injects `/etc/kubernetes/pki/kubelet.crt` and `/etc/kubernetes/pki/kubelet.key` while resolving worker cloud-init data. The kubelet patch above configures kubelet to use those controller-provided certificate files.
 
-### Step 4: Configure Machine Deployment
+#### Step 4: Configure Machine Deployment
 
 The `MachineDeployment` orchestrates the creation and management of worker nodes.
 
@@ -277,10 +332,6 @@ spec:
 | `.spec.template.spec.version` | string | Yes | Kubernetes version |
 | `.spec.strategy.rollingUpdate.maxSurge` | int | No | Maximum nodes above desired during update |
 | `.spec.strategy.rollingUpdate.maxUnavailable` | int | No | Maximum unavailable nodes during update |
-
-## Node Management Operations
-
-This section covers common operational tasks for managing worker nodes.
 
 ### Scaling Worker Nodes
 
