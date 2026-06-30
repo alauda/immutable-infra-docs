@@ -16,6 +16,22 @@ Pre-release tags (`v1.0.0`, `v1.0`) are internal builds and are not covered here
 
 For the current full capability list and installation steps, see [Huawei Cloud Stack Provider Installation](../install/huawei-cloud-stack.mdx).
 
+## v1.0.3 (2026-06-27) \{#v1-0-3}
+
+### New Features
+
+- **Web UI for HCS cluster management** — HCS clusters can now be created and managed through the web UI. A guided wizard creates clusters, the Node Pools tab manages the control plane and worker node pools, and the Manage IPs dialog edits the reserved node IP addresses of an existing pool. This workflow requires Fleet Essentials `1.0.2` or later. See [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx#using-the-web-ui) and [Managing Nodes on Huawei Cloud Stack](../manage-nodes/huawei-cloud-stack.mdx#managing-node-pools-using-the-web-ui).
+
+## v1.0.2 (2026-06-26) \{#v1-0-2}
+
+### New Features
+
+- **Control plane high availability (server group anti-affinity)** — `HCSCluster` accepts a new `spec.controlPlaneHA` block with `enabled` and `policy` (`anti-affinity` or `soft-anti-affinity`). When enabled, the provider creates and maintains an HCS server group and spreads the control-plane ECS instances across different physical hosts. The feature covers the control plane only, the provider owns the server group rather than referencing an existing one, and existing clusters converge through control plane rolling replacement. See [Configure HCSCluster](../create-cluster/huawei-cloud-stack.mdx#configure-hcscluster) for the field reference and [Control Plane HA Placement Plan](../infrastructure/huawei-cloud-stack.mdx#control-plane-ha-placement) for planning guidance.
+
+### Fixed Issues
+
+- **Machine creation backs off when the HCS API is rate limited** — When the provider cannot create a control-plane or worker ECS instance, it now retries with a rate-limit-aware backoff instead of a fixed fast requeue. This prevents a request storm against the HCS API when one or more machines repeatedly fail to create, and the failure reason is reported on the machine's `MachineReady` condition.
+
 ## v1.0.1 (2026-05-20) \{#v1-0-1}
 
 ### Overview

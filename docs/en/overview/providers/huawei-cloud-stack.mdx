@@ -7,6 +7,7 @@ queries:
   - huawei cloud stack provider
   - hcs cluster api
   - hcs infrastructure provider
+  - hcs web ui cluster management
 ---
 
 # Huawei Cloud Stack Provider
@@ -30,6 +31,21 @@ HCS provider `v1.0.1` or later supports pool-managed persistent disks. Declare d
 - **Pool-Managed Persistent Disks**: EVS disks can be detached from an old ECS and attached to the replacement ECS during rolling upgrades
 - **Control Plane Security Bootstrap**: Supports kube-apiserver audit, admission, encryption provider, and kubelet certificate configuration through kubeadm bootstrap data
 - **Availability Zone Selection**: Supports specifying the target availability zone for HCS machines
+
+## Cluster Management Capabilities
+
+The HCS Provider always supports **YAML-based** cluster management through Cluster API manifests. It also supports **web UI-based** management when **Fleet Essentials** `1.0.2` or later is installed and the **Alauda Container Platform HCS Infrastructure Provider** is `v1.0.3` or later. On earlier provider versions, use the YAML workflow.
+
+### Web UI-Based Management (Fleet Essentials)
+
+When the version requirements are met, you can manage HCS clusters through the web UI:
+
+- [Create clusters](../../create-cluster/huawei-cloud-stack.mdx#using-the-web-ui) with a 6-step guided wizard that selects assignable static IP addresses per subnet.
+- [View Control Plane and Worker Node Pools, add or delete Worker Node Pools, and manage reserved node IP addresses](../../manage-nodes/huawei-cloud-stack.mdx#managing-node-pools-using-the-web-ui) for an existing cluster.
+
+### YAML-Based Management
+
+For automation and GitOps workflows, manage HCS clusters using Cluster API manifests. This workflow does not depend on Fleet Essentials and is available on every supported provider version. See [Creating Clusters on Huawei Cloud Stack](../../create-cluster/huawei-cloud-stack.mdx#using-yaml) for YAML-based instructions.
 
 ## Supported Resources
 
