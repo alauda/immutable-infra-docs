@@ -20,7 +20,7 @@ Choose this installation path when all of the following conditions apply:
 
 - You want the `global` cluster to run on an immutable operating system. Alauda OS is the supported image today.
 - Your infrastructure is one of the documented providers: Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal.
-- You can run a temporary KIND host that has network access to the target IaaS platform.
+- You can run a temporary bootstrap host that has network access to the target IaaS platform.
 
 For traditional operating systems such as Ubuntu or RHEL, use <ExternalSiteLink name="acp" href="/install/index.html" children="the standard installation path" /> instead.
 
@@ -28,11 +28,11 @@ For traditional operating systems such as Ubuntu or RHEL, use <ExternalSiteLink 
 
 The following prerequisites apply to every provider:
 
-- A KIND host that meets the minimum hardware and network requirements. See the [Overview](../overview/index.mdx) for sizing guidance.
+- A bootstrap host that meets the minimum hardware and network requirements. See the [Overview](../overview/index.mdx) for sizing guidance.
 - The Core Package from the Customer Portal.
 - The Alauda Container Platform Kubeadm Provider package.
 - The infrastructure provider package for your target platform.
-- Network reachability between the KIND host and the target IaaS platform API endpoint.
+- Network reachability between the bootstrap host and the target IaaS platform API endpoint.
 - IP and hostname planning for the `global` control plane and worker nodes. See [Infrastructure Resources](../infrastructure/index.mdx) for the resource model used by each provider.
 - A stable Kubernetes API endpoint for the `global` cluster, such as a VIP or load balancer address.
 - A platform access address, registry address, and Pod and Service CIDR ranges.
@@ -62,10 +62,10 @@ Before installation, record the supported version set for the delivery package:
 
 ### Step 1 — Prepare Common Variables
 
-Set the common variables on the KIND host.
+Set the common variables on the bootstrap host.
 
 ```shell
-export HOST_IP="<kind-host-ip>"
+export HOST_IP="<bootstrap-host-ip>"
 export LOCAL_REGISTRY_ADDRESS="127.0.0.1:11443"
 export BOOTSTRAP_REGISTRY_ADDRESS="172.18.0.1:11443"
 export NODE_REGISTRY_ADDRESS="${HOST_IP}:11443"
@@ -81,11 +81,11 @@ export HCS_SECRET_NAME="global-secret"
 # Use v-prefixed semver that matches the target Alauda OS image.
 ```
 
-Use `LOCAL_REGISTRY_ADDRESS` when pushing packages from the KIND host. Use `BOOTSTRAP_REGISTRY_ADDRESS` in AppRelease chart repository values because provider Pods read the chart repository from inside the bootstrap KIND network. Use `NODE_REGISTRY_ADDRESS` in Cluster API registry annotations because provisioned `global` nodes must pull images through an address reachable from their subnet.
+Use `LOCAL_REGISTRY_ADDRESS` when pushing packages from the bootstrap host. Use `BOOTSTRAP_REGISTRY_ADDRESS` in AppRelease chart repository values because provider Pods read the chart repository from inside the bootstrap cluster's network. Use `NODE_REGISTRY_ADDRESS` (the bootstrap host's registry, `<bootstrap-host-ip>:11443`) in the Cluster API registry annotations, because provisioned `global` nodes must pull images through an address reachable from their subnet during provisioning. This is a temporary value: after the `global` cluster's own registry comes up, the installer automatically rewrites the `cpaas.io/registry-address` annotation on the `Cluster` and `DCSCluster` to the permanent platform registry, so later reconciles pull from the `global` cluster instead of the bootstrap host.
 
-### Step 2 — Bootstrap the KIND Host
+### Step 2 — Create the Bootstrap Cluster
 
-Run the bootstrap script provided by the Core Package. This brings up a temporary management cluster, `minialauda`, on the KIND host.
+Run the bootstrap script provided by the Core Package. This brings up a temporary KIND-based bootstrap cluster named `minialauda` on the bootstrap host — the temporary Cluster API management cluster used only to provision the `global` cluster.
 
 ```shell
 mkdir -p /root/cpaas-install
@@ -535,12 +535,12 @@ Upload the packages.
 Create and apply the AppRelease resources for the Kubeadm provider and the Bare Metal provider.
 
 <Directive type="warning" title="Bare Metal Bootstrap Endpoint">
-  During bootstrap, the `global` cluster has not handed control to the final VIP yet. Keep the bare-metal registration path on the bootstrap KIND host: `global.platformUrl` points to the bootstrap host, and `elemental.server.url` points to `https://<kind-host-ip>:12443`. Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the `global` machines during this phase. The handoff job changes the `global` machines to `https://<CONTROL_PLANE_VIP>/kubernetes/global` after the platform installation completes.
+  During bootstrap, the `global` cluster has not handed control to the final VIP yet. Keep the bare-metal registration path on the bootstrap host: `global.platformUrl` points to the bootstrap host, and `elemental.server.url` points to `https://<bootstrap-host-ip>:12443`. Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the `global` machines during this phase. The handoff job changes the `global` machines to `https://<CONTROL_PLANE_VIP>/kubernetes/global` after the platform installation completes.
 </Directive>
 
 Prepare the bootstrap HTTPS certificate used by `global-alb2` before you install the Bare Metal provider. The `elemental-operator` mounts the CA from `cpaas-system/dex.tls`, and `elemental-system-agent` uses that CA when `elemental.tls.agentTLSMode` is `strict`. The Secret must contain `tls.crt`, `tls.key`, and the CA bundle key that you configure in the AppRelease, shown below as `ca.crt`. The serving certificate must include `${HOST_IP}` as an IP SAN because the bootstrap endpoint is `https://${HOST_IP}:12443`.
 
-If cert-manager is available in the bootstrap KIND cluster, create or refresh `dex.tls` with a bootstrap-local CA:
+If cert-manager is available in the bootstrap cluster, create or refresh `dex.tls` with a bootstrap-local CA:
 
 ```shell
 kubectl get crd certificates.cert-manager.io issuers.cert-manager.io
@@ -842,13 +842,14 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: DCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for Alauda OS.
-- Keep the release manifest's non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries.
+- Keep the `KubeadmControlPlane.spec.kubeadmConfigSpec.users` entry with a non-empty `sshAuthorizedKeys` list (the `boot` user). The DCS `ignition` format rejects an empty SSH key list, so this field is required even for a `global` cluster you do not plan to access over SSH. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders) for what to supply when no interactive key is needed.
+- Keep the non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries. The file contents (the PodSecurity admission config, the kubelet patch, and the audit policy), together with the full `clusterConfiguration`, `preKubeadmCommands`, `postKubeadmCommands`, and the init and join node-registration patches, are identical to a workload cluster. Copy them from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, or reference the `dcs-kubernetes-<major.minor>-files` Secret documented there. The wiring fragment below shows only the `global`-specific fields layered on top of that base.
 - For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef` and do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Keep `/var/cpaas` as platform state. If you need the disk to survive rolling replacement, declare it in `DCSIpHostnamePool.spec.pool[].persistentDisk`; do not rely on `DCSMachineTemplate` template disks as preserved state.
 - Use concrete `datastoreName` values for DCS local storage unless you have verified that the selected datastore cluster can place volumes on hosts that can run the target VM.
 
 <Directive type="warning" title="Fragment Scope">
-  The following YAML is a differential fragment, not a complete manifest that you can apply directly. Merge these `global`-specific changes into the manifest that you prepare from the DCS create-cluster references, then apply the complete manifest file.
+  The following YAML is a differential fragment, not a complete manifest that you can apply directly. Merge these `global`-specific changes into the manifest that you prepare from the DCS create-cluster references, then apply the complete manifest file. If you would rather start from a complete file, adapt the [Worked Example: Complete `global` Manifest for Huawei DCS](#dcs-worked-example) at the end of this page instead of assembling it from fragments.
 </Directive>
 
 The following fragment shows the `global`-specific Cluster API wiring. Fill the provider resource fields by using the DCS create-cluster references above.
@@ -903,7 +904,7 @@ spec:
     infrastructureRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: DCSMachineTemplate
-      name: global-master-template
+      name: global-cp-template
   kubeadmConfigSpec:
     format: ignition
     clusterConfiguration:
@@ -1004,7 +1005,7 @@ spec:
     infrastructureRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: VSphereMachineTemplate
-      name: global-master-machine-template
+      name: global-cp-machine-template
   kubeadmConfigSpec:
     format: cloud-init
     clusterConfiguration:
@@ -1101,7 +1102,7 @@ spec:
     infrastructureRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
       kind: HCSMachineTemplate
-      name: global-master-machine-template
+      name: global-cp-machine-template
   kubeadmConfigSpec:
     format: cloud-init
     clusterConfiguration:
@@ -1150,7 +1151,7 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
 - Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the bootstrap `global` hosts. The bootstrap ISO must register through the bootstrap host; the handoff job later moves the `global` machines to the VIP.
 - If a `global` VM or physical host does not have DHCP during the live-ISO boot, configure the NIC manually from the host console before waiting for `MachineInventory` registration. Use the same NetworkManager procedure described in [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx#network-connectivity), replacing the example address, gateway, DNS, and connection name with the values for that host.
 - Do not depend on OS hostname side effects. The bare-metal provider normalizes kubeadm node names and provider IDs from the CAPI and inventory objects.
-- The `SeedImage` created in the bootstrap KIND environment is a bootstrap artifact. After handoff, create any new `MachineRegistration` or `SeedImage` on the active `global` cluster.
+- The `SeedImage` created in the bootstrap cluster is a bootstrap artifact. After handoff, create any new `MachineRegistration` or `SeedImage` on the active `global` cluster.
 - When adding new machines to an already installed `global` cluster, explicitly set the `baremetal.cluster.io/system-agent-server-url` annotation on that `MachineRegistration` to the current active `global` control-plane VIP. New `global` machines do not pass through the bootstrap handoff job, so this annotation is what makes their system-agent watch plan Secrets through `https://<CONTROL_PLANE_VIP>/kubernetes/global`. Non-`global` workload-cluster machines should continue to use the platform domain path.
 
   ```yaml
@@ -1280,7 +1281,7 @@ spec:
 
 ### Step 5 — Apply the global Manifest
 
-Apply the provider-specific manifest to `minialauda`.
+Apply the provider-specific manifest to the bootstrap cluster.
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -1337,12 +1338,31 @@ The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` 
 
 Before triggering the installer, create the `dcs-import-extra-resources` ConfigMap in the `cpaas-system` namespace for providers that require extra resource import. The ConfigMap name keeps the `dcs` prefix for historical installer compatibility, even when the provider is not Huawei DCS.
 
-VMware vSphere, Huawei Cloud Stack, and Bare Metal require this ConfigMap for both normal and disaster recovery `global` installations. Huawei DCS does not require it for the default installation because DCS provider resources are migrated by the built-in flow; create it for DCS only when you need to import additional resources beyond the built-in provider resource migration.
+Every provider uses this ConfigMap to import the IaaS credential `Secret` into the new `global` cluster. For VMware vSphere, Huawei Cloud Stack, and Bare Metal it also imports the provider's Cluster API resources; for Huawei DCS those resources are migrated by the built-in flow, so the DCS ConfigMap only needs the credential `Secret` entry. VMware vSphere, Huawei Cloud Stack, and Bare Metal require it for both normal and disaster recovery `global` installations.
 
 <Tabs>
   <Tab label="Huawei DCS">
 
-Do not create the DCS `dcs-import-extra-resources` ConfigMap for the default DCS installation path. DCS provider resources are migrated by the built-in flow.
+The DCS provider's Cluster API resources are migrated by the built-in flow, so the ConfigMap only needs to import the credential `Secret` referenced by `DCSCluster.spec.credentialSecretRef`. Use the same Secret name you set in the `global` manifest.
+
+```shell
+mkdir -p /root/yamls
+cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+    - resource: "secrets"
+      names: ["<auth-secret-name>"]
+      method: kubectl
+EOF
+
+kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+```
 
   </Tab>
   <Tab label="VMware vSphere">
@@ -1424,7 +1444,7 @@ kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
   </Tab>
   <Tab label="Bare Metal">
 
-Create and apply the Bare Metal import ConfigMap before you trigger the installer. This ConfigMap is required because the installer must import the bare-metal and elemental resources that were created in the bootstrap KIND cluster before the `global` cluster exists.
+Create and apply the Bare Metal import ConfigMap before you trigger the installer. This ConfigMap is required because the installer must import the bare-metal and elemental resources that were created in the bootstrap cluster before the `global` cluster exists.
 
 <Directive type="warning" title="Import Before DCS API">
   Create `dcs-import-extra-resources` before calling `POST /cpaas-installer/api/config/dcs`. If it is missing, the handoff job can run with an empty target list because the new `global` cluster does not contain the `BaremetalMachine`, `MachineInventory`, `MachineRegistration`, or plan Secret objects that describe the bootstrap `global` machines.
@@ -1535,10 +1555,10 @@ export INSTALLER_IP=$(kubectl get pods -n cpaas-system -l service_name=cpaas-ins
 ```
 
 <Directive type="info" title="Network Scope">
-  `INSTALLER_IP` is the Pod IP of the embedded installer in `minialauda`. The endpoint is used only during installation.
+  `INSTALLER_IP` is the Pod IP of the embedded installer in the bootstrap cluster. The endpoint is used only during installation.
 </Directive>
 
-Create the provider-specific installer configuration JSON file on the current KIND host, then submit it to the installer endpoint. All providers in this install path use the same endpoint path, but their request bodies are different.
+Create the provider-specific installer configuration JSON file on the current bootstrap host, then submit it to the installer endpoint. All providers in this install path use the same endpoint path, but their request bodies are different.
 
 | Field | Huawei DCS | VMware vSphere | Huawei Cloud Stack | Bare Metal |
 |-------|------------|----------------|--------------------|------------|
@@ -1547,7 +1567,7 @@ Create the provider-specific installer configuration JSON file on the current KI
 | `console.globalHost` | Platform access address | Platform access address | Platform access address | Platform access address |
 | `cluster.clusterCIDR` and `cluster.serviceCIDR` | Required | Not set; cluster CIDRs are declared in the VMware vSphere `Cluster` manifest | Not set | Required |
 | `cluster.features.ha` | Required, points to the local HA VIP with `isThirdParty: true` | Not set; the control plane endpoint is declared in `VSphereCluster.spec.controlPlaneEndpoint.host` | Not set; HCS ELB is declared in `HCSCluster` | Required, points to the bare-metal control-plane VIP with `isThirdParty: true` |
-| `hostIP` | Current KIND host IP | Current KIND host IP | Current KIND host IP | Current KIND host IP |
+| `hostIP` | Current bootstrap host IP | Current bootstrap host IP | Current bootstrap host IP | Current bootstrap host IP |
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -1766,13 +1786,13 @@ Set `console.host` and `cluster.features.ha.vip` to the local Bare Metal `global
 
 ### Step 9 — Monitor the Installation
 
-After the installer accepts the request, the install runs through several phases that are observable from the KIND host. A typical immutable-OS `global` cluster takes 30–60 minutes; total time depends on IaaS provisioning speed, image pull time, and the number of plugins selected.
+After the installer accepts the request, the install runs through several phases that are observable from the bootstrap host. A typical immutable-OS `global` cluster takes 30–60 minutes; total time depends on IaaS provisioning speed, image pull time, and the number of plugins selected.
 
 #### Phases You Will Observe
 
 | Phase | What is happening | First place to watch |
 |---|---|---|
-| Bootstrap | The bootstrap KIND, embedded registry, and Cluster API providers are running on the KIND host. Completed in Step 2 and Step 3. | KIND host terminal; `kubectl get pods -n cpaas-system` |
+| Bootstrap | The bootstrap cluster, embedded registry, and Cluster API providers are running on the bootstrap host. Completed in Step 2 and Step 3. | bootstrap host terminal; `kubectl get pods -n cpaas-system` |
 | Infrastructure provisioning | The Cluster API provider creates VMs from the Alauda OS template on the target IaaS platform. | `kubectl get machines -n cpaas-system` |
 | Control plane bootstrap | `KubeadmControlPlane` bootstraps the first control plane node, etcd starts, and additional control plane nodes join. | `kubectl get kubeadmcontrolplane -n cpaas-system` |
 | Network and core add-ons | The CAPI provider reconciles Kube-OVN, CoreDNS, and kube-proxy on the new cluster. | `kubectl --kubeconfig <global-kubeconfig> get pods -n kube-system` |
@@ -1781,14 +1801,14 @@ After the installer accepts the request, the install runs through several phases
 
 #### Signals During Installation
 
-Watch the installer progress API and the installer log together. If one appears stalled, check the underlying Cluster API resources directly on the bootstrap KIND host.
+Watch the installer progress API and the installer log together. If one appears stalled, check the underlying Cluster API resources directly on the bootstrap host.
 
 ```shell
 # Installer progress and live log
 curl "http://${INSTALLER_IP}:8080/cpaas-installer/api/progress"
 tail -f /var/cpaas/data/installer.log
 
-# Cluster API resources on the bootstrap KIND host
+# Cluster API resources on the bootstrap host
 kubectl get clusters.cluster.x-k8s.io -A
 kubectl get kubeadmcontrolplane -A
 kubectl get machines -A
@@ -1928,7 +1948,7 @@ serverCertSANs:
 <Tabs>
   <Tab label="Huawei DCS">
 
-Create the encryption provider Secret in `minialauda`.
+Create the encryption provider Secret in the bootstrap cluster.
 
 ```shell
 kubectl create secret generic encryption-provider-config \
@@ -2027,7 +2047,7 @@ spec:
 
 The bare-metal provider reads this Secret and injects `/etc/kubernetes/encryption-provider.conf` into the generated control-plane bootstrap data. Do not also add the file manually to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for Bare Metal DR; the `BaremetalCluster` reference is the source of truth.
 
-This Secret must also be included in the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. It cannot remain only in the bootstrap KIND cluster because the handed-off `global` cluster keeps the imported `BaremetalCluster` object and must also have the referenced Secret for later provider reconciliation.
+This Secret must also be included in the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. It cannot remain only in the bootstrap cluster because the handed-off `global` cluster keeps the imported `BaremetalCluster` object and must also have the referenced Secret for later provider reconciliation.
 
 Keep the same DR `serverCertSANs` list on both the primary and standby installation environments.
 
@@ -2063,7 +2083,7 @@ The generated `Role/cpaas-system/baremetal-system-agent` must restrict `secrets`
 
 Run Steps 1 through 9 for both the primary and standby `global` clusters.
 
-For Bare Metal DR, use two independent bootstrap KIND hosts: one for the primary installation and one for the standby installation. Do not reuse the same bootstrap KIND cluster for both sides. The bootstrap environment contains installer state, AppRelease objects, registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it can pollute the two `global` installations and can make handoff or cleanup affect the wrong side.
+For Bare Metal DR, use two independent bootstrap hosts: one for the primary installation and one for the standby installation. Do not reuse the same bootstrap cluster for both sides. The bootstrap environment contains installer state, AppRelease objects, registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it can pollute the two `global` installations and can make handoff or cleanup affect the wrong side.
 
 Use the provider-specific installer configuration differences for both sides:
 
@@ -2074,9 +2094,9 @@ Use the provider-specific installer configuration differences for both sides:
 | Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
 | Bare Metal | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the primary control-plane VIP. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the standby control-plane VIP. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. |
 
-For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB. For Bare Metal, set both the manifest VIP and the installer VIP fields to the primary control-plane VIP.
+For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB. For Bare Metal, set both the manifest VIP and the installer VIP fields to the primary control-plane VIP.
 
-After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby KIND host, set `hostIP` to the standby KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` as `${PLATFORM_HOST}:11443` on both sides. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby KIND host; do not reuse the primary KIND host value.
+After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` as `${PLATFORM_HOST}:11443` on both sides. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
 
 After both clusters are installed, get the primary `k8sadmin` token on a primary control plane node. `etcd-sync` is installed only on the standby cluster, and its `active_cluster_*` values point to the primary cluster. Keep this value in its original base64 Secret form for `active_cluster_token`.
 
@@ -2162,9 +2182,234 @@ The installation is successful when all of the following conditions are true:
 - Critical Pods in `cpaas-system` are `Running` or `Completed`.
 - `ClusterModule/global` reports the base module as healthy.
 
+## Decommission the Bootstrap Cluster \{#decommission-bootstrap-cluster}
+
+After the installer reports success, the `global` cluster runs its own Cluster API providers and no longer depends on the temporary bootstrap cluster (`minialauda`). Once verification passes, remove it from the bootstrap host — delete only the local bootstrap cluster (`minialauda`) and its KIND container network.
+
+<Directive type="info" title="Verify the DCS credential Secret reached the global cluster">
+  The DCS API credential `Secret` is copied to the `global` cluster during installation by the `dcs-import-extra-resources` ConfigMap you create in Step 7 — it imports the Secret named in your `DCSCluster.spec.credentialSecretRef`. Before you remove the bootstrap host, verify it is present: `kubectl --kubeconfig <global-kubeconfig> get secret <name> -n cpaas-system`. If it is missing, copy it over first — without it the `global` cluster's DCS provider has no DCS API credentials and cannot reconcile (for example, scale-out later fails).
+</Directive>
+
+<Directive type="warning" title="Do not delete the Cluster API objects to clean up">
+  Do not run `kubectl delete cluster global`, and do not delete the `Cluster`, `KubeadmControlPlane`, or provider infrastructure objects as a cleanup step. After installation these objects own the live `global` control plane machines, so deleting them cascades into deleting the control plane VMs and destroys the cluster you just installed. Decommissioning is limited to removing the local bootstrap cluster (its KIND container) on the bootstrap host; leave the Cluster API objects in place.
+</Directive>
+
 ## Next Steps
 
 - Install additional provider plugins on the new `global` cluster: see [Installation](../install/index.mdx).
 - Configure infrastructure resources for workload clusters: see [Infrastructure Resources](../infrastructure/index.mdx).
 - Create your first workload cluster: see [Creating Clusters](../create-cluster/index.mdx).
 - Plan disaster recovery: see [Global Cluster Disaster Recovery](./disaster_recovery.mdx).
+
+## Worked Example: Complete `global` Manifest for Huawei DCS \{#dcs-worked-example}
+
+This is a complete, single-file manifest for a three-replica control-plane `global` cluster on Huawei DCS. It is the same set of resources described in Step 4, already assembled so you do not have to merge fragments across pages. It uses documentation-only example values: replace every `<placeholder>`, and reuse the `${...}` variables you exported in Step 1. Apply it in Step 5.
+
+This example targets a non-DR cluster. To avoid maintaining two copies of it, the `KubeadmControlPlane` `kubeadmConfigSpec` body is not repeated here — it is identical to a workload cluster and is taken from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, with the two `global` / non-DR deltas noted inline in resource 4 below.
+
+### Before You Apply: Prepare These on DCS \{#dcs-worked-example-prereqs}
+
+The manifest references these but does not create them. Prepare them first, in order:
+
+1. **DCS API access** — the endpoint (`https://<host>:7443`), an `administrator` user and password, and the site ID. These fill the `Secret` and `DCSCluster.spec.site`. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials).
+2. **A VM template** — upload the Alauda OS image and create a VM template from it; record its name for `vmTemplateName`. Use a `4.2.1+` template so the `/var/cpaas` persistent disk can be detached and reattached during node replacement. See [Machine Templates](../infrastructure/huawei-dcs.mdx#machine-templates).
+3. **Compute cluster, distributed virtual switch, port group, and datastore** — pick the target DCS compute cluster, a distributed virtual switch, a port group, and a datastore with enough free capacity. They fill `resource`, `dvSwitchName`, `portGroupName`, and `datastoreName`. See [DCS Platform Capacity and Placement](../infrastructure/huawei-dcs.mdx#capacity-and-placement).
+4. **IPs and the API load balancer** — three free node IPs (with gateway and DNS) for the control plane, and a control-plane VIP / load balancer that balances at least port `6443` across the three nodes (the DCS provider does not create it). These fill the `DCSIpHostnamePool` and `DCSCluster.spec.controlPlaneLoadBalancer` / `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
+5. **Versions and IDs to read** — `${K8S_VERSION}` plus the CoreDNS and etcd image tags from the `cpaas.io/dcs-vm-template` ConfigMap (see [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders)); the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx); and the registry address, VIP, and CIDR values you exported in Step 1.
+
+With those prepared, apply the manifest below.
+
+```yaml
+---
+# 1. DCS API credential. See Infrastructure Resources for the field sources.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: <auth-secret-name>   # imported to the global cluster via the dcs-import-extra-resources ConfigMap in Step 7
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+type: Opaque
+stringData:
+  authUser: "<dcs-api-user>"
+  authKey: "<dcs-api-password>"
+  endpoint: "https://<dcs-api-host>:7443"
+  # userType: "interconnect"   # optional; "interconnect" (default) or "domain"
+---
+# 2. Control-plane IP / hostname pool (one entry per control-plane replica).
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSIpHostnamePool
+metadata:
+  name: global-cp-pool
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+spec:
+  pool:
+  # /var/cpaas holds platform state and must survive node replacement, so it is
+  # declared here as a persistentDisk bound to the IP slot (not as a
+  # DCSMachineTemplate disk). Requires a DCS VM template 4.2.1+ and maxSurge: 0.
+  - ip: "192.0.2.11"
+    mask: "24"
+    gateway: "192.0.2.1"
+    dns: "192.0.2.2"
+    hostname: "global-cp-1"
+    machineName: "global-cp-1"
+    persistentDisk:
+    - {slot: 0, quantityGB: 100, datastoreName: <datastore-name>, path: /var/cpaas, format: xfs, mountOptions: [defaults]}
+  - ip: "192.0.2.12"
+    mask: "24"
+    gateway: "192.0.2.1"
+    dns: "192.0.2.2"
+    hostname: "global-cp-2"
+    machineName: "global-cp-2"
+    persistentDisk:
+    - {slot: 0, quantityGB: 100, datastoreName: <datastore-name>, path: /var/cpaas, format: xfs, mountOptions: [defaults]}
+  - ip: "192.0.2.13"
+    mask: "24"
+    gateway: "192.0.2.1"
+    dns: "192.0.2.2"
+    hostname: "global-cp-3"
+    machineName: "global-cp-3"
+    persistentDisk:
+    - {slot: 0, quantityGB: 100, datastoreName: <datastore-name>, path: /var/cpaas, format: xfs, mountOptions: [defaults]}
+---
+# 3. Control-plane VM spec.
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSMachineTemplate
+metadata:
+  name: global-cp-template
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+spec:
+  template:
+    spec:
+      vmTemplateName: <vm-template-name>
+      # Places the cloned VMs in a DCS compute cluster.
+      resource:
+        type: cluster
+        name: <dcs-cluster-name>
+      vmConfig:
+        dvSwitchName: <dvswitch-name>
+        portGroupName: <port-group-name>
+        dcsMachineCpuSpec: {quantity: 16}
+        dcsMachineMemorySpec: {quantity: 32768}   # MB
+        dcsMachineDiskSpec:
+        - {quantity: 0,   datastoreName: <datastore-name>, systemVolume: true}
+        - {quantity: 10,  datastoreName: <datastore-name>, path: /var/lib/etcd,       format: xfs}
+        - {quantity: 100, datastoreName: <datastore-name>, path: /var/lib/kubelet,    format: xfs}
+        - {quantity: 100, datastoreName: <datastore-name>, path: /var/lib/containerd, format: xfs}
+        # /var/cpaas is intentionally NOT a template disk — it is declared as a
+        # persistentDisk on the IP pool above so it survives node replacement.
+      ipHostPoolRef:
+        name: global-cp-pool
+---
+# 4. Control plane.
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: global-kcp
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+  annotations:
+    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
+spec:
+  replicas: 3
+  version: ${K8S_VERSION}
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 0}
+  machineTemplate:
+    nodeDrainTimeout: 1m
+    nodeDeletionTimeout: 5m
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: DCSMachineTemplate
+      name: global-cp-template
+  kubeadmConfigSpec:
+    format: ignition
+    users:
+    - name: boot
+      sshAuthorizedKeys:
+      - "ssh-ed25519 AAAA...replace-with-your-public-key... global-boot"
+    # The rest of kubeadmConfigSpec — files, clusterConfiguration,
+    # preKubeadmCommands, postKubeadmCommands, initConfiguration,
+    # joinConfiguration — is identical to a workload cluster, so it is not
+    # duplicated here. Take it verbatim from the Complete KubeadmControlPlane
+    # Configuration appendix in the DCS create-cluster guide
+    # (#complete-kubeadmcontrolplane-configuration). The three large files
+    # (psa-config.yaml, control-plane-kubelet-patch.json, audit-policy.yaml) may
+    # use contentFrom the dcs-kubernetes-<major.minor>-files Secret. Apply these
+    # global / non-DR deltas to that body:
+    #   1. Add clusterConfiguration.etcd.local.serverCertSANs:
+    #        ["${CONTROL_PLANE_VIP}", "etcd.kube-system"]
+    #   2. Non-DR: omit the /etc/kubernetes/encryption-provider.conf file AND the
+    #        apiServer.extraArgs.encryption-provider-config argument (keep both for
+    #        DR / at-rest encryption — see the note after this example).
+---
+# 5. DCS infrastructure cluster.
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSCluster
+metadata:
+  name: "global"
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+  annotations:
+    cpaas.io/registry-address: "${NODE_REGISTRY_ADDRESS}"
+spec:
+  controlPlaneLoadBalancer: {host: "${CONTROL_PLANE_VIP}", port: 6443, type: external}
+  controlPlaneEndpoint: {host: "${CONTROL_PLANE_VIP}", port: 6443}
+  credentialSecretRef: {name: <auth-secret-name>}
+  networkType: kube-ovn
+  site: <dcs-site-id>
+---
+# 6. Top-level CAPI Cluster: global wiring, labels, and annotations.
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: global
+  namespace: cpaas-system
+  labels:
+    cpaas.io/cluster-name: "global"
+    cluster-type: DCS
+    is-global: "true"
+  annotations:
+    capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
+    capi.cpaas.io/resource-kind: DCSCluster
+    capi.cpaas.io/kubernetes: ${K8S_VERSION}   # same value as KubeadmControlPlane.spec.version
+    cpaas.io/registry-address: "${NODE_REGISTRY_ADDRESS}"
+    cpaas.io/nodes-mode: self-managed   # node lifecycle managed by CAPI + the DCS provider
+    cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>   # a /16 you choose; must not overlap the pod / service CIDRs or another cluster's join CIDR
+    cpaas.io/kube-ovn-version: <kube-ovn-chart-version>
+    cpaas.io/os-family: <os-family>   # OS family of the Alauda OS image, for example slemicro
+spec:
+  clusterNetwork:
+    pods:     {cidrBlocks: ["${CLUSTER_CIDR}"]}
+    services: {cidrBlocks: ["${SERVICE_CIDR}"]}
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: global-kcp
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: DCSCluster
+    name: global
+```
+
+### Values to Replace \{#dcs-worked-example-values}
+
+| Placeholder / variable | Where it comes from |
+|---|---|
+| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}` | Exported in Step 1. |
+| `<dcs-api-user>` / `<dcs-api-password>` / `<dcs-api-host>` / `<dcs-site-id>` | DCS platform credentials and site. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). |
+| `<vm-template-name>`, `<dns-image-tag>`, `<etcd-image-tag>` | The `cpaas.io/dcs-vm-template` ConfigMap. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders). |
+| `<dcs-cluster-name>`, `<dvswitch-name>`, `<port-group-name>`, `<datastore-name>` | DCS platform objects. Confirm with the DCS administrator. |
+| `192.0.2.x`, `<kube-ovn-join-cidr>`, `<os-family>`, `<kube-ovn-chart-version>` | Node IPs/gateway/DNS for your network; a `/16` Kube-OVN join CIDR that does not overlap the pod / service CIDRs or another cluster's join CIDR; the OS family of the image; and the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx). |
+| `ssh-ed25519 AAAA...` | A real OpenSSH public key. The `ignition` format rejects an empty list; supply any valid key even if you do not plan to SSH in. |
+
+<Directive type="info" title="Secret encryption and disaster recovery">
+  This example does not enable etcd secret encryption-at-rest. To enable it, or to deploy a DR pair, add the `/etc/kubernetes/encryption-provider.conf` file and the `apiServer.extraArgs.encryption-provider-config` argument as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment).
+</Directive>
