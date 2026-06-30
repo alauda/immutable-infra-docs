@@ -8,6 +8,7 @@ queries:
   - hcs node management
   - hcs machine deployment
   - hcs worker persistent disks
+  - hcs node pools web ui manage ips
 ---
 
 # Managing Nodes on Huawei Cloud Stack
@@ -466,6 +467,54 @@ kubectl get nodes
 # Check MachineDeployment status
 kubectl get machinedeployment -n cpaas-system
 ```
+
+## Managing Node Pools Using the Web UI \{#managing-node-pools-using-the-web-ui}
+
+**Version requirement**: This workflow requires Fleet Essentials `1.0.2` or later and the Alauda Container Platform HCS Infrastructure Provider `v1.0.3` or later. On earlier provider versions, manage node pools with the YAML workflows above.
+
+The Node Pools tab lets you view the control plane and worker node pools, add or delete worker node pools, and edit the reserved IP addresses of an existing pool.
+
+:::info
+**Navigation**: Clusters → Clusters → Select cluster → Node Pools tab
+:::
+
+### Viewing Node Pools
+
+The Node Pools tab shows the Control Plane Node Pool and each Worker Node Pool as a card. Both card types share the same fields:
+
+| Field | Description |
+|-------|-------------|
+| Name | Resource name. Links to the underlying `KubeadmControlPlane` (control plane) or `MachineDeployment` (worker). The control plane card carries a **Control Plane** tag. |
+| Status | Badge showing pool health. |
+| Conditions | Count of status conditions; click to view the condition list. |
+| Ready Replicas | Ready node count over the desired count (for example, `3 / 3`). |
+| Kubernetes Version | Current Kubernetes version of the pool. |
+| Machine Template | Associated `HCSMachineTemplate`; click to open it. |
+| Config Pool | Associated `HCSMachineConfigPool`; click to open it. |
+| SSH Authorized Keys | Number of configured public keys. |
+| Update Strategy | For the control plane, nodes are replaced one at a time, each keeping its node IP. For workers, a rolling update governed by the pool's Max Surge and Max Unavailable values. |
+
+### Adding a Worker Node Pool
+
+Click **Add Worker Node Pool** and complete the dialog. The fields match Step 5 of the [creation wizard](../create-cluster/huawei-cloud-stack.mdx#using-the-web-ui): pool name (prefixed with `<cluster-name>-`), Flavor, Availability Zone, Machine Configs (hostname, networks, persistent disks), System Disk, Data Volumes, Replicas, Rollout Strategy, and SSH Authorized Keys. New nodes appear in the Nodes tab after the pool is created.
+
+### Managing Node IP Addresses \{#manage-ips}
+
+Each node in an HCS pool uses a reserved static IP address from its subnet. To change which addresses a pool reserves — for example, to add capacity before scaling the pool up — open the pool card's action menu and select **Update Config Pool** to open the **Manage IPs** dialog.
+
+The dialog edits the machine configurations of the pool's `HCSMachineConfigPool`. For each node you can set the hostname, the networks (each an IP address chosen from its subnet, plus the subnet), and the persistent disks. IP selection follows the same rules as the creation wizard: choose the subnet first, then pick an assignable address from the list; addresses already in use are not offered.
+
+:::warning
+HCS clusters use static IP addresses with no DHCP. Reserve enough addresses in the pool before you scale a node pool up — a new node cannot start unless the pool provides an address for it.
+:::
+
+### Deleting a Worker Node Pool
+
+Open the Worker Node Pool card's action menu, select **Delete**, and confirm.
+
+:::warning
+Deleting a worker node pool permanently removes all of its nodes and the underlying ECS instances. Ensure workloads can tolerate the loss of these nodes through proper replication. The Control Plane Node Pool cannot be deleted.
+:::
 
 ## Troubleshooting
 

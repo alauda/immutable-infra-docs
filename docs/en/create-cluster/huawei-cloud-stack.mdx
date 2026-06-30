@@ -12,7 +12,11 @@ queries:
 
 # Creating Clusters on Huawei Cloud Stack
 
-This document provides comprehensive instructions for creating Kubernetes clusters on the Huawei Cloud Stack platform using Cluster API.
+This document provides instructions for creating Kubernetes clusters on the Huawei Cloud Stack platform. YAML-based cluster creation is available through Cluster API manifests on any supported provider version. If Fleet Essentials `1.0.2` or later is installed and the Alauda Container Platform HCS Infrastructure Provider is `v1.0.3` or later, you can also create clusters through a guided web UI.
+
+:::info
+The web UI provides a guided workflow with built-in validation, while YAML offers more automation flexibility.
+:::
 
 ## Prerequisites
 
@@ -38,7 +42,132 @@ Prepare all HCS-specific inputs before writing any YAML in this document:
 
 See [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx) for the complete checklist, source information, and constraints.
 
-## Cluster Creation Overview
+## Using the Web UI \{#using-the-web-ui}
+
+**Version requirement**: This workflow requires Fleet Essentials `1.0.2` or later and the Alauda Container Platform HCS Infrastructure Provider `v1.0.3` or later. If the provider version is earlier than `v1.0.3`, create clusters with the YAML manifests described in [Using YAML](#using-yaml).
+
+The web UI loads VPCs, subnets, security groups, flavors, and assignable IP addresses from the HCS platform using the Infrastructure Credential you select. Make sure the prerequisites above are met before you start, and that an HCS credential Secret exists in the `cpaas-system` namespace.
+
+### Creation Workflow
+
+The cluster creation follows a 6-step wizard:
+
+```
+Step 1: Basic Info
+  ↓
+Step 2: Networking
+  ↓
+Step 3: Infrastructure
+  ↓
+Step 4: Control Plane Node Pool
+  ↓
+Step 5: Worker Node Pools
+  ↓
+Step 6: Review
+```
+
+**Navigation**: Clusters → Clusters → Create Cluster → Select Huawei Cloud Stack
+
+:::info
+**How IP selection works**
+
+Every IP field in this wizard — the control plane ELB addresses in Step 3 and the node IP addresses in Steps 4 and 5 — is a picker, not a free-text box. Select the subnet first, and the picker lists only the assignable IP addresses of that subnet. HCS clusters use static IP addresses, so you must choose an address from the list; manual entry and DHCP are not supported. Changing the subnet clears the address you already picked. An IP address already chosen elsewhere in the same subnet is removed from the list, so the same address is never assigned twice. When a subnet has many free addresses, the list shows the first batch only; type to filter for a specific address.
+:::
+
+### Step 1: Basic Info
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Infrastructure Credential | dropdown | Yes | Existing HCS credential Secret. Used to load VPCs, subnets, security groups, flavors, and assignable IP addresses. If the dropdown is empty, create a Secret in the `cpaas-system` namespace labeled `capi.cpaas.io/provider=cluster-api-provider-hcs`. |
+| Name | text | Yes | Unique cluster identifier (lowercase letters, numbers, and hyphens), up to 63 characters. Must not be `global`. |
+| Display Name | text | No | Custom description for easy identification, up to 256 characters. |
+| Distribution Version | readonly | - | Platform distribution version, inherited from the `global` cluster. |
+| Kubernetes Version | readonly | - | Determined by the Distribution Version. |
+| OS Version | readonly | - | Alauda OS image version registered for the Distribution Version. |
+
+### Step 2: Networking
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Kube-OVN Version | readonly | - | Detected from the `global` cluster. |
+| Pod CIDR | CIDR | Yes | Pod network address range. |
+| Service CIDR | CIDR | Yes | Service network address range. Must not overlap the Pod CIDR. |
+| Join CIDR | CIDR | Yes | Kube-OVN join network address range. |
+
+### Step 3: Infrastructure
+
+This step has two parts: the HCS infrastructure resources and the control plane load balancer.
+
+**Infrastructure resources**:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| VPC Name | dropdown | Yes | Existing VPC loaded from the selected credential. |
+| Security Group Name | dropdown | Yes | Existing security group. |
+| Subnets | dropdown list | Yes | One or more existing subnets. Every subnet referenced by the load balancer or by a node pool must be added here. |
+
+**Control Plane Load Balancer**: The HCS provider creates an Elastic Load Balance (ELB) for the Kubernetes API server and owns its VIP. Hybrid Load Balancing requires fixed L4 and L7 virtual subnet IPs.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| VIP Subnet Name | dropdown | Yes | Subnet that holds the ELB VIP. Must be one of the subnets added above. |
+| VIP Address | IP picker | Yes | Fixed VIP for the control plane ELB. |
+| VIP Domain Name | text | No | Optional domain for the VIP. If set, configure HCS Cloud DNS Private Zones so the domain resolves to the VIP; the cluster does not create this record. |
+| L4 Virtual Subnet Name | dropdown | Yes | Subnet for the L4 Hybrid Load Balancing IPs. |
+| L4 Virtual Subnet IP 1 / IP 2 | IP picker | Yes | Two fixed L4 IP addresses. |
+| L7 Virtual Subnet Name | dropdown | Yes | Subnet for the L7 Hybrid Load Balancing IPs. |
+| L7 Virtual Subnet IP 1 / IP 2 | IP picker | Yes | Two fixed L7 IP addresses. |
+
+### Step 4: Control Plane Node Pool
+
+The control plane node pool is fixed at 3 replicas for high availability.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Control Plane Node Pool Name | text | Yes | Pool name, automatically prefixed with `<cluster-name>-`. |
+| Flavor | dropdown | Yes | HCS flavor; the list shows vCPU and memory for each option. |
+| Availability Zone | dropdown | No | Target availability zone. Zones without capacity are disabled. |
+| Machine Configs | list | Yes | One entry per control plane node. At least 3 entries are required. See [Machine Config entry](#web-ui-machine-config) below. |
+| System Disk | number | Yes | Root disk size in GB; the type is fixed to SSD. |
+| Data Volumes | list | No | Fixed data disks mounted on every node in the pool; only the size is adjustable. The etcd data volume is included for the control plane. |
+| Replicas | readonly | - | Fixed at 3. |
+| Control Plane High Availability | toggle | No | On by default. Spreads control plane nodes across different physical hosts using a provider-managed HCS server group. |
+| Placement Policy | radio | Conditional | Shown when High Availability is on. **Preferred (soft anti-affinity)** (default) spreads nodes on a best-effort basis. **Required (strict anti-affinity)** forces each node onto a different host and fails creation if there are not enough hosts. |
+| SSH Authorized Keys | list | No | Public keys for node access. |
+
+#### Machine Config entry \{#web-ui-machine-config}
+
+Each entry in **Machine Configs** describes one node:
+
+- **Hostname** (required): Lowercase letters, numbers, hyphens, and dots, up to 253 characters (for example, `master-1` or `master-1.example.org`). For how a dotted hostname affects the node, see [Hostname behavior on the node](#hostname-behavior-on-the-node).
+- **Networks** (required): One row per NIC. Each row has an **IP Address** picker and a **Subnet Name**. Add rows for multi-NIC nodes.
+- **Persistent Disks**: The platform-required `/var/cpaas` disk is pre-filled; its size is adjustable but the row cannot be removed. Add rows only for extra host-bound data that must survive node rebuild.
+
+### Step 5: Worker Node Pools
+
+Click **Add Worker Node Pool** to open the pool dialog. You can add multiple pools.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| Worker Node Pool Name | text | Yes | Pool name, automatically prefixed with `<cluster-name>-`. Must be unique within the cluster. |
+| Flavor | dropdown | Yes | HCS flavor; the list shows vCPU and memory for each option. |
+| Availability Zone | dropdown | No | Target availability zone. |
+| Machine Configs | list | Yes | One entry per worker node. Uses the same [Machine Config entry](#web-ui-machine-config) layout as the control plane. |
+| System Disk | number | Yes | Root disk size in GB; the type is fixed to SSD. |
+| Data Volumes | list | No | Fixed data disks mounted on every node in the pool. |
+| Replicas | number | Yes | Number of nodes in the pool. Must not exceed the number of machine configs. |
+| Rollout Strategy | number | No | **Max Surge** and **Max Unavailable**. When Max Surge is `0`, Max Unavailable must be ≥ 1 and ≤ Replicas. |
+| SSH Authorized Keys | list | No | Public keys for node access. |
+
+### Step 6: Review
+
+Review the **Basic Info**, **Infrastructure**, **Control Plane Load Balancer**, **Control Plane Node Pool**, **Worker Node Pools**, and **Networking** sections. Click **View YAML** to inspect the exact resources that will be created. Click **Create** to start the cluster creation process.
+
+---
+
+## Using YAML \{#using-yaml}
+
+### Cluster Creation Overview
 
 At a high level, you'll create the following Cluster API resources in the <Term name="product" textCase="capitalize" />'s `global` cluster to provision infrastructure and bootstrap a functional Kubernetes cluster.
 
@@ -67,7 +196,7 @@ The cluster creation process follows this order:
 5. Configure HCSCluster
 6. Create the Cluster
 
-## Control Plane Configuration
+### Control Plane Configuration
 
 The control plane manages cluster state, scheduling, and the Kubernetes API. This section shows how to configure a highly available control plane.
 
@@ -80,7 +209,7 @@ When configuring resources, exercise caution with parameter modifications:
 - Modifying non-placeholder parameters may result in cluster instability or integration issues
 :::
 
-### Configure HCS Authentication
+#### Configure HCS Authentication
 
 HCS authentication information is stored in a Secret resource.
 
@@ -113,7 +242,7 @@ Existing credential Secrets created without `schema` continue to work unchanged.
 
 You can reuse an existing HCS credential Secret. Its name does not need to match the cluster name, but `HCSCluster.spec.identityRef.name` must reference this Secret.
 
-### Configure Machine Configuration Pool
+#### Configure Machine Configuration Pool
 
 The `HCSMachineConfigPool` defines pre-configured hostnames, static IP addresses, and any pool-managed persistent disks for VMs.
 
@@ -197,7 +326,7 @@ Use `persistentDisks[]` for node-local state that must survive VM replacement. D
 
 **Note:** To attach multiple NICs to one node, add multiple `networks[]` entries. The provider only uses these entries to attach NICs and assign subnet selectors plus static IPs. It does not support declaring per-NIC roles, default gateways, static routes, or per-NIC DNS settings.
 
-#### Hostname behavior on the node \{#hostname-behavior-on-the-node}
+##### Hostname behavior on the node \{#hostname-behavior-on-the-node}
 
 The provider derives the node's POSIX hostname and FQDN from `hostname` as follows:
 
@@ -210,7 +339,7 @@ The dotted form is the path to set up applications that depend on FQDN resolutio
 
 Invalid hostnames (leading dot, trailing dot, all-dot strings, uppercase letters, or anything that violates the field constraint) are rejected before the VM boots. The error is set on the owning `Machine.status` and surfaced on the `Cluster.status.conditions` so it shows up under `kubectl describe cluster <name>` and `kubectl get machines -n cpaas-system -o wide`.
 
-### Configure Machine Template
+#### Configure Machine Template
 
 The `HCSMachineTemplate` defines the VM specifications for control plane nodes.
 
@@ -279,7 +408,7 @@ spec:
 
 **Note:** Tenant administrators cannot retrieve the provider-recognized `flavorName` and `availabilityZone` values from the HCS UI. Get the exact values from the HCS administrator before you apply the manifest.
 
-### Configure KubeadmControlPlane
+#### Configure KubeadmControlPlane
 
 The `KubeadmControlPlane` defines the Kubernetes control plane configuration.
 
@@ -427,7 +556,7 @@ The HCS controller also injects files while resolving cloud-init data. It writes
 
 Use the [OS Support Matrix](../overview/os-support-matrix.mdx) only for the component versions it explicitly lists, such as coredns and etcd image tags for supported Alauda OS images. It is not a complete source for all HCS manifest values. Before you apply this YAML, also use the approved release baseline for values such as `imageRepository`, DNS image repository, Kube-OVN version, Kube-OVN join CIDR, Pod CIDR, and Service CIDR.
 
-### Configure HCSCluster \{#configure-hcscluster}
+#### Configure HCSCluster \{#configure-hcscluster}
 
 The `HCSCluster` resource defines the HCS infrastructure configuration.
 
@@ -510,7 +639,7 @@ Do not include `spec.controlPlaneEndpoint` in the create manifest. In the HCS cr
 
 `controlPlaneHA` is optional. When you include it, both `enabled` and `policy` are required. Use `anti-affinity` for strict host separation. Use `soft-anti-affinity` when you prefer host spread but do not want ECS creation to fail only because HCS cannot satisfy the hard placement rule. For planning guidance, including the rolling replacement requirement when enabling the feature on an existing cluster, see [Control Plane HA Placement Plan](../infrastructure/huawei-cloud-stack.mdx#control-plane-ha-placement).
 
-### Configure Cluster
+#### Configure Cluster
 
 The `Cluster` resource in Cluster API declares the cluster and references the control plane and infrastructure resources.
 
