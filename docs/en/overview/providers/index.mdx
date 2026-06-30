@@ -1,7 +1,7 @@
 ---
 weight: 35
 title: Providers
-author: dev@alauda.io
+author: gangwang@alauda.io
 category: index
 queries:
   - infrastructure providers
@@ -22,7 +22,7 @@ Immutable Infrastructure supports multiple infrastructure platforms through plug
 | [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
 | [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
 | [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | ✅ Available |
-| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | 📋 Planned |
+| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | ✅ Available (YAML only) |
 
 ## Control Plane Endpoint
 
@@ -33,8 +33,9 @@ Each cluster's Kubernetes API server (`kube-apiserver`, port `6443`) is reached 
 | Huawei DCS | You provide it | An external load balancer that fronts the control plane nodes, or a single control plane node reached directly | Provision the load balancer before cluster creation and supply its address and port in `DCSCluster.spec.controlPlaneLoadBalancer` |
 | Huawei Cloud Stack | The provider creates it | An HCS Elastic Load Balance (ELB) instance created automatically during cluster reconciliation | Plan the ELB inputs — VIP subnet, VIP address, bandwidth, and public-IP preference — in `HCSCluster.spec.controlPlaneLoadBalancer` |
 | VMware vSphere | You provide it | An external load balancer that fronts the control plane nodes | Provision the load balancer and allocate the control plane VIP before cluster creation; the documented flow does not deploy an in-cluster VIP component |
+| Bare Metal | The provider creates it (or you provide it) | `BaremetalCluster.spec.controlPlaneLoadBalancer.type=Internal` deploys the `alive` chart (`keepalived` + IPVS + `kube-lock` Lease arbitration) onto the control-plane nodes; `type=External` delegates the LB to an existing external appliance | Choose a free VIP, port (typically `6443`), and a `vrid` unique in the control-plane Layer-2 broadcast domain |
 
-Huawei Cloud Stack is the only provider that creates the control plane load balancer for you. For Huawei DCS and VMware vSphere, the load balancer — including its VIP allocation and backend (real-server) maintenance — is prepared and owned outside the cluster. Bare Metal is planned; its control plane endpoint model will be documented when the provider is released.
+Huawei Cloud Stack is the only VM provider that creates the control plane load balancer for you. For Huawei DCS and VMware vSphere, the load balancer — including its VIP allocation and backend (real-server) maintenance — is prepared and owned outside the cluster. On Bare Metal, the provider can either deploy an in-cluster VIP component (`alive`) or defer to an external LB; see the [Bare Metal Provider](./bare-metal.mdx) overview for the full model.
 
 ## Fleet Essentials Plugin
 
@@ -53,6 +54,7 @@ Fleet Essentials works with Infrastructure Providers to deliver platform-specifi
 - **DCS Provider**: Alauda Container Platform DCS Infrastructure Provider `1.0.13` and later adds DCS-specific UI pages and workflows on Huawei DCS. Pool-managed persistent-disk scenarios require DCS provider `v1.0.16` or later, and in `v1.0.16` the `DCSIpHostnamePool.spec.pool[].persistentDisk` configuration remains YAML-only
 - **HCS Provider**: Provides YAML-based cluster lifecycle management on Huawei Cloud Stack. HCS provider `v1.0.1` and later supports pool-managed persistent disks through `HCSMachineConfigPool.spec.configs[].persistentDisks[]`
 - **vSphere Provider**: The VMware vSphere infrastructure provider is generally available; its Fleet Essentials UI extension for cluster creation and management is coming soon
+- **Bare Metal Provider**: Provides YAML-only cluster lifecycle management on physical servers. There is no Fleet Essentials UI for bare-metal clusters; every workflow is driven by `kubectl apply` against `BaremetalCluster`, `BaremetalMachineTemplate`, `MachineInventoryPool`, and the upstream CAPI resources
 
 ## Provider Architecture
 
