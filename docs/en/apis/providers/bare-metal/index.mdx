@@ -6,14 +6,37 @@ weight: 40
 
 <Overview />
 
-## Status
+The Bare Metal Infrastructure Provider builds on `elemental-operator` and Cluster API. Operators interact with two CRD groups, both documented here:
 
-📋 **Planned**
+- `infrastructure.cluster.x-k8s.io/v1beta1` — the provider's own resources.
+- `elemental.cattle.io/v1beta1` — owned by `elemental-operator`; the provider only reads and annotates them, but operators must author the registration/seed objects and inspect inventory objects on every workflow.
 
-API documentation will be available when development begins.
+## Custom Resources
 
-## Planned Resources
+### Provider resources (`infrastructure.cluster.x-k8s.io/v1beta1`)
 
-- `MetalCluster`: Represents a Kubernetes cluster infrastructure on bare metal
-- `MetalMachine`: Represents a bare metal server
-- `MetalMachineTemplate`: Template for configuring bare metal servers
+| Resource | Description | Documentation |
+|---|---|---|
+| `BaremetalCluster` | Cluster-level infrastructure: control-plane VIP, endpoint, network type. | [BaremetalCluster](./baremetalcluster.mdx) |
+| `BaremetalMachine` | Single infra machine bound to one `MachineInventory`. | [BaremetalMachine](./baremetalmachine.mdx) |
+| `BaremetalMachineTemplate` | Template that binds a pool to a `KubeadmControlPlane` or `MachineDeployment`. | [BaremetalMachineTemplate](./baremetalmachinetemplate.mdx) |
+| `MachineInventoryPool` | Allowed set of `MachineInventory` names for a cluster. | [MachineInventoryPool](./machineinventorypool.mdx) |
+
+### Elemental resources (`elemental.cattle.io/v1beta1`)
+
+| Resource | Description | Documentation |
+|---|---|---|
+| `MachineRegistration` | Registration URL + first-install cloud-config. Authored once per cluster. | [MachineRegistration](./machineregistration.mdx) |
+| `SeedImage` | Triggers ISO build with the registration baked in. | [SeedImage](./seedimage.mdx) |
+| `MachineInventory` | Long-lived host identity; consumed by `MachineInventoryPool`. The provider also reads `spec.observedNetwork` (Alauda-fork-only) and writes the `baremetal.alauda.io/*` annotations. | [MachineInventory](./machineinventory.mdx) |
+
+## Upstream Cluster API resources
+
+The provider also composes the following upstream resources without changing their schemas. Refer to the [Cluster API reference](../../cluster_api/) for full schemas.
+
+| Resource | API group | Purpose |
+|---|---|---|
+| `Cluster` | `cluster.x-k8s.io/v1beta1` | Top-level CAPI resource; carries the bare-metal-specific `cpaas.io/*` annotations. |
+| `KubeadmControlPlane` | `controlplane.cluster.x-k8s.io/v1beta1` | Owns control-plane `Machine` lifecycle and kubeadm config. |
+| `MachineDeployment` | `cluster.x-k8s.io/v1beta1` | Owns worker `Machine` lifecycle. |
+| `KubeadmConfigTemplate` | `bootstrap.cluster.x-k8s.io/v1beta1` | Worker cloud-init `user-data` template. |
