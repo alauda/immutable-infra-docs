@@ -535,12 +535,12 @@ Upload the packages.
 Create and apply the AppRelease resources for the Kubeadm provider and the Bare Metal provider.
 
 <Directive type="warning" title="Bare Metal Bootstrap Endpoint">
-  During bootstrap, the `global` cluster has not handed control to the final VIP yet. Keep the bare-metal registration path on the bootstrap KIND host: `global.platformUrl` points to the bootstrap host, and `elemental.server.url` points to `https://<kind-host-ip>:12443`. Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the `global` machines during this phase. The handoff job changes the `global` machines to `https://<CONTROL_PLANE_VIP>/kubernetes/global` after the platform installation completes.
+  During bootstrap, the `global` cluster has not handed control to the final VIP yet. Keep the bare-metal registration path on the bootstrap host: `global.platformUrl` points to the bootstrap host, and `elemental.server.url` points to `https://<bootstrap-host-ip>:12443`. Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the `global` machines during this phase. The handoff job changes the `global` machines to `https://<CONTROL_PLANE_VIP>/kubernetes/global` after the platform installation completes.
 </Directive>
 
 Prepare the bootstrap HTTPS certificate used by `global-alb2` before you install the Bare Metal provider. The `elemental-operator` mounts the CA from `cpaas-system/dex.tls`, and `elemental-system-agent` uses that CA when `elemental.tls.agentTLSMode` is `strict`. The Secret must contain `tls.crt`, `tls.key`, and the CA bundle key that you configure in the AppRelease, shown below as `ca.crt`. The serving certificate must include `${HOST_IP}` as an IP SAN because the bootstrap endpoint is `https://${HOST_IP}:12443`.
 
-If cert-manager is available in the bootstrap KIND cluster, create or refresh `dex.tls` with a bootstrap-local CA:
+If cert-manager is available in the bootstrap cluster, create or refresh `dex.tls` with a bootstrap-local CA:
 
 ```shell
 kubectl get crd certificates.cert-manager.io issuers.cert-manager.io
@@ -1151,7 +1151,7 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
 - Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the bootstrap `global` hosts. The bootstrap ISO must register through the bootstrap host; the handoff job later moves the `global` machines to the VIP.
 - If a `global` VM or physical host does not have DHCP during the live-ISO boot, configure the NIC manually from the host console before waiting for `MachineInventory` registration. Use the same NetworkManager procedure described in [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx#network-connectivity), replacing the example address, gateway, DNS, and connection name with the values for that host.
 - Do not depend on OS hostname side effects. The bare-metal provider normalizes kubeadm node names and provider IDs from the CAPI and inventory objects.
-- The `SeedImage` created in the bootstrap KIND environment is a bootstrap artifact. After handoff, create any new `MachineRegistration` or `SeedImage` on the active `global` cluster.
+- The `SeedImage` created in the bootstrap cluster is a bootstrap artifact. After handoff, create any new `MachineRegistration` or `SeedImage` on the active `global` cluster.
 - When adding new machines to an already installed `global` cluster, explicitly set the `baremetal.cluster.io/system-agent-server-url` annotation on that `MachineRegistration` to the current active `global` control-plane VIP. New `global` machines do not pass through the bootstrap handoff job, so this annotation is what makes their system-agent watch plan Secrets through `https://<CONTROL_PLANE_VIP>/kubernetes/global`. Non-`global` workload-cluster machines should continue to use the platform domain path.
 
   ```yaml
@@ -1444,7 +1444,7 @@ kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
   </Tab>
   <Tab label="Bare Metal">
 
-Create and apply the Bare Metal import ConfigMap before you trigger the installer. This ConfigMap is required because the installer must import the bare-metal and elemental resources that were created in the bootstrap KIND cluster before the `global` cluster exists.
+Create and apply the Bare Metal import ConfigMap before you trigger the installer. This ConfigMap is required because the installer must import the bare-metal and elemental resources that were created in the bootstrap cluster before the `global` cluster exists.
 
 <Directive type="warning" title="Import Before DCS API">
   Create `dcs-import-extra-resources` before calling `POST /cpaas-installer/api/config/dcs`. If it is missing, the handoff job can run with an empty target list because the new `global` cluster does not contain the `BaremetalMachine`, `MachineInventory`, `MachineRegistration`, or plan Secret objects that describe the bootstrap `global` machines.
@@ -2047,7 +2047,7 @@ spec:
 
 The bare-metal provider reads this Secret and injects `/etc/kubernetes/encryption-provider.conf` into the generated control-plane bootstrap data. Do not also add the file manually to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for Bare Metal DR; the `BaremetalCluster` reference is the source of truth.
 
-This Secret must also be included in the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. It cannot remain only in the bootstrap KIND cluster because the handed-off `global` cluster keeps the imported `BaremetalCluster` object and must also have the referenced Secret for later provider reconciliation.
+This Secret must also be included in the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. It cannot remain only in the bootstrap cluster because the handed-off `global` cluster keeps the imported `BaremetalCluster` object and must also have the referenced Secret for later provider reconciliation.
 
 Keep the same DR `serverCertSANs` list on both the primary and standby installation environments.
 
@@ -2083,7 +2083,7 @@ The generated `Role/cpaas-system/baremetal-system-agent` must restrict `secrets`
 
 Run Steps 1 through 9 for both the primary and standby `global` clusters.
 
-For Bare Metal DR, use two independent bootstrap KIND hosts: one for the primary installation and one for the standby installation. Do not reuse the same bootstrap KIND cluster for both sides. The bootstrap environment contains installer state, AppRelease objects, registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it can pollute the two `global` installations and can make handoff or cleanup affect the wrong side.
+For Bare Metal DR, use two independent bootstrap hosts: one for the primary installation and one for the standby installation. Do not reuse the same bootstrap cluster for both sides. The bootstrap environment contains installer state, AppRelease objects, registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it can pollute the two `global` installations and can make handoff or cleanup affect the wrong side.
 
 Use the provider-specific installer configuration differences for both sides:
 
