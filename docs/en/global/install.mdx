@@ -2043,6 +2043,9 @@ handoffHook:
   delivery:
     enabled: true
     mode: always
+  # directAPIServer: true   # DR opt-in only. Points global-cluster machines at
+  #   https://<control-plane-vip>:6443 directly instead of the platform ingress
+  #   path. Defaults to false. See "Bare Metal DR Model" in Disaster Recovery.
 
 elemental:
   systemAgent:
