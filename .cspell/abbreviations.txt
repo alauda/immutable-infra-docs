@@ -2,3 +2,6 @@ CAPI
 CAPV
 Kubeadm
 kubelet
+blkid
+COS
+VD
