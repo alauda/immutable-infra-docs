@@ -74,6 +74,7 @@ Prepare **every** disk and virtual disk (VD) on each host before you boot the `S
 
 - Wipe all disks so that no bootable previous operating system remains. The host must boot the ISO, not an old on-disk OS.
 - Remove residual Elemental partition labels — `COS_STATE`, `COS_PERSISTENT`, `COS_OEM`, `COS_RECOVERY` — from **all** disks, not only the intended install disk. Elemental resolves partitions by label (`blkid -L COS_STATE`); a stale label left on a second disk (for example from a previous install or a leftover multipath member) makes it resolve the wrong device and the reprovision snapshotter fails.
+- On hosts where the same disk can appear through more than one path (multipath), make sure none of those paths exposes a disk that still carries a `COS_*` label; a residual label on any path can be resolved ahead of the intended install disk. Clean the disk rather than disabling multipath — the image keeps it enabled for network-attached storage boot.
 - Set the boot order so the host boots the virtual CD / ISO first.
 
 ---
