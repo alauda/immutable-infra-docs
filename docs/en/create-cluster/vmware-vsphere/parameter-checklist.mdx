@@ -67,6 +67,8 @@ Each slot declares its NIC layout under `network.primary` and `network.additiona
 - `network.primary` is required. Its `networkName` must be set and is used as the node-ip source for the kubelet.
 - `network.additional` is an optional list of extra NICs merged after the primary NIC in the order listed.
 
+The `dns` values in `VSphereMachineConfigPool.spec.configs[].network` describe the static network metadata for each slot. In affected VMware deployments, these values might not update the guest operating system's `/etc/resolv.conf` reliably. The deployment manifests therefore also write `/etc/resolv.conf` through both `KubeadmControlPlane.spec.kubeadmConfigSpec.files` and `KubeadmConfigTemplate.spec.template.spec.files`.
+
 ### `deviceName`
 
 `deviceName` is an optional field in the `VSphereMachineConfigPool` network configuration. It is used to control the NIC name seen inside the guest operating system, such as `eth0` or `eth1`.
@@ -176,11 +178,32 @@ The control plane VIP is served by an external load balancer that you provision 
 | Pod CIDR | `<pod_cidr>` | Yes | Must not overlap with existing networks. | `10.244.0.0/16` | - |
 | Service CIDR | `<service_cidr>` | Yes | Must not overlap with existing networks. | `10.96.0.0/12` | - |
 | Image registry | `<image_registry>` | Yes | Private registry address. kubeadm `imageRepository` is set to `<image_registry>/tkestack`. | `registry.example.local` | - |
+| Bootstrap registry address | `<bootstrap_ip>:11443` | Yes | Used by the `cpaas.io/registry-address` annotation on the workload `Cluster` resource. Use the bootstrap node IP address because workload nodes must reach this address from outside the bootstrap node. | `10.10.10.5:11443` | - |
 | `kube-ovn` version | `<kube_ovn_version>` | Yes | Must match the platform network plugin requirements. | `v4.2.26` | - |
 | `kube-ovn-join-cidr` | `<kube_ovn_join_cidr>` | Yes | Must not overlap with other networks. | `100.64.0.0/16` | - |
 | CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `1.12.4` | - |
 | etcd image tag | `<etcd_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `v3.5.0` | - |
 | Encryption provider secret | `<encryption_provider_secret>` | Yes | Base64-encoded AES key for secret encryption at rest. Generate with `head -c 32 /dev/urandom \| base64`. Do not reuse example values. | *(generated)* | - |
+
+### Bootstrap registry tag validation
+
+Run the following commands on the bootstrap host. In this context, `127.0.0.1:11443` is the local registry endpoint on that host.
+
+```bash
+curl -sk http://127.0.0.1:11443/v2/acp/chart-cpaas-kube-ovn/tags/list
+curl -sk http://127.0.0.1:11443/v2/tkestack/coredns/tags/list
+curl -sk http://127.0.0.1:11443/v2/tkestack/etcd/tags/list
+curl -sk http://127.0.0.1:11443/v2/tkestack/kube-apiserver/tags/list
+```
+
+Confirm that the responses include the values you plan to use for:
+
+- `<kube_ovn_version>`
+- `<dns_image_tag>`
+- `<etcd_image_tag>`
+- `<k8s_version>` or the matching kube-apiserver image tag required by the release
+
+Set `cpaas.io/registry-address` in the workload `Cluster` annotation to `<bootstrap_ip>:11443`.
 
 ## Minimum Single-Datacenter Parameters
 
@@ -241,6 +264,17 @@ The control plane VIP is served by an external load balancer that you provision 
 | Worker memory MiB | `<worker_memory_mib>` | Yes | Memory per worker node. | `4096` | - |
 | Worker system datastore | `<worker_system_datastore>` | Yes | Datastore for the worker system disk. | `datastore-worker` | - |
 | Worker system disk size GiB | `<worker_system_disk_gib>` | Yes | Baseline example value is `300`. Ignored when `<clone_mode>` is `linkedClone`; the system disk then stays at the template's size. | `300` | - |
+
+### Disk sizing model
+
+`VSphereMachineTemplate.spec.template.spec.diskGiB` and `VSphereMachineConfigPool.spec.configs[].persistentDisks[]` define different disks.
+
+| Field | Disk type | Meaning |
+|-------|-----------|---------|
+| `VSphereMachineTemplate.spec.template.spec.diskGiB` | System disk | Sets the VM root or system disk size when the VM is created by `fullClone`. The value must be greater than or equal to the system disk size in the OS image template. It is not the sum of all disks. |
+| `VSphereMachineConfigPool.spec.configs[].persistentDisks[]` | Persistent/data disks | Defines extra VMDKs attached to the node slot, such as `/var/cpaas`, `/var/lib/containerd`, and `/var/lib/etcd`. These disks are separate from the system disk. |
+
+Do not add the persistent disk sizes to `diskGiB`. For example, if the OS image has a 100 GiB system disk and the node also needs three 100 GiB persistent disks, use a system disk value that is at least 100 GiB, and define the three 100 GiB data disks under `persistentDisks`. Setting `diskGiB` to 400 GiB would create a 400 GiB system disk in addition to the three data disks.
 
 ### Standard data disks
 
@@ -342,9 +376,12 @@ Before you start the deployment, confirm all of the following items:
 6. The Pod CIDR, Service CIDR, and `kube-ovn-join-cidr` do not overlap with existing networks.
 7. The VM template is available in every required datacenter.
 8. The required datastores and vCenter resource pool paths are confirmed.
-9. The machine config pool values for the minimum single-datacenter topology are complete.
-10. The baseline system disk and data disk sizing is confirmed.
-11. Every required parameter has a real value.
+9. The bootstrap registry tag validation commands include the required `kube-ovn`, CoreDNS, etcd, and kube-apiserver tags.
+10. The `cpaas.io/registry-address` value is planned as `<bootstrap_ip>:11443`.
+11. The control plane and worker bootstrap manifests both write `/etc/resolv.conf` through kubeadm `files`.
+12. The machine config pool values for the minimum single-datacenter topology are complete.
+13. The baseline system disk and data disk sizing is confirmed, and persistent disk sizes are not added into `diskGiB`.
+14. Every required parameter has a real value.
 
 ## Next Steps
 
