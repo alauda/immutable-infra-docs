@@ -59,11 +59,23 @@ nmcli connection up "Wired connection 1"
 
 ### 4. TPM Decision
 
-Production hosts should keep `MachineRegistration.spec.config.elemental.registration.emulate-tpm: false` (or remove the field). For PoC and virtual-machine smoke tests, set `emulate-tpm: true` and `emulated-tpm-seed: -1` so registration works without a real TPM.
+Set `MachineRegistration.spec.config.elemental.registration.emulate-tpm` from whether the host exposes a **real hardware TPM** (`/dev/tpm0`), not from whether it is physical or virtual:
+
+- `emulate-tpm: false` (or omit the field) — only when the host has a working hardware TPM, so `elemental-register` can use it for `auth: tpm`.
+- `emulate-tpm: true` with `emulated-tpm-seed: -1` — for any host **without** a hardware TPM. This includes both virtual machines and physical servers that ship without a TPM module (for example a Dell R620). On such a host, `auth: tpm` combined with `emulate-tpm: false` makes `elemental-register` fail TPM attestation and never send the registration request, so `elemental-operator` records zero registration POSTs.
 
 ### 5. Public Registry Credential (Only When Installing Platform Components Later)
 
 `public-registry-credential` is **not** required to create a bare-metal cluster. It only becomes necessary when later platform components on the new workload cluster need to pull from a credentialed public registry. If your test scope ends at cluster + node Ready, you can ignore this prerequisite.
+
+### 6. Host Disk and Boot Preparation
+
+Prepare **every** disk and virtual disk (VD) on each host before you boot the `SeedImage` ISO:
+
+- Wipe all disks so that no bootable previous operating system remains. The host must boot the ISO, not an old on-disk OS.
+- Remove residual Elemental partition labels — `COS_STATE`, `COS_PERSISTENT`, `COS_OEM`, `COS_RECOVERY` — from **all** disks, not only the intended install disk. Elemental resolves partitions by label (`blkid -L COS_STATE`); a stale label left on a second disk (for example from a previous install or a leftover multipath member) makes it resolve the wrong device and the reprovision snapshotter fails.
+- On hosts where the same disk can appear through more than one path (multipath), make sure none of those paths exposes a disk that still carries a `COS_*` label; a residual label on any path can be resolved ahead of the intended install disk. Clean the disk rather than disabling multipath — the image keeps it enabled for network-attached storage boot.
+- Set the boot order so the host boots the virtual CD / ISO first.
 
 ---
 
@@ -151,9 +163,9 @@ spec:
           type: btrfs
           maxSnaps: 4
       registration:
-        # Keep false for production hardware and for VM tests that already
-        # expose stable SMBIOS identity. Set true only for lab hosts without
-        # a usable TPM or stable identity source.
+        # false only when the host has a real hardware TPM (/dev/tpm0). Set true
+        # (with emulated-tpm-seed: -1) on any host without one, including physical
+        # servers that ship without a TPM module.
         emulate-tpm: false
 ---
 apiVersion: elemental.cattle.io/v1beta1

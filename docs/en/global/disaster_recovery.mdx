@@ -56,7 +56,9 @@ Use different system-agent endpoints for `global` hosts and workload-cluster hos
 | Machines that belong to the active `global` cluster | `https://<current-global-control-plane-vip>/kubernetes/global` |
 | Machines that belong to non-`global` workload clusters | `https://<platform-domain>/kubernetes/global` |
 
-Both endpoints are platform ingress paths, not direct kube-apiserver `:6443` endpoints. For the bootstrap KIND phase, `global` host registration uses the bootstrap host endpoint, normally `https://<bootstrap-host-ip>:12443`. Handoff changes only the installed `global` hosts to the final VIP endpoint.
+By default both endpoints are platform ingress paths, not direct kube-apiserver `:6443` endpoints. For the bootstrap KIND phase, `global` host registration uses the bootstrap host endpoint, normally `https://<bootstrap-host-ip>:12443`. Handoff changes only the installed `global` hosts to the final VIP endpoint.
+
+For a DR `global` cluster that must keep managing its own hosts without depending on its own ingress, opt in to direct kube-apiserver access by setting `handoffHook.directAPIServer: true` on the Bare Metal provider AppRelease (this requires `handoffHook.controlPlaneVIP`). Handoff then points `global`-cluster machines at `https://<current-global-control-plane-vip>:6443` directly, with no `/kubernetes/global` ingress path, and the agent trusts the apiserver with the in-cluster apiserver CA instead of the platform-ingress certificate. The parameter defaults to `false` (the ingress endpoint above); it applies only to `global`-cluster machines, and workload-cluster machines always keep the ingress path.
 
 <Directive type="warning" title="Do Not Reuse the Bootstrap ISO After Handoff">
   A `SeedImage` generated in the bootstrap KIND environment points at the bootstrap registration endpoint. After the `global` cluster is installed and handed off, create new `MachineRegistration` and `SeedImage` resources on the active `global` cluster for any new `global` hosts. A pre-failover workload ISO can be reused after failover only when its registration URL uses the platform domain and the matching non-`global` `MachineRegistration` was synchronized to standby.
@@ -73,6 +75,8 @@ metadata:
   annotations:
     baremetal.cluster.io/system-agent-server-url: https://<current-global-control-plane-vip>
 ```
+
+When the `global` cluster was handed off with `handoffHook.directAPIServer: true`, keep new `global` registrations on the same direct-apiserver endpoint instead: set `baremetal.cluster.io/system-agent-server-url: https://<current-global-control-plane-vip>:6443` and add `baremetal.cluster.io/system-agent-direct: "true"`. The elemental operator then serves that URL verbatim and does not append `/kubernetes/global`.
 
 ### Shared Token Requirements
 
@@ -199,7 +203,7 @@ Bare Metal requires all of the following to be aligned:
 - Same ServiceAccount signing key files and same issuer/audience values on both sides.
 - Same trusted platform certificate chain, with SANs that cover the platform domain, primary control-plane VIP, and standby control-plane VIP.
 - `dcs-import-extra-resources` created before the installer API call on both sides.
-- Bare Metal provider AppRelease values set with `handoffHook.controlPlaneVIP` for the local side and `elemental.systemAgent.authMode: shared`.
+- Bare Metal provider AppRelease values set with `handoffHook.controlPlaneVIP` for the local side and `elemental.systemAgent.authMode: shared`. Add `handoffHook.directAPIServer: true` only when the `global`-cluster machines must reach the kube-apiserver directly at `https://<control-plane-vip>:6443` instead of the ingress path (see Endpoint Rules); it defaults to `false`.
 
 Do not sync `SeedImage` from primary to standby. Sync non-`global` `MachineRegistration` resources when workload ISOs need to remain valid across failover. Do not sync primary `global` `MachineRegistration` resources to standby; create them locally on the active side and set `baremetal.cluster.io/system-agent-server-url` to that side's control-plane VIP.
 
