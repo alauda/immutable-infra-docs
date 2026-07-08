@@ -48,7 +48,8 @@ Before you begin, ensure the following conditions are met:
 5. All required static IP addresses are allocated and not in use.
 6. `ClusterResourceSet=true` is enabled.
 7. The platform already has a valid public registry configuration.
-8. The platform can process the cluster annotations required to install the network plugin.
+8. The bootstrap registry is reachable through `<bootstrap_ip>:11443` from workload nodes and contains the required `kube-ovn`, CoreDNS, etcd, and kube-apiserver tags.
+9. The platform can process the cluster annotations required to install the network plugin.
 
 ## Key Objects
 
@@ -146,12 +147,24 @@ kubectl -n cpaas-system get deploy capi-controller-manager -o jsonpath='{.spec.t
 kubectl -n cpaas-system get secret public-registry-credential -o jsonpath='{.data.content}'
 ```
 
+Run the following commands on the bootstrap host to verify that the required tags exist in the local registry:
+
+```bash
+curl -sk http://127.0.0.1:11443/v2/acp/chart-cpaas-kube-ovn/tags/list
+curl -sk http://127.0.0.1:11443/v2/tkestack/coredns/tags/list
+curl -sk http://127.0.0.1:11443/v2/tkestack/etcd/tags/list
+curl -sk http://127.0.0.1:11443/v2/tkestack/kube-apiserver/tags/list
+```
+
+The commands above query the local registry endpoint from the bootstrap host. In the workload `Cluster` manifest, set the registry annotation to `<bootstrap_ip>:11443`.
+
 Confirm the following results:
 
 - The `global` cluster is reachable.
 - Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider are running.
 - The controller arguments include `ClusterResourceSet=true`.
 - The public registry credential `data.content` is not empty.
+- The bootstrap registry contains the required `kube-ovn`, CoreDNS, etcd, and kube-apiserver tags.
 
 Before you continue, also verify the following items:
 
@@ -201,7 +214,7 @@ kubectl apply -f 01-vsphere-credentials-secret.yaml
 
 ### Create the `Cluster` and `VSphereCluster` objects
 
-Create the base cluster manifest with the workload cluster network settings, the control plane endpoint, and the vCenter connection settings.
+Create the base cluster manifest with the workload cluster network settings, the control plane endpoint, and the vCenter connection settings. Set `cpaas.io/registry-address` to the bootstrap node address in the form `<bootstrap_ip>:11443`.
 
 ```yaml title="10-cluster.yaml"
 apiVersion: cluster.x-k8s.io/v1beta1
@@ -221,6 +234,7 @@ metadata:
     cpaas.io/network-type: kube-ovn
     cpaas.io/kube-ovn-version: <kube_ovn_version>
     cpaas.io/kube-ovn-join-cidr: <kube_ovn_join_cidr>
+    cpaas.io/registry-address: <bootstrap_ip>:11443
 spec:
   clusterNetwork:
     pods:
@@ -525,6 +539,10 @@ Each node slot declares its NIC layout under `network.primary` (required) and `n
 `deviceName` is optional. If you do not need to force the guest NIC name, remove the `deviceName` line from every node slot. The provider assigns NIC names such as `eth0`, `eth1` by NIC order.
 </Directive>
 
+<Directive type="warning">
+The `dns` entries in `VSphereMachineConfigPool` are kept in the static network configuration, but they might not update the guest operating system's `/etc/resolv.conf` reliably in affected VMware deployments. The control plane and worker bootstrap manifests below therefore also write `/etc/resolv.conf` explicitly through kubeadm `files`.
+</Directive>
+
 ```yaml title="02-vspheremachineconfigpool-control-plane.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: VSphereMachineConfigPool
@@ -663,6 +681,14 @@ Create the `VSphereMachineTemplate` and `KubeadmControlPlane` objects. Replace t
 
 `cloneMode` and `diskGiB` both remain present in the template because CAPV accepts both fields. In practice, `diskGiB` only affects the system disk when the actual clone operation is `fullClone`. If `cloneMode` is `linkedClone` and the template has a usable snapshot, CAPV completes a linked clone and the system disk size remains equal to the source template. If no usable snapshot exists, CAPV falls back to `fullClone`, and `diskGiB` applies again.
 
+<Directive type="warning" title="System disk and persistent disks are separate">
+`VSphereMachineTemplate.spec.template.spec.diskGiB` sets only the VM system disk size. It is not the total capacity of all disks on the node.
+
+Data disks are declared separately under `VSphereMachineConfigPool.spec.configs[].persistentDisks[]`. Do not add the persistent disk sizes to `diskGiB`; otherwise the VM can receive a larger system disk plus the separate data disks, which doubles the intended capacity.
+
+For `fullClone`, `diskGiB` must be greater than or equal to the system disk size in the OS image template. For `linkedClone`, the system disk remains at the template size and `diskGiB` is ignored.
+</Directive>
+
 ```yaml title="20-control-plane.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: VSphereMachineTemplate
@@ -720,6 +746,12 @@ spec:
       sshAuthorizedKeys:
       - "<ssh_public_key>"
     files:
+    - path: /etc/resolv.conf
+      owner: "root:root"
+      append: false
+      permissions: "0644"
+      content: |
+        nameserver <nic1_dns_1>
     - path: /etc/kubernetes/admission/psa-config.yaml
       owner: "root:root"
       permissions: "0644"
@@ -1032,6 +1064,12 @@ spec:
   template:
     spec:
       files:
+      - path: /etc/resolv.conf
+        owner: "root:root"
+        append: false
+        permissions: "0644"
+        content: |
+          nameserver <nic1_dns_1>
       - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
         owner: "root:root"
         permissions: "0644"
@@ -1210,7 +1248,7 @@ Prioritize the following checks:
 - If the CPI resources are not delivered, verify `ClusterResourceSet=true`, `ClusterResourceSet`, and `ClusterResourceSetBinding`.
 - If `ClusterResourceSet` exists but no `ClusterResourceSetBinding` is created, check whether the controller has the required delete permission on the referenced `ConfigMap` and `Secret` resources.
 - If the network plugin is not installed, verify that the required cluster annotations are present and that the platform controllers processed them.
-- If the `cpaas.io/registry-address` annotation is missing, verify the public registry credential and the platform controller that injects the annotation.
+- If the `cpaas.io/registry-address` annotation is missing or incorrect, verify that it is set to `<bootstrap_ip>:11443`. Also verify the public registry credential and the platform controller that injects the annotation.
 - If a machine is stuck in `Provisioning`, check `VSphereMachine` conditions for `MachineConfigPoolReady` — it shows whether slot allocation failed due to pool binding or datacenter mismatch.
 - If a VM is waiting for IP allocation, verify VMware Tools, the static IP settings, and `VSphereVM.status.addresses`.
 - If workload `Node` objects remain without `spec.providerID`, first verify the CPI delivery resources and then check for duplicate vCenter guest hostnames. When an old VM in the same datacenter still reports the same guest hostname as a new node, `cloud-provider-vsphere` can fall back to node-name lookup, cache the old VM, and reject the new node because the VM IP does not match the kubelet node IP. Check the leader `vsphere-cloud-controller-manager` logs, the node `SystemUUID`, the real VM UUID, and vCenter guest hostname/IP values. After you fix or remove the duplicate hostname or old VM conflict, restart the workload cluster's `vsphere-cloud-controller-manager` Pods to clear the bad in-memory cache:
