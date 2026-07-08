@@ -1934,13 +1934,14 @@ grep -E 'service-account-private-key-file' \
 
 ### Add DR Certificate SANs to KubeadmControlPlane
 
-In the manifest generated in Step 4, include both the primary and standby control plane VIPs and the platform access address in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`. Use the same SAN list on both the primary and standby installation environments.
+In the manifest generated in Step 4, include both the primary and standby control plane VIPs, the platform access address, and `etcd.kube-system` in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`. Use the same SAN list on both the primary and standby installation environments.
 
 ```yaml
 serverCertSANs:
   - "${PRIMARY_CLUSTER_VIP}"
   - "${STANDBY_CLUSTER_VIP}"
   - "${PLATFORM_HOST}"
+  - "etcd.kube-system"
 ```
 
 ### Add Provider-Specific DR Fields
