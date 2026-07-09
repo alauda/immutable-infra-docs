@@ -493,6 +493,9 @@ spec:
       etcd:
         local:
           imageTag: <etcd-image-tag>
+          extraArgs:
+            tls-min-version: TLS1.2
+            cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
       apiServer:
         extraArgs:
           audit-log-format: json
@@ -504,6 +507,7 @@ spec:
           kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
           profiling: "false"
           tls-min-version: VersionTLS12
+          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
         extraVolumes:
           - name: vol-dir-0
             hostPath: /etc/kubernetes
@@ -515,11 +519,13 @@ spec:
           flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           profiling: "false"
           tls-min-version: VersionTLS12
+          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
       scheduler:
         extraArgs:
           bind-address: "::"
           profiling: "false"
           tls-min-version: VersionTLS12
+          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
     postKubeadmCommands:
       - chmod 600 /var/lib/kubelet/config.yaml
     initConfiguration:
@@ -529,6 +535,8 @@ spec:
         kubeletExtraArgs:
           node-labels: "kube-ovn/role=master"
           protect-kernel-defaults: "true"
+          tls-min-version: VersionTLS12
+          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
     joinConfiguration:
       patches:
@@ -536,6 +544,8 @@ spec:
       nodeRegistration:
         kubeletExtraArgs:
           node-labels: "kube-ovn/role=master"
+          tls-min-version: VersionTLS12
+          tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
           volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
   machineTemplate:
     nodeDrainTimeout: 1m
