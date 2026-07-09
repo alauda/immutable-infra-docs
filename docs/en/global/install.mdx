@@ -77,7 +77,7 @@ export SERVICE_CIDR="100.4.0.0/16"
 export KUBE_OVN_JOIN_CIDR="<kube-ovn-join-cidr>"
 export K8S_VERSION="<target-kubernetes-version>"
 export INGRESS_CLASS_NAME="global-alb2"
-export HCS_SECRET_NAME="global-secret"
+export PROVIDER_SECRET_NAME="global-secret"
 # Use v-prefixed semver that matches the target Alauda OS image.
 ```
 
@@ -839,6 +839,7 @@ The DCS `global` manifest must contain the following resources in the `cpaas-sys
 Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx) and [Infrastructure Resources for Huawei DCS](../infrastructure/huawei-dcs.mdx). For the `global` cluster, keep these additional requirements:
 
 - Set `Cluster.metadata.name` and `DCSCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kcp`.
+- Set `DCSCluster.spec.credentialSecretRef.name` to `${PROVIDER_SECRET_NAME}`. Step 7 imports this Secret into the final `global` cluster.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: DCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for Alauda OS.
@@ -1039,6 +1040,7 @@ The HCS `global` manifest must contain the following resources in the `cpaas-sys
 Use the HCS resource fields from [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx) and [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx). For the `global` cluster, keep these additional requirements:
 
 - Set `Cluster.metadata.name` and `HCSCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kcp`.
+- Set `HCSCluster.spec.identityRef.name` to `${PROVIDER_SECRET_NAME}`. Step 7 imports this Secret into the final `global` cluster.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: HCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-init`, or leave the field unset because `cloud-init` is the default for HCS.
@@ -1337,12 +1339,31 @@ The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` 
 
 Before triggering the installer, create the `dcs-import-extra-resources` ConfigMap in the `cpaas-system` namespace for providers that require extra resource import. The ConfigMap name keeps the `dcs` prefix for historical installer compatibility, even when the provider is not Huawei DCS.
 
-VMware vSphere, Huawei Cloud Stack, and Bare Metal require this ConfigMap for both normal and disaster recovery `global` installations. Huawei DCS does not require it for the default installation because DCS provider resources are migrated by the built-in flow; create it for DCS only when you need to import additional resources beyond the built-in provider resource migration.
+Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal require this ConfigMap for both normal and disaster recovery `global` installations. For Huawei DCS, the provider resources are migrated by the built-in flow, but the Secret referenced by `DCSCluster.spec.credentialSecretRef.name` must be imported explicitly.
 
 <Tabs>
   <Tab label="Huawei DCS">
 
-Do not create the DCS `dcs-import-extra-resources` ConfigMap for the default DCS installation path. DCS provider resources are migrated by the built-in flow.
+Create and apply the DCS import ConfigMap before you trigger the installer. Include the Secret referenced by `DCSCluster.spec.credentialSecretRef.name`. The DCS provider resources are migrated by the built-in flow, but the credential Secret must exist in the final `global` cluster so the DCS provider can continue to call the DCS API after handoff.
+
+```shell
+mkdir -p /root/yamls
+cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+    - resource: "secrets"
+      names: ["${PROVIDER_SECRET_NAME}"]
+      method: kubectl
+EOF
+
+kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+```
 
   </Tab>
   <Tab label="VMware vSphere">
@@ -1387,7 +1408,7 @@ kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
   </Tab>
   <Tab label="Huawei Cloud Stack">
 
-Create and apply the HCS import ConfigMap before you trigger the installer. This ConfigMap is required for both normal and disaster recovery `global` installations. Set `HCS_SECRET_NAME` to the same Secret name used by `HCSCluster.spec.identityRef.name`.
+Create and apply the HCS import ConfigMap before you trigger the installer. This ConfigMap is required for both normal and disaster recovery `global` installations. Set `PROVIDER_SECRET_NAME` to the same Secret name used by `HCSCluster.spec.identityRef.name`.
 
 ```shell
 mkdir -p /root/yamls
@@ -1401,7 +1422,7 @@ data:
   resources.yaml: |
     resources:
     - resource: "secrets"
-      names: ["${HCS_SECRET_NAME}"]
+      names: ["${PROVIDER_SECRET_NAME}"]
       method: kubectl
     - resource: "hcsclusters.infrastructure.cluster.x-k8s.io"
       names: ["global"]
@@ -1947,7 +1968,7 @@ encryptionProviderConfigRef:
 
 DCS uses `DCSCluster.spec.encryptionProviderConfigRef` to deliver the disaster recovery encryption provider configuration. Do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for the DCS DR path.
 
-If you created `dcs-import-extra-resources`, keep the ConfigMap on both the primary and standby installation environments.
+Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. Set `PROVIDER_SECRET_NAME` to the same Secret name used by `DCSCluster.spec.credentialSecretRef.name`.
 
   </Tab>
   <Tab label="VMware vSphere">
@@ -1999,7 +2020,7 @@ No `HCSCluster` encryption Secret reference is required. For HCS, append this fi
 
 Keep the same DR `serverCertSANs` list on both the primary and standby installation environments.
 
-Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. Set `HCS_SECRET_NAME` to the same Secret name used by `HCSCluster.spec.identityRef.name`.
+Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. Set `PROVIDER_SECRET_NAME` to the same Secret name used by `HCSCluster.spec.identityRef.name`.
 
   </Tab>
   <Tab label="Bare Metal">
@@ -2073,9 +2094,9 @@ Use the provider-specific installer configuration differences for both sides:
 
 | Provider | Primary installation | Standby installation |
 |----------|----------------------|----------------------|
-| Huawei DCS | Set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. | Set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. |
+| Huawei DCS | Set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name`. | Set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name`. |
 | VMware vSphere | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the primary HA VIP used by the primary manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the standby HA VIP used by the standby manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. |
-| Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
+| Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
 | Bare Metal | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the primary control-plane VIP. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the standby control-plane VIP. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. |
 
 For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB. For Bare Metal, set both the manifest VIP and the installer VIP fields to the primary control-plane VIP.
