@@ -25,7 +25,7 @@ That deployment procedure is the authoritative source for the installation-time 
 - VMware vSphere deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Huawei Cloud Stack deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Bare Metal deployments reference the shared encryption provider Secret from `BaremetalCluster.spec.encryptionProviderConfigRef` and use the same Kubernetes ServiceAccount signing key on both sides.
-- VMware vSphere and Huawei Cloud Stack create the `dcs-import-extra-resources` ConfigMap before installer import so the installation can preserve provider-specific resources. The name keeps the `dcs` prefix for historical installer compatibility. Huawei DCS uses the built-in provider resource migration unless extra resources must be imported.
+- Huawei DCS, VMware vSphere, and Huawei Cloud Stack create the `dcs-import-extra-resources` ConfigMap before installer import so the installation can import referenced credential Secrets and, where applicable, provider-specific infrastructure resources. The name keeps the `dcs` prefix for historical installer compatibility.
 - Bare Metal creates the `dcs-import-extra-resources` ConfigMap before installer import so the installation can preserve bare-metal and elemental resources required by handoff.
 - The primary cluster installs `global-etcd-sync` with the standby cluster connection values after both installations succeed.
 
@@ -179,7 +179,7 @@ After standby is active, validate in increasing risk order:
 <Tabs>
   <Tab label="Huawei DCS">
 
-Follow the DCS steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The DCS installation must keep the same encryption provider Secret and `DCSCluster.spec.encryptionProviderConfigRef` on both sides. Do not add the encryption provider file to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for DCS. DCS provider resources are migrated by the built-in flow; create `dcs-import-extra-resources` only when extra resources must be imported.
+Follow the DCS steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The DCS installation must keep the same encryption provider Secret and `DCSCluster.spec.encryptionProviderConfigRef` on both sides. Do not add the encryption provider file to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for DCS. Create the DCS `dcs-import-extra-resources` ConfigMap on both sides so the installer imports the Secret referenced by `DCSCluster.spec.credentialSecretRef.name`. DCS provider resources are migrated by the built-in flow.
 
   </Tab>
   <Tab label="VMware vSphere">
