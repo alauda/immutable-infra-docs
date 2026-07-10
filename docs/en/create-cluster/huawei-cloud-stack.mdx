@@ -42,6 +42,65 @@ Prepare all HCS-specific inputs before writing any YAML in this document:
 
 See [Infrastructure Resources for Huawei Cloud Stack](../infrastructure/huawei-cloud-stack.mdx) for the complete checklist, source information, and constraints.
 
+### 3. OS Release Registration \{#os-release-registration}
+
+This prerequisite applies to the **web UI** workflow only. YAML-based creation sets the OS image and component versions directly and does not need it.
+
+The web UI does not ask you to type the OS image or its Kubernetes and component versions. It reads them from an **OS-release ConfigMap** that you register once per Alauda OS image. The wizard resolves the platform Distribution version from the `global` cluster, finds the registered OS image whose `supportedACPVersions` includes that Distribution, and derives the node image and control plane component versions from it.
+
+If no registered OS image matches the current Distribution, the wizard blocks creation with an error such as:
+
+> No OS registered for the current platform Distribution v4.3.2. Register an OS-release ConfigMap first.
+
+Register the OS image on the `global` cluster before you open the wizard:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  # Any DNS-1123 name. The name is not a lookup key.
+  # Do not copy the image version verbatim: it contains "_" (for example, x86_64), which is invalid in a ConfigMap name.
+  name: alaudaos-43-m55-x86-64
+  namespace: cpaas-system
+  labels:
+    cpaas.io/os-release: ""
+data:
+  osImageVersion: "alaudaos-43.m55.202606251459-0.x86_64"
+  supportedACPVersions: "v4.3.2"
+  osVariant: "m55"
+  architecture: "x86_64"
+  osBuild: "202606251459-0"
+  kubernetesVersion: "v1.34.5-3"
+  containerdVersion: "2.2.1-5"
+  coreDNSImageTag: "1.14.2-v4.3.11"
+  etcdImageTag: "v3.5.28-260625"
+  pauseImageTag: "3.10"
+```
+
+Apply it with `kubectl apply -f os-release.yaml`.
+
+**Field sources**:
+
+| Field | Value source |
+|-------|--------------|
+| `cpaas.io/os-release` label | Fixed marker with an empty value. The wizard discovers the ConfigMap by this label. |
+| `osImageVersion` | The exact name of the Alauda OS image uploaded to the HCS platform. The provider uses it to locate the ECS image, and it becomes the node pool default image. For a standard release it matches the image name in the [OS Support Matrix](../overview/os-support-matrix.mdx). |
+| `supportedACPVersions` | The ACP Distribution versions this OS image serves, comma-separated (for example, `v4.3.2`, or `v4.3.0,v4.3.1`). The wizard matches the `global` cluster's Distribution against this list. |
+| `architecture` | `x86_64` or `aarch64`. Must match the architecture of the node flavors you plan to use. |
+| `osVariant`, `osBuild` | Descriptive fields shown for reference; not used for matching. |
+| `kubernetesVersion`, `containerdVersion`, `coreDNSImageTag`, `etcdImageTag`, `pauseImageTag` | Component versions for this OS image, taken from the matching row of the [OS Support Matrix](../overview/os-support-matrix.mdx). The wizard injects them into the new cluster's control plane, so they must exist in your air-gap registry. |
+
+:::info
+Do not add a Kube-OVN version to this ConfigMap. The wizard reads the Kube-OVN version from the `global` cluster's Kube-OVN configuration, not from the OS image.
+:::
+
+The `osImageVersion` must name an image that already exists on the HCS platform. To read the exact name used in an environment that already has clusters, list an existing machine template:
+
+```bash
+kubectl -n cpaas-system get hcsmachinetemplate \
+  -o custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.imageName
+```
+
 ## Using the Web UI \{#using-the-web-ui}
 
 **Version requirement**: This workflow requires Fleet Essentials `1.0.2` or later and the Alauda Container Platform HCS Infrastructure Provider `v1.0.3` or later. If the provider version is earlier than `v1.0.3`, create clusters with the YAML manifests described in [Using YAML](#using-yaml).
@@ -83,7 +142,7 @@ Every IP field in this wizard — the control plane ELB addresses in Step 3 and 
 | Display Name | text | No | Custom description for easy identification, up to 256 characters. |
 | Distribution Version | readonly | - | Platform distribution version, inherited from the `global` cluster. |
 | Kubernetes Version | readonly | - | Determined by the Distribution Version. |
-| OS Version | readonly | - | Alauda OS image version registered for the Distribution Version. |
+| OS Version | readonly | - | Alauda OS image version derived from the [registered OS-release ConfigMap](#os-release-registration) that matches the Distribution Version. |
 
 ### Step 2: Networking
 
