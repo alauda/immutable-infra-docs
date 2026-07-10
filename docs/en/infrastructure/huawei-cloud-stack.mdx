@@ -87,6 +87,8 @@ Use the [OS Support Matrix](../overview/os-support-matrix.mdx) only for the comp
 
 The OS Support Matrix is not a complete source for all HCS manifest values. Before writing YAML, also get the approved release baseline for values such as the container image repository, DNS image repository, Kube-OVN version, Kube-OVN join CIDR, Pod CIDR, and Service CIDR. If your release does not publish a complete baseline source yet, use values validated for your environment by the platform or release owner.
 
+When you create clusters through the web UI instead of YAML, you do not enter these component versions by hand. The wizard reads them from the OS-release ConfigMap you register for the OS image. See [OS Release Registration](../create-cluster/huawei-cloud-stack.mdx#os-release-registration) for the registration steps and field sources.
+
 ## Network Inventory
 
 Prepare the complete cluster network inventory before you write `HCSCluster` or `HCSMachineConfigPool` resources.
