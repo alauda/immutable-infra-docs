@@ -532,10 +532,14 @@ Upload the packages.
   -r "${LOCAL_REGISTRY_ADDRESS}" -c "${KUBEADM_PROVIDER_PACK}"
 ```
 
+<Directive type="warning" title="Use One Pinned Elemental Source Commit">
+  The Bare Metal provider package deploys `elemental-operator`, while the Bare Metal base image and ISO contain the `elemental-register` binary used by each host. Build both artifacts from the same pinned `elemental-operator` commit. Rebuilding only the provider package is not sufficient when registration, endpoint, token, or CA handling changes. Rebuild `baremetal-base-image` and `baremetal-base-image-iso`, record the elemental commit and image digests, and verify that they match the deployed operator before booting the ISO. Do not rely on a mutable branch name or a cached base-image layer as proof of source consistency.
+</Directive>
+
 Create and apply the AppRelease resources for the Kubeadm provider and the Bare Metal provider.
 
 <Directive type="warning" title="Bare Metal Bootstrap Endpoint">
-  During bootstrap, the `global` cluster has not handed control to the final VIP yet. Keep the bare-metal registration path on the bootstrap host: `global.platformUrl` points to the bootstrap host, and `elemental.server.url` points to `https://<bootstrap-host-ip>:12443`. Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the `global` machines during this phase. The handoff job changes the `global` machines to `https://<CONTROL_PLANE_VIP>/kubernetes/global` after the platform installation completes.
+  During bootstrap, the `global` cluster has not handed control to the final VIP yet. Keep the bare-metal registration path on the bootstrap host: `global.platformUrl` points to the bootstrap host, and `elemental.server.url` points to `https://<bootstrap-host-ip>:12443`. Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the `global` machines during this phase. For Bare Metal DR, add `baremetal.cluster.io/system-agent-auth-scope: global` to that bootstrap `MachineRegistration`; this is the only DR-specific system-agent annotation required before handoff. The DR handoff job later moves those machines to the local direct API endpoint at `https://<CONTROL_PLANE_VIP>:6443`.
 </Directive>
 
 Prepare the bootstrap HTTPS certificate used by `global-alb2` before you install the Bare Metal provider. The `elemental-operator` mounts the CA from `cpaas-system/dex.tls`, and `elemental-system-agent` uses that CA when `elemental.tls.agentTLSMode` is `strict`. The Secret must contain `tls.crt`, `tls.key`, and the CA bundle key that you configure in the AppRelease, shown below as `ca.crt`. The serving certificate must include `${HOST_IP}` as an IP SAN because the bootstrap endpoint is `https://${HOST_IP}:12443`.
@@ -1150,11 +1154,11 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
 - Put `${CONTROL_PLANE_VIP}` and `${PLATFORM_HOST}` in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`.
 - Set `BaremetalCluster.spec.controlPlaneLoadBalancer.host` to `${CONTROL_PLANE_VIP}`, `port` to `6443`, and use a `vrid` that is unique in the control-plane Layer-2 domain.
 - For a normal non-DR deployment, `BaremetalCluster.spec.encryptionProviderConfigRef` can be omitted. For DR, set it as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment); do not deliver `/etc/kubernetes/encryption-provider.conf` by adding it to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
-- Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the bootstrap `global` hosts. The bootstrap ISO must register through the bootstrap host; the handoff job later moves the `global` machines to the VIP.
+- For Bare Metal DR, add `baremetal.cluster.io/system-agent-auth-scope: global` to the `MachineRegistration` used for the bootstrap `global` hosts. Do not set `baremetal.cluster.io/system-agent-server-url` during bootstrap. The bootstrap ISO must register through the bootstrap host; the handoff job later moves the `global` machines to the local direct API endpoint.
 - If a `global` VM or physical host does not have DHCP during the live-ISO boot, configure the NIC manually from the host console before waiting for `MachineInventory` registration. Use the same NetworkManager procedure described in [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx#network-connectivity), replacing the example address, gateway, DNS, and connection name with the values for that host.
 - Do not depend on OS hostname side effects. The bare-metal provider normalizes kubeadm node names and provider IDs from the CAPI and inventory objects.
 - The `SeedImage` created in the bootstrap cluster is a bootstrap artifact. After handoff, create any new `MachineRegistration` or `SeedImage` on the active `global` cluster.
-- When adding new machines to an already installed `global` cluster, explicitly set the `baremetal.cluster.io/system-agent-server-url` annotation on that `MachineRegistration` to the current active `global` control-plane VIP. New `global` machines do not pass through the bootstrap handoff job, so this annotation is what makes their system-agent watch plan Secrets through `https://<CONTROL_PLANE_VIP>/kubernetes/global`. Non-`global` workload-cluster machines should continue to use the platform domain path.
+- Before adding a machine to an already installed DR `global` cluster, stop `etcd-sync` and follow [Adding a Global Host While Synchronization Is Configured](./disaster_recovery.mdx#adding-a-global-host-while-synchronization-is-configured) so the new plan Secret is added to the exact ignore list before synchronization resumes. Explicitly set all three annotations shown below. New `global` machines do not pass through the bootstrap handoff job, so they must use the local Global auth scope and the local direct kube-apiserver endpoint. Non-`global` workload-cluster machines continue to use the platform domain path at `https://<platform-domain>/kubernetes/global`.
 
   ```yaml
   apiVersion: elemental.cattle.io/v1beta1
@@ -1163,8 +1167,12 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
     name: global-<purpose>
     namespace: cpaas-system
     annotations:
-      baremetal.cluster.io/system-agent-server-url: https://<CONTROL_PLANE_VIP>
+      baremetal.cluster.io/system-agent-auth-scope: global
+      baremetal.cluster.io/system-agent-server-url: https://<CONTROL_PLANE_VIP>:6443
+      baremetal.cluster.io/system-agent-endpoint-mode: direct-apiserver
   ```
+
+  `baremetal.cluster.io/system-agent-direct: "true"` remains accepted only as an upgrade-compatibility alias for `direct-apiserver`. Do not add it to new manifests. If both annotations are present, the explicit `baremetal.cluster.io/system-agent-endpoint-mode` value takes precedence.
 
 <Directive type="warning" title="Fragment Scope">
   The following YAML is a differential fragment, not a complete manifest that you can apply directly. Merge these `global`-specific changes into the manifest that you prepare from the Bare Metal create-cluster references, then apply the complete manifest file.
@@ -1842,7 +1850,7 @@ Issues that are not listed here usually point to environment-specific causes. Ca
 
 Use this section when you deploy primary and standby `global` clusters for disaster recovery. Complete these additions before you apply the provider-specific manifest for each `global` cluster.
 
-Primary and standby clusters must use the same encryption provider configuration. For Bare Metal, primary and standby must also use the same Kubernetes ServiceAccount signing key so that the fixed `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
+Primary and standby clusters must use the same encryption provider configuration. For Bare Metal, primary and standby must also use the same Kubernetes ServiceAccount signing key so that the workload-cluster `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. The machines that form each `global` cluster use a separate cluster-local identity and do not share their token with the peer `global` cluster. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
 
 ### Prepare Shared DR Variables
 
@@ -2058,34 +2066,61 @@ Also keep the shared ServiceAccount signing key configuration from [Prepare Shar
 
 Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. The ConfigMap must import the bare-metal and elemental resources required by handoff, including the encryption-provider Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef`, and must not import `SeedImage`.
 
-The Bare Metal provider AppRelease on both sides must enable shared system-agent auth and handoff delivery:
+The Bare Metal provider AppRelease on both sides must enable the Global-local identity, shared workload identity, and direct kube-apiserver handoff for Global machines:
 
 ```yaml
 handoffHook:
   controlPlaneVIP: <current-side-control-plane-vip>
+  directAPIServer: true
   delivery:
     enabled: true
     mode: always
-  # directAPIServer: true   # DR opt-in only. Points global-cluster machines at
-  #   https://<control-plane-vip>:6443 directly instead of the platform ingress
-  #   path. Defaults to false. See "Bare Metal DR Model" in Disaster Recovery.
 
 elemental:
   systemAgent:
     authMode: shared
+    splitAuthEnabled: true
     serviceAccountName: baremetal-system-agent
+    globalServiceAccountName: baremetal-global-system-agent
   tls:
     agentTLSMode: strict
     caCertSecretName: dex.tls
     caCertSecretKey: ca.crt
 ```
 
-The generated `Role/cpaas-system/baremetal-system-agent` must restrict `secrets` access with `resourceNames` that contain only plan Secret names. Do not grant namespace-wide Secret access and do not include registry, bootstrap, or platform credential Secrets.
+`elemental.systemAgent.splitAuthEnabled` is the single switch for both `elemental-operator` and the handoff job. Do not configure a separate handoff auth-enable switch. Keeping one source of truth prevents a Global host from retaining a shared token after the operator has already narrowed the shared Role to workload plans.
+
+Set the shared bundle ownership separately on the two AppRelease objects. The active primary reconciles workload permissions, while the inactive standby leaves the synchronized shared bundle read-only:
+
+```yaml title="Primary active Global"
+elemental:
+  systemAgent:
+    sharedAuthReadOnly: false
+```
+
+```yaml title="Standby inactive Global"
+elemental:
+  systemAgent:
+    sharedAuthReadOnly: true
+```
+
+The installation uses two non-overlapping system-agent permission sets:
+
+- `Role/cpaas-system/baremetal-global-system-agent` contains only plan Secret names for machines that belong to the local `Cluster/global`. Its ServiceAccount and token Secret are local to that `global` cluster and must not be synchronized to the peer.
+- `Role/cpaas-system/baremetal-system-agent` contains only non-`global` workload plan Secret names. Its ServiceAccount, token Secret, Role, and RoleBinding are synchronized from primary to standby.
+
+Use namespaced `Role` and `RoleBinding` objects, not `ClusterRoleBinding`. Do not grant namespace-wide Secret access and do not include registry, bootstrap, cluster access credential, or platform credential Secrets.
+
+<Directive type="warning" title="Use the Standard System-Agent Names">
+  Keep the Global-local objects named `baremetal-global-system-agent` and `baremetal-global-system-agent-token`, and keep the workload shared objects named `baremetal-system-agent` and `baremetal-system-agent-token`. The `etcd-sync` exact-sync and ignore rules use these literal names. Do not customize them unless you also update and validate every corresponding `etcd-sync` rule before synchronization starts.
+</Directive>
+
+The handoff completion signal is versioned. For this DR configuration, each final Global cluster must report `data.ready: "true"` and `data.profile: split-local-direct-v1` in `ConfigMap/cpaas-system/baremetal-system-agent-handoff`. A legacy ConfigMap that has only `ready: "true"`, or has a `legacy-shared-*` profile, does not satisfy the split-auth cleanup gate. Upgrading the provider reruns handoff against the current Global plan Secrets, migrates the installed Global hosts in place, and writes the new profile only after the new connection has been probed and the temporary shared access has been removed. Do not patch the profile manually.
 
   </Tab>
 </Tabs>
 
-### Install Primary and Standby Clusters
+### Install Primary and Standby Clusters \{#install-primary-and-standby-clusters}
 
 Run Steps 1 through 9 for both the primary and standby `global` clusters.
 
@@ -2097,12 +2132,97 @@ Use the provider-specific installer configuration differences for both sides:
 |----------|----------------------|----------------------|
 | Huawei DCS | Set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name`. | Set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name`. |
 | VMware vSphere | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the primary HA VIP used by the primary manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the standby HA VIP used by the standby manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. |
-| Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
-| Bare Metal | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the primary control-plane VIP. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the standby control-plane VIP. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. |
+| Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
+| Bare Metal | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the primary control-plane VIP. Set `handoffHook.directAPIServer: true`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.sharedAuthReadOnly: false`. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the standby control-plane VIP. Set `handoffHook.directAPIServer: true`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.sharedAuthReadOnly: true`. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. |
 
 For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB. For Bare Metal, set both the manifest VIP and the installer VIP fields to the primary control-plane VIP.
 
 After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` as `${PLATFORM_HOST}:11443` on both sides. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
+
+For Bare Metal, verify the versioned handoff completion on both sides before decommissioning either bootstrap KIND cluster:
+
+```shell
+kubectl --kubeconfig <primary-global-kubeconfig> \
+  -n cpaas-system get configmap baremetal-system-agent-handoff \
+  -o jsonpath='{.data.ready}{" "}{.data.profile}{"\n"}'
+kubectl --kubeconfig <standby-global-kubeconfig> \
+  -n cpaas-system get configmap baremetal-system-agent-handoff \
+  -o jsonpath='{.data.ready}{" "}{.data.profile}{"\n"}'
+```
+
+Both commands must print `true split-local-direct-v1`. A bare `true`, a legacy profile, or a failed Global-side probe means the handoff is not complete.
+
+After the standby installation succeeds, switch the platform domain back to the primary entrance before installing `global-etcd-sync`. Primary remains active during initial synchronization, and workload system-agent endpoints use the platform domain. Verify that DNS and `https://<platform-domain>/kubernetes/global/version` reach primary before continuing.
+
+Before you create the `global-etcd-sync` ModuleInfo, prepare the runtime exact-key ignore list. For providers other than Bare Metal, keep the list empty:
+
+```shell
+export ETCD_SYNC_ADDITIONAL_IGNORE_EQUAL_JSON='[]'
+```
+
+For Bare Metal, collect the local Global plan Secret names from both Global clusters and convert them to exact etcd keys. Run these commands from a host that has `jq` and two kubeconfigs. Each kubeconfig must address its own Global API server; do not rely on the platform domain, because that domain points to only one side at a time. If one kubeconfig contains both clusters, use two distinct contexts in the equivalent `kubectl --context` commands.
+
+```shell
+export PRIMARY_GLOBAL_KUBECONFIG="<path-to-primary-global-kubeconfig>"
+export STANDBY_GLOBAL_KUBECONFIG="<path-to-standby-global-kubeconfig>"
+export PRIMARY_GLOBAL_CONTEXT="$(kubectl --kubeconfig "${PRIMARY_GLOBAL_KUBECONFIG}" config current-context)"
+export STANDBY_GLOBAL_CONTEXT="$(kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" config current-context)"
+
+PRIMARY_GLOBAL_SERVER="$(kubectl --kubeconfig "${PRIMARY_GLOBAL_KUBECONFIG}" \
+  --context "${PRIMARY_GLOBAL_CONTEXT}" config view --minify \
+  -o jsonpath='{.clusters[0].cluster.server}')"
+STANDBY_GLOBAL_SERVER="$(kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
+  --context "${STANDBY_GLOBAL_CONTEXT}" config view --minify \
+  -o jsonpath='{.clusters[0].cluster.server}')"
+
+if [ "${PRIMARY_GLOBAL_SERVER}" = "${STANDBY_GLOBAL_SERVER}" ]; then
+  echo "primary and standby kubeconfigs resolve to the same API server" >&2
+  exit 1
+fi
+
+global_plan_secret_names() {
+  kubeconfig=$1
+  context=$2
+  kubectl --kubeconfig "${kubeconfig}" --context "${context}" \
+    -n cpaas-system get role baremetal-global-system-agent -o json | \
+    jq -c '[
+      .rules[]?
+      | select(any(.apiGroups[]?; . == ""))
+      | select(any(.resources[]?; . == "secrets"))
+      | .resourceNames[]?
+    ] | unique | sort'
+}
+
+PRIMARY_GLOBAL_PLAN_SECRET_NAMES="$(global_plan_secret_names \
+  "${PRIMARY_GLOBAL_KUBECONFIG}" "${PRIMARY_GLOBAL_CONTEXT}")"
+STANDBY_GLOBAL_PLAN_SECRET_NAMES="$(global_plan_secret_names \
+  "${STANDBY_GLOBAL_KUBECONFIG}" "${STANDBY_GLOBAL_CONTEXT}")"
+
+printf '%s\n' "${PRIMARY_GLOBAL_PLAN_SECRET_NAMES}" | \
+  jq -e 'length > 0' >/dev/null || {
+    echo "primary Role/baremetal-global-system-agent has no plan resourceNames" >&2
+    exit 1
+  }
+printf '%s\n' "${STANDBY_GLOBAL_PLAN_SECRET_NAMES}" | \
+  jq -e 'length > 0' >/dev/null || {
+    echo "standby Role/baremetal-global-system-agent has no plan resourceNames" >&2
+    exit 1
+  }
+
+export ETCD_SYNC_ADDITIONAL_IGNORE_EQUAL_JSON="$(
+  jq -cn \
+    --argjson primary "${PRIMARY_GLOBAL_PLAN_SECRET_NAMES}" \
+    --argjson standby "${STANDBY_GLOBAL_PLAN_SECRET_NAMES}" \
+    '($primary + $standby)
+     | unique
+     | sort
+     | map("/registry/secrets/cpaas-system/" + .)'
+)"
+
+printf '%s\n' "${ETCD_SYNC_ADDITIONAL_IGNORE_EQUAL_JSON}" | jq .
+```
+
+Do not install `etcd-sync` if either local Global Role has no plan `resourceNames`, or if the generated array omits a plan Secret from either side. The list is merged and de-duplicated because the broad Secret sync prefix would otherwise overwrite a local Global plan Secret whose name happens to exist in the source or target. Repeat the collection and update the ModuleInfo configuration before synchronization continues whenever either local Global Role gains a new plan Secret.
 
 After both clusters are installed, get the primary `k8sadmin` token on a primary control plane node. `etcd-sync` is installed only on the standby cluster, and its `active_cluster_*` values point to the primary cluster. Keep this value in its original base64 Secret form for `active_cluster_token`.
 
@@ -2143,7 +2263,8 @@ cat > "${ETCD_SYNC_MODULEINFO}" <<EOF
       "monitor_check_interval": 1,
       "detail": false,
       "active_cluster_vip": "${PRIMARY_CLUSTER_VIP}",
-      "active_cluster_token": "${PRIMARY_CLUSTER_TOKEN_B64}"
+      "active_cluster_token": "${PRIMARY_CLUSTER_TOKEN_B64}",
+      "additional_ignore_equal": ${ETCD_SYNC_ADDITIONAL_IGNORE_EQUAL_JSON}
     }
   }
 }
@@ -2158,6 +2279,8 @@ curl -sk -X POST "https://${STANDBY_CLUSTER_VIP}/apis/cluster.alauda.io/v1alpha1
   -H "Content-Type: application/json" \
   -d @"${ETCD_SYNC_MODULEINFO}"
 ```
+
+Wait until `ConfigMap/cpaas-system/etcd-sync-ignore-text` contains every key from `ETCD_SYNC_ADDITIONAL_IGNORE_EQUAL_JSON`, then wait for both `Deployment/etcd-sync` and `Deployment/etcd-sync-monitor` to become available. The mirror and monitor processes read their filter files at startup. Whenever you later change `additional_ignore_equal`, updating ModuleInfo or the ConfigMap alone is not enough: after the rendered ConfigMap is correct, explicitly restart and verify both Deployments before synchronization is allowed to continue.
 
 Restart the Pods that must reload DR and endpoint configuration. Run the same commands on a primary control plane node and on a standby control plane node.
 
