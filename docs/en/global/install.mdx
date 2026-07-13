@@ -757,6 +757,9 @@ spec:
       replicas: 1
       scheme: https
     handoffHook:
+      # Normal non-DR bootstrap baseline. Bare Metal DR must patch this to true
+      # before calling the installer API, as shown in Optional Disaster Recovery Deployment.
+      directAPIServer: false
       controlPlaneVIP: ${CONTROL_PLANE_VIP}
       delivery:
         enabled: true
@@ -766,7 +769,12 @@ spec:
         url: https://${HOST_IP}:12443
       systemAgent:
         authMode: shared
+        # Normal non-DR bootstrap baseline. Bare Metal DR must enable the split
+        # and set sharedAuthReadOnly according to this side's active/standby role.
+        splitAuthEnabled: false
         serviceAccountName: baremetal-system-agent
+        globalServiceAccountName: baremetal-global-system-agent
+        sharedAuthReadOnly: false
       tls:
         agentTLSMode: strict
         caCertSecretName: dex.tls
@@ -787,6 +795,8 @@ until kubectl get crd machineinventories.elemental.cattle.io --ignore-not-found 
   sleep 10
 done
 ```
+
+The complete AppRelease above intentionally shows the normal, non-DR baseline. For a Bare Metal DR installation, do not call the installer API with those three baseline values unchanged. Apply the role-specific DR patch in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment) first, and verify the effective AppRelease values on that bootstrap cluster.
 
 After the provider starts, verify that the chart values were accepted. A CrashLoopBackOff with an unknown flag such as `--system-agent-auth-mode` means the AppRelease chart and the elemental-operator image do not match; install a chart and image from the same release payload before continuing.
 
@@ -2066,7 +2076,40 @@ Also keep the shared ServiceAccount signing key configuration from [Prepare Shar
 
 Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. The ConfigMap must import the bare-metal and elemental resources required by handoff, including the encryption-provider Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef`, and must not import `SeedImage`.
 
-The Bare Metal provider AppRelease on both sides must enable the Global-local identity, shared workload identity, and direct kube-apiserver handoff for Global machines:
+The Bare Metal provider AppRelease on both sides must enable the Global-local identity, shared workload identity, and direct kube-apiserver handoff for Global machines. Apply one of the following patches on each side's bootstrap cluster after creating the AppRelease and before calling the installer API.
+
+On the primary bootstrap cluster:
+
+```shell
+kubectl -n cpaas-system patch apprelease cluster-api-provider-baremetal \
+  --type=merge \
+  -p '{"spec":{"values":{"handoffHook":{"directAPIServer":true},"elemental":{"systemAgent":{"authMode":"shared","splitAuthEnabled":true,"serviceAccountName":"baremetal-system-agent","globalServiceAccountName":"baremetal-global-system-agent","sharedAuthReadOnly":false}}}}}'
+```
+
+On the standby bootstrap cluster:
+
+```shell
+kubectl -n cpaas-system patch apprelease cluster-api-provider-baremetal \
+  --type=merge \
+  -p '{"spec":{"values":{"handoffHook":{"directAPIServer":true},"elemental":{"systemAgent":{"authMode":"shared","splitAuthEnabled":true,"serviceAccountName":"baremetal-system-agent","globalServiceAccountName":"baremetal-global-system-agent","sharedAuthReadOnly":true}}}}}'
+```
+
+Verify the effective values on each bootstrap cluster:
+
+```shell
+export EXPECTED_SHARED_AUTH_READ_ONLY=false # Use true on the standby bootstrap cluster.
+
+kubectl -n cpaas-system get apprelease cluster-api-provider-baremetal -o json | \
+  jq -e --argjson expected_read_only "${EXPECTED_SHARED_AUTH_READ_ONLY}" '
+    .spec.values.handoffHook.directAPIServer == true and
+    .spec.values.elemental.systemAgent.splitAuthEnabled == true and
+    .spec.values.elemental.systemAgent.sharedAuthReadOnly == $expected_read_only
+  '
+```
+
+Do not continue until this command succeeds. The primary must use `sharedAuthReadOnly: false`; the standby must use `sharedAuthReadOnly: true` while primary-to-standby synchronization is active.
+
+The resulting DR values are:
 
 ```yaml
 handoffHook:
@@ -2115,7 +2158,7 @@ Use namespaced `Role` and `RoleBinding` objects, not `ClusterRoleBinding`. Do no
   Keep the Global-local objects named `baremetal-global-system-agent` and `baremetal-global-system-agent-token`, and keep the workload shared objects named `baremetal-system-agent` and `baremetal-system-agent-token`. The `etcd-sync` exact-sync and ignore rules use these literal names. Do not customize them unless you also update and validate every corresponding `etcd-sync` rule before synchronization starts.
 </Directive>
 
-The handoff completion signal is versioned. For this DR configuration, each final Global cluster must report `data.ready: "true"` and `data.profile: split-local-direct-v1` in `ConfigMap/cpaas-system/baremetal-system-agent-handoff`. A legacy ConfigMap that has only `ready: "true"`, or has a `legacy-shared-*` profile, does not satisfy the split-auth cleanup gate. Upgrading the provider reruns handoff against the current Global plan Secrets, migrates the installed Global hosts in place, and writes the new profile only after the new connection has been probed and the temporary shared access has been removed. Do not patch the profile manually.
+The handoff completion signal is versioned. For this DR configuration, each final Global cluster must report `data.ready: "true"`, `data.profile: split-local-direct-v1`, and a `data.config` value that is exactly 64 lowercase hexadecimal characters in `ConfigMap/cpaas-system/baremetal-system-agent-handoff`. The digest covers the effective endpoint, token/CA, identity names, and each Global target's names and object UIDs. A ready-only ConfigMap, a `legacy-shared-*` profile, or a stale, missing, or malformed config digest does not satisfy the cleanup gate. Upgrading the provider migrates only installed Global hosts against their current Global plan Secrets. It uses the independent temporary `baremetal-global-system-agent-handoff-bridge` RoleBinding and writes the new profile/config only after the new connection has been probed and the bridge has been deleted. Do not patch completion fields manually.
 
   </Tab>
 </Tabs>
@@ -2144,13 +2187,13 @@ For Bare Metal, verify the versioned handoff completion on both sides before dec
 ```shell
 kubectl --kubeconfig <primary-global-kubeconfig> \
   -n cpaas-system get configmap baremetal-system-agent-handoff \
-  -o jsonpath='{.data.ready}{" "}{.data.profile}{"\n"}'
+  -o jsonpath='{.data.ready}{" "}{.data.profile}{" "}{.data.config}{"\n"}'
 kubectl --kubeconfig <standby-global-kubeconfig> \
   -n cpaas-system get configmap baremetal-system-agent-handoff \
-  -o jsonpath='{.data.ready}{" "}{.data.profile}{"\n"}'
+  -o jsonpath='{.data.ready}{" "}{.data.profile}{" "}{.data.config}{"\n"}'
 ```
 
-Both commands must print `true split-local-direct-v1`. A bare `true`, a legacy profile, or a failed Global-side probe means the handoff is not complete.
+Both commands must print `true split-local-direct-v1 <64-lowercase-hex-character-SHA-256>`. A bare `true`, a legacy profile, an empty or malformed config digest, a remaining migration bridge, or a failed Global-side probe means the handoff is not complete.
 
 After the standby installation succeeds, switch the platform domain back to the primary entrance before installing `global-etcd-sync`. Primary remains active during initial synchronization, and workload system-agent endpoints use the platform domain. Verify that DNS and `https://<platform-domain>/kubernetes/global/version` reach primary before continuing.
 

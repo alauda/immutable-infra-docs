@@ -105,25 +105,25 @@ Set `elemental.systemAgent.splitAuthEnabled: true` on both provider AppRelease o
 
 ### Migrating Existing Handoff State
 
-`ConfigMap/cpaas-system/baremetal-system-agent-handoff` is a versioned completion record. The direct-API split-auth configuration requires both `data.ready: "true"` and `data.profile: split-local-direct-v1`. A ConfigMap written by an older release with only `ready: "true"`, or with `legacy-shared-erebus-v1` or `legacy-shared-direct-v1`, must not cause the new handoff to skip.
+`ConfigMap/cpaas-system/baremetal-system-agent-handoff` is a versioned completion record. The direct-API split-auth configuration requires `data.ready: "true"`, `data.profile: split-local-direct-v1`, and a `data.config` value that is exactly 64 lowercase hexadecimal characters. The digest covers the effective endpoint, token/CA, identity names, and each Global target's names and object UIDs. A ConfigMap written by an older release with only `ready: "true"`, with a `legacy-shared-*` profile, or with a stale, missing, or malformed config digest must not cause the new handoff to skip.
 
 The upgrade migrates the already installed Global hosts in place; it does not require the original bootstrap plan Secret. Keep this safety order for every current Global plan Secret:
 
-1. Create and validate the local Global ServiceAccount, token Secret, Role, and RoleBinding, while preserving the old shared identity's access to the same current Global plan Secret.
+1. Create and validate the local Global ServiceAccount, token Secret, Role, and canonical RoleBinding. Create the independent temporary `RoleBinding/baremetal-global-system-agent-handoff-bridge`, which references the Global-local Role and binds only the old shared ServiceAccount. Do not modify the canonical RoleBinding or the synchronized shared Role.
 2. Write the handoff plan on that current Global plan Secret so the host switches to the local token and local direct API endpoint.
 3. Wait until the handoff checksum is Applied, then write and observe a Global-side probe with the new local identity.
-4. Only after the probe succeeds, remove the old shared identity's temporary access to the Global plan and reconcile the shared Role back to workload-only plan Secrets.
-5. Treat migration as complete only when all hosts have passed the probe, the permission scopes are narrowed, and the completion ConfigMap reports the exact new profile.
+4. Only after the probe succeeds, delete the temporary bridge. Workload targets and the shared Role are not rewritten by this migration.
+5. Treat migration as complete only when all Global hosts have passed the probe, the bridge is absent, and the completion ConfigMap reports the exact new profile and config digest.
 
-This temporary overlap is deliberate: narrowing the shared permission before the old host has consumed its token-switch plan can strand the host with `403 Forbidden`. Do not grant namespace-wide Secret access, do not use a `ClusterRoleBinding`, and do not manually patch the completion profile to bypass the migration.
+This temporary overlap is deliberate: removing the bridge before the old host has consumed its token-switch plan can strand the host with `403 Forbidden`. Do not grant namespace-wide Secret access, do not use a `ClusterRoleBinding`, and do not manually patch completion fields to bypass the migration.
 
 ```shell
 kubectl --kubeconfig <local-global-kubeconfig> \
   -n cpaas-system get configmap baremetal-system-agent-handoff \
-  -o jsonpath='{.data.ready}{" "}{.data.profile}{"\n"}'
+  -o jsonpath='{.data.ready}{" "}{.data.profile}{" "}{.data.config}{"\n"}'
 ```
 
-Expected output: `true split-local-direct-v1`.
+Expected output: `true split-local-direct-v1 <64-lowercase-hex-character-SHA-256>`.
 
 Verify both permission boundaries before failover. Repeat the checks on primary and standby with an administrator kubeconfig that is allowed to impersonate ServiceAccounts. Set the two example Secret names from that same cluster.
 
@@ -201,7 +201,7 @@ Do not synchronize:
 - Standby `Cluster/cpaas-system/global`.
 - Standby `BaremetalCluster/cpaas-system/global`.
 - Standby `BaremetalMachine`, `MachineInventoryPool`, `MachineInventory`, and `MachineRegistration` objects that belong to the standby `global` cluster.
-- `ServiceAccount/cpaas-system/baremetal-global-system-agent`, `Secret/cpaas-system/baremetal-global-system-agent-token`, `Role/cpaas-system/baremetal-global-system-agent`, and `RoleBinding/cpaas-system/baremetal-global-system-agent` from either side.
+- `ServiceAccount/cpaas-system/baremetal-global-system-agent`, `Secret/cpaas-system/baremetal-global-system-agent-token`, `Role/cpaas-system/baremetal-global-system-agent`, `RoleBinding/cpaas-system/baremetal-global-system-agent`, and the temporary `RoleBinding/cpaas-system/baremetal-global-system-agent-handoff-bridge` from either side.
 - Plan Secrets that belong to either side's local `Cluster/global`. Add their exact etcd keys to `etcd_sync.additional_ignore_equal` before starting synchronization.
 - Secrets from the primary cluster that are not required by workload cluster reconciliation.
 
@@ -279,7 +279,15 @@ Use this sequence for a planned or declared failover:
        -n cpaas-system get machineinventories.elemental.cattle.io -o json | \
      jq -c '[
        .items[]
-       | select((.metadata.annotations["baremetal.cluster.io/system-agent-auth-scope"] // "shared") == "shared")
+       | . as $inventory
+       | (
+           $inventory.metadata.annotations["baremetal.cluster.io/system-agent-auth-scope"] //
+           (if (($inventory.metadata.annotations["baremetal.alauda.io/owner-cluster"] // "") | ascii_downcase) == "global"
+            then "global"
+            else "shared"
+            end)
+         ) as $scope
+       | select(($scope | ascii_downcase) == "shared")
        | .status.plan.secretRef.name? // empty
      ] | unique | sort'
    )"
