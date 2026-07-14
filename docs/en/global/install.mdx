@@ -665,7 +665,7 @@ kubectl -n cpaas-system rollout restart deploy/global-alb2
 kubectl -n cpaas-system rollout status deploy/global-alb2
 ```
 
-Do not include this bootstrap `dex.tls` in `dcs-import-extra-resources`. It is only for the temporary bootstrap endpoint. The final `global` cluster's `dex.tls` is created or maintained by the installer platform certificate flow. For DR, use the `thirdParty` console certificate guidance in Step 8 so both sides serve a certificate for the stable platform domain. A control-plane VIP needs to be in that platform certificate only when clients intentionally access platform HTTPS or the platform registry directly through that VIP.
+Do not include this bootstrap `dex.tls` in `dcs-import-extra-resources`. It is only for the temporary bootstrap endpoint. The final `global` cluster's `dex.tls` is created or maintained by the installer platform certificate flow. For DR, use the `thirdParty` console certificate guidance in Step 8 so both sides serve a certificate for the stable platform domain. A control-plane VIP needs to be in that platform certificate only when clients intentionally access platform HTTPS directly through that VIP. The Global registry on port `11443` presents its own `global-registry-server` certificate chain and is not configured by `console.cert` or `dex.tls`.
 
 ```shell
 mkdir -p /root/yamls
@@ -1791,11 +1791,11 @@ Set `console.host` and `cluster.features.ha.vip` to the local Bare Metal `global
 </Tabs>
 
 <Directive type="info" title="Third-Party Console Certificates">
-  The examples use a self-signed console certificate. If the environment requires a third-party certificate, replace `console.cert` with a `thirdParty` block that contains the base64 full certificate chain, private key, and optional PKCS#12 values before you submit the installer request. This certificate is for platform HTTPS and registry ingress; it does not configure the kube-apiserver or etcd certificates generated from `KubeadmControlPlane`.
+  The examples use a self-signed console certificate. If the environment requires a third-party certificate, replace `console.cert` with a `thirdParty` block that contains the base64 full certificate chain, private key, and optional PKCS#12 values before you submit the installer request. This certificate is only for platform HTTPS ingress; it does not configure the kube-apiserver or etcd certificates generated from `KubeadmControlPlane`. The Global registry on port `11443` uses an independently managed `global-registry-server` certificate chain, not `console.cert` or `dex.tls`.
 </Directive>
 
 <Directive type="warning" title="DR Certificate Requirement">
-  For a primary/standby Bare Metal `global` DR deployment, do not let each side generate an unrelated self-signed certificate. Configure the same trusted `thirdParty` platform certificate on both sides. Its required SAN is the stable `${PLATFORM_HOST}` domain. Do not add the primary or standby control-plane VIPs or internal Service names by default. Add a VIP SAN only when clients intentionally access platform HTTPS or the platform registry directly through that VIP. Global hosts handed off to `https://<control-plane-vip>:6443` validate the separate kube-apiserver certificate and CA, not `console.cert` or `dex.tls`.
+  For a primary/standby Bare Metal `global` DR deployment, do not let each side generate an unrelated self-signed certificate. Configure the same trusted `thirdParty` platform certificate on both sides. Its required SAN is the stable `${PLATFORM_HOST}` domain. Do not add the primary or standby control-plane VIPs or internal Service names by default. Add a VIP SAN only when clients intentionally access platform HTTPS directly through that VIP. Registry access through port `11443` does not use this certificate; registry certificate management is independent and outside this certificate step. Global hosts handed off to `https://<control-plane-vip>:6443` validate the separate kube-apiserver certificate and CA, not `console.cert` or `dex.tls`.
 </Directive>
 
 ### Step 9 — Monitor the Installation
