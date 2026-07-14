@@ -1863,7 +1863,7 @@ export ETCD_SYNC_MODULEINFO="/root/yamls/global-etcd-sync-moduleinfo.json"
 export SERVICE_ACCOUNT_ISSUER="https://kubernetes.default.svc.cluster.local"
 ```
 
-Use the tested artifact produced from `etcd-sync` MR `!179` head commit `4ff3b5ee52ad0d9c7febf7a969bb99b4ca95e8e0` (`4ff3b5e`). That revision contains the Global-local identity, handoff completion, plugin ServiceMonitor exact-ignore rules, and dynamic Global plan-key input. It also removes the newly introduced legacy owner/cluster fallback: fresh-install plan classification accepts only the explicit `baremetal.cluster.io/system-agent-auth-scope` annotation, and an unannotated inventory is not assigned to either synchronization domain. Replace the placeholder with the published artifact version whose provenance proves it contains `4ff3b5e` or an explicitly verified equivalent merge commit. Do not infer compatibility from a higher-looking version string alone.
+Use the tested artifact produced from `etcd-sync` MR `!179` head commit `4ff3b5ee52ad0d9c7febf7a969bb99b4ca95e8e0` (`4ff3b5e`). That revision contains the Global-local identity, handoff completion, plugin ServiceMonitor exact-ignore rules, and dynamic Global plan-key input. It also removes the newly introduced legacy owner/cluster fallback: Global-local classification requires the explicit `baremetal.cluster.io/system-agent-auth-scope: global` annotation. An unannotated Elemental object is not protected as Global-local, remains eligible for the generic synchronization rules, and therefore fails fresh-install Global validation. Replace the placeholder with the published artifact version whose provenance proves it contains `4ff3b5e` or an explicitly verified equivalent merge commit. Do not infer compatibility from a higher-looking version string alone.
 
 Create the encryption provider configuration file on both installation environments.
 
@@ -2194,12 +2194,50 @@ export PRIMARY_BOOTSTRAP_KUBECONFIG="<path-to-primary-bootstrap-kubeconfig>"
 export STANDBY_BOOTSTRAP_KUBECONFIG="<path-to-standby-bootstrap-kubeconfig>"
 export PRIMARY_GLOBAL_HOSTS="<primary-global-host-1> <primary-global-host-2> <primary-global-host-3>"
 export STANDBY_GLOBAL_HOSTS="<standby-global-host-1> <standby-global-host-2> <standby-global-host-3>"
+export PRIMARY_GLOBAL_REGISTRATION_NAME="<primary-global-machine-registration-name>"
+export STANDBY_GLOBAL_REGISTRATION_NAME="<standby-global-machine-registration-name>"
+
+verify_global_auth_scope() {
+  kubeconfig=$1
+  registration_name=$2
+
+  kubectl --kubeconfig "${kubeconfig}" -n cpaas-system \
+    get machineregistration.elemental.cattle.io "${registration_name}" -o json | \
+  jq -e '
+    .metadata.annotations["baremetal.cluster.io/system-agent-auth-scope"] ==
+      "global"
+  ' >/dev/null
+
+  global_inventory_names="$({
+    kubectl --kubeconfig "${kubeconfig}" -n cpaas-system \
+      get baremetalmachines.infrastructure.cluster.x-k8s.io -o json | \
+    jq -c '[
+      .items[]
+      | select(
+          .metadata.labels["cluster.x-k8s.io/cluster-name"] == "global"
+        )
+      | .status.machineInventoryRef.name? // empty
+    ] | unique | sort'
+  })"
+  printf '%s\n' "${global_inventory_names}" | \
+    jq -e 'length > 0' >/dev/null
+
+  while IFS= read -r inventory_name; do
+    kubectl --kubeconfig "${kubeconfig}" -n cpaas-system \
+      get machineinventory.elemental.cattle.io "${inventory_name}" -o json | \
+    jq -e '
+      .metadata.annotations["baremetal.cluster.io/system-agent-auth-scope"] ==
+        "global"
+    ' >/dev/null
+  done < <(printf '%s\n' "${global_inventory_names}" | jq -r '.[]')
+}
 
 verify_baremetal_handoff() {
   bootstrap_kubeconfig=$1
   kubeconfig=$2
   control_plane_vip=$3
   global_hosts=$4
+  registration_name=$5
   expected_endpoint="https://${control_plane_vip}:6443"
 
   kubectl --kubeconfig "${bootstrap_kubeconfig}" -n cpaas-system \
@@ -2209,6 +2247,8 @@ verify_baremetal_handoff() {
   kubectl --kubeconfig "${kubeconfig}" -n cpaas-system \
     get configmap baremetal-system-agent-handoff -o json | \
     jq -e '.data.ready == "true"' >/dev/null
+
+  verify_global_auth_scope "${kubeconfig}" "${registration_name}"
 
   if kubectl --kubeconfig "${kubeconfig}" -n cpaas-system \
     get rolebinding baremetal-global-system-agent-handoff-bridge \
@@ -2312,11 +2352,11 @@ verify_baremetal_handoff() {
 verify_baremetal_handoff \
   "${PRIMARY_BOOTSTRAP_KUBECONFIG}" "${PRIMARY_GLOBAL_KUBECONFIG}" \
   "${PRIMARY_CLUSTER_VIP}" \
-  "${PRIMARY_GLOBAL_HOSTS}"
+  "${PRIMARY_GLOBAL_HOSTS}" "${PRIMARY_GLOBAL_REGISTRATION_NAME}"
 verify_baremetal_handoff \
   "${STANDBY_BOOTSTRAP_KUBECONFIG}" "${STANDBY_GLOBAL_KUBECONFIG}" \
   "${STANDBY_CLUSTER_VIP}" \
-  "${STANDBY_GLOBAL_HOSTS}"
+  "${STANDBY_GLOBAL_HOSTS}" "${STANDBY_GLOBAL_REGISTRATION_NAME}"
 ```
 
 Also verify the Global-local permission boundary on both sides. Before the first non-`global` workload plan exists, the shared `baremetal-system-agent` ServiceAccount, token Secret, Role, and RoleBinding may be absent on both clusters. Do not create or copy that bundle by hand merely to satisfy the Global installation gate; the active operator creates it when the first shared-scope registration is reconciled, and `etcd-sync` then copies it to standby.
@@ -2342,6 +2382,20 @@ verify_global_local_system_agent_rbac() {
     ] | unique | sort'
   })"
   printf '%s\n' "${local_plan_names}" | jq -e 'length > 0' >/dev/null
+
+  expected_local_plan_names="$({
+    kubectl --kubeconfig "${kubeconfig}" -n cpaas-system \
+      get machineinventories.elemental.cattle.io -o json | \
+    jq -c '[
+      .items[]
+      | select(
+          .metadata.annotations["baremetal.cluster.io/system-agent-auth-scope"] ==
+            "global"
+        )
+      | .status.plan.secretRef.name? // empty
+    ] | unique | sort'
+  })"
+  test "${local_plan_names}" = "${expected_local_plan_names}"
 
   while IFS= read -r plan_secret; do
     test "$({
@@ -2392,8 +2446,12 @@ After the standby installation succeeds, switch the platform domain back to the 
 Before you create the `global-etcd-sync` ModuleInfo, build `additional_ignore_equal` exclusively from both sides' local Global plan Secret names. MR `!179` already keeps the plugin's own `ServiceMonitor/etcd-sync-monitor` and the fixed Global-local objects local, so do not duplicate those static keys in the dynamic list. Run these commands from a host that has `jq` and two kubeconfigs. Each kubeconfig must address its own Global API server; do not rely on the platform domain, because that domain points to only one side at a time. If one kubeconfig contains both clusters, use two distinct contexts in the equivalent `kubectl --context` commands.
 
 ```shell
+set -euo pipefail
+
 export PRIMARY_GLOBAL_KUBECONFIG="<path-to-primary-global-kubeconfig>"
 export STANDBY_GLOBAL_KUBECONFIG="<path-to-standby-global-kubeconfig>"
+export PRIMARY_GLOBAL_REGISTRATION_NAME="<primary-global-machine-registration-name>"
+export STANDBY_GLOBAL_REGISTRATION_NAME="<standby-global-machine-registration-name>"
 export PRIMARY_GLOBAL_CONTEXT="$(kubectl --kubeconfig "${PRIMARY_GLOBAL_KUBECONFIG}" config current-context)"
 export STANDBY_GLOBAL_CONTEXT="$(kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" config current-context)"
 
@@ -2408,6 +2466,52 @@ if [ "${PRIMARY_GLOBAL_SERVER}" = "${STANDBY_GLOBAL_SERVER}" ]; then
   echo "primary and standby kubeconfigs resolve to the same API server" >&2
   exit 1
 fi
+
+validate_global_auth_scope() {
+  kubeconfig=$1
+  context=$2
+  registration_name=$3
+
+  kubectl --kubeconfig "${kubeconfig}" --context "${context}" \
+    -n cpaas-system get machineregistration.elemental.cattle.io \
+    "${registration_name}" -o json | \
+  jq -e '
+    .metadata.annotations["baremetal.cluster.io/system-agent-auth-scope"] ==
+      "global"
+  ' >/dev/null
+
+  global_inventory_names="$({
+    kubectl --kubeconfig "${kubeconfig}" --context "${context}" \
+      -n cpaas-system \
+      get baremetalmachines.infrastructure.cluster.x-k8s.io -o json | \
+    jq -c '[
+      .items[]
+      | select(
+          .metadata.labels["cluster.x-k8s.io/cluster-name"] == "global"
+        )
+      | .status.machineInventoryRef.name? // empty
+    ] | unique | sort'
+  })"
+  printf '%s\n' "${global_inventory_names}" | \
+    jq -e 'length > 0' >/dev/null
+
+  while IFS= read -r inventory_name; do
+    kubectl --kubeconfig "${kubeconfig}" --context "${context}" \
+      -n cpaas-system get machineinventory.elemental.cattle.io \
+      "${inventory_name}" -o json | \
+    jq -e '
+      .metadata.annotations["baremetal.cluster.io/system-agent-auth-scope"] ==
+        "global"
+    ' >/dev/null
+  done < <(printf '%s\n' "${global_inventory_names}" | jq -r '.[]')
+}
+
+validate_global_auth_scope \
+  "${PRIMARY_GLOBAL_KUBECONFIG}" "${PRIMARY_GLOBAL_CONTEXT}" \
+  "${PRIMARY_GLOBAL_REGISTRATION_NAME}"
+validate_global_auth_scope \
+  "${STANDBY_GLOBAL_KUBECONFIG}" "${STANDBY_GLOBAL_CONTEXT}" \
+  "${STANDBY_GLOBAL_REGISTRATION_NAME}"
 
 global_plan_secret_names() {
   kubeconfig=$1
@@ -2453,7 +2557,7 @@ export ETCD_SYNC_ADDITIONAL_IGNORE_EQUAL_JSON="$(
 printf '%s\n' "${ETCD_SYNC_ADDITIONAL_IGNORE_EQUAL_JSON}" | jq .
 ```
 
-Do not install `etcd-sync` if either local Global Role has no plan `resourceNames` or if the generated array is not exactly the de-duplicated union of both Roles converted to `/registry/secrets/cpaas-system/<plan-secret>`. The broad Secret sync prefix would otherwise overwrite a local Global plan Secret whose name happens to exist in the source or target.
+Do not install `etcd-sync` if either Global `MachineRegistration` or any `Cluster/global` `MachineInventory` lacks the explicit `global` scope, if either local Global Role has no plan `resourceNames`, or if the generated array is not exactly the de-duplicated union of both Roles converted to `/registry/secrets/cpaas-system/<plan-secret>`. An unannotated Elemental object remains eligible for generic synchronization, and the broad Secret sync prefix could overwrite a local Global plan Secret whose name happens to exist in the source or target.
 
 Create a standby-local Secret that contains the primary cluster bearer token, then reference only its name from the plugin configuration. Do not put a token value in `active_cluster_token` for a fresh installation. The Secret must exist before the ModuleInfo is created because the chart's pre-install bootstrap Job mounts it.
 
