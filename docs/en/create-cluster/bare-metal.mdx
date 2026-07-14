@@ -196,17 +196,32 @@ Apply the manifest and wait for the SeedImage build to finish:
 
 ```bash
 kubectl apply -f 01-machineregistration-seedimage.yaml
-kubectl -n cpaas-system get seedimage <cluster-name>-registration-iso -w
+kubectl -n cpaas-system wait \
+  --for=condition=SeedImageReady=True \
+  seedimage/<cluster-name>-registration-iso \
+  --timeout=30m
+
+SEEDIMAGE_REASON="$(kubectl -n cpaas-system \
+  get seedimage <cluster-name>-registration-iso \
+  -o jsonpath='{.status.conditions[?(@.type=="SeedImageReady")].reason}')"
+SEEDIMAGE_DOWNLOAD_URL="$(kubectl -n cpaas-system \
+  get seedimage <cluster-name>-registration-iso \
+  -o jsonpath='{.status.downloadURL}')"
+SEEDIMAGE_CHECKSUM_URL="$(kubectl -n cpaas-system \
+  get seedimage <cluster-name>-registration-iso \
+  -o jsonpath='{.status.checksumURL}')"
+
+if [ "${SEEDIMAGE_REASON}" != "SeedImageBuildSuccess" ] || \
+   [ -z "${SEEDIMAGE_DOWNLOAD_URL}" ] || \
+   [ -z "${SEEDIMAGE_CHECKSUM_URL}" ]; then
+  echo "SeedImage did not produce a downloadable ISO and checksum" >&2
+  exit 1
+fi
+
+printf '%s\n%s\n' "${SEEDIMAGE_DOWNLOAD_URL}" "${SEEDIMAGE_CHECKSUM_URL}"
 ```
 
-When `status.state` reaches `Completed`, fetch the download URL and ISO checksum:
-
-```bash
-kubectl -n cpaas-system get seedimage <cluster-name>-registration-iso \
-  -o jsonpath='{.status.downloadURL}{"\n"}'
-kubectl -n cpaas-system get seedimage <cluster-name>-registration-iso \
-  -o jsonpath='{.status.checksumURL}{"\n"}'
-```
+Do not use `status.state` as the success gate; the current controller does not populate it. Continue only when `SeedImageReady=True` has reason `SeedImageBuildSuccess` and both `status.downloadURL` and `status.checksumURL` are non-empty. A SeedImage whose download lifetime has expired can still report `SeedImageReady=True`, but its reason changes and its URLs are cleared.
 
 Boot every target host from this ISO. `elemental-register` runs first (creates the `MachineInventory` and uploads `observedNetwork`), then `elemental install` writes the on-disk OS. After install completes, the host stays available for plan execution. If the live ISO environment has no DHCP address, configure NetworkManager manually on the host console as described in [Network Connectivity](#network-connectivity) before waiting for the `MachineInventory`.
 

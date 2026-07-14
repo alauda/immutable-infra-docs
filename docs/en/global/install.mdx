@@ -1854,6 +1854,10 @@ Issues that are not listed here usually point to environment-specific causes. Ca
 
 Use this section when you deploy primary and standby `global` clusters for disaster recovery. Complete these additions before you apply the provider-specific manifest for each `global` cluster.
 
+<Directive type="warning" title="Bare Metal Fresh-install Scope">
+  The Bare Metal split-auth procedure in this section covers only a fresh installation of the primary and standby `global` clusters. It does not define or validate an in-place upgrade or migration of an existing Bare Metal DR pair, or the repair or recovery of a failed environment. Use a separately validated operations runbook for those lifecycle tasks.
+</Directive>
+
 Primary and standby clusters must use the same encryption provider configuration. For Bare Metal, primary and standby must also use the same Kubernetes ServiceAccount signing key so that the workload-cluster `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. The machines that form each `global` cluster use a separate cluster-local identity and do not share their token with the peer `global` cluster. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
 
 ### Prepare Shared DR Variables

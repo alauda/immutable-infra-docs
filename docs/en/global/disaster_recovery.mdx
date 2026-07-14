@@ -45,6 +45,10 @@ A disaster recovery switchover and a DR-aware `global` cluster upgrade both unin
 
 ## Bare Metal DR Model
 
+<Directive type="warning" title="Bare Metal Fresh-install Scope">
+  The split-auth model below describes only the target state created by a fresh primary and standby `global` installation. It is not an upgrade or migration procedure for an existing Bare Metal DR pair and does not cover the repair or recovery of a failed environment. Use a separately validated operations runbook for those lifecycle tasks.
+</Directive>
+
 Bare Metal DR adds host-level state that does not exist in VM-based providers. The `global` cluster does not create physical machines; it manages long-lived `MachineInventory` objects and writes plan Secrets that are consumed by `elemental-system-agent` on each host. Global-cluster machines therefore use a cluster-local identity, while non-`global` workload machines use a shared identity that follows the synchronized workload state. A standby `global` cluster must preserve its local Global identity while accepting the shared workload token from primary.
 
 ### Endpoint Rules
