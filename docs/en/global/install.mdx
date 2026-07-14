@@ -1168,7 +1168,7 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
 - Add `Cluster.metadata.labels.cluster-type: ProviderBaremetal`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Add `Cluster.metadata.annotations["cpaas.io/kube-ovn-join-cidr"]`, `Cluster.metadata.annotations["cpaas.io/sentry-deploy-type"]: Baremetal`, and `Cluster.metadata.annotations["cpaas.io/alb-address-type"]: ClusterAddress`.
-- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-init`, or leave it unset because `cloud-init` is the provider path used by Bare Metal.
+- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-config`, or leave it unset because `cloud-config` is the provider path used by Bare Metal.
 - Set `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0`. Bare-metal pools cannot over-provision physical hosts.
 - Keep `controlplane.cluster.x-k8s.io/skip-kube-proxy: ""` on the `KubeadmControlPlane` when the release manifest uses kube-ovn.
 - Put `${CONTROL_PLANE_VIP}` and `${PLATFORM_HOST}` in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`.
@@ -1258,7 +1258,6 @@ spec:
     spec:
       machineInventoryPoolRef:
         name: global-control-plane-pool
-      allocationPolicy: Ordered
 ---
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
@@ -1282,7 +1281,7 @@ spec:
       kind: BaremetalMachineTemplate
       name: global-control-plane-template
   kubeadmConfigSpec:
-    format: cloud-init
+    format: cloud-config
     clusterConfiguration:
       etcd:
         local:
