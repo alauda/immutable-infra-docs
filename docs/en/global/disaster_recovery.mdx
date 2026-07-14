@@ -26,7 +26,7 @@ That deployment procedure is the authoritative source for the installation-time 
 - Huawei Cloud Stack deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Bare Metal deployments reference the shared encryption provider Secret from `BaremetalCluster.spec.encryptionProviderConfigRef` and use the same Kubernetes ServiceAccount signing key on both sides.
 - Huawei DCS, VMware vSphere, and Huawei Cloud Stack create the `dcs-import-extra-resources` ConfigMap before installer import so the installation can import referenced credential Secrets and, where applicable, provider-specific infrastructure resources. The name keeps the `dcs` prefix for historical installer compatibility.
-- Bare Metal creates the `dcs-import-extra-resources` ConfigMap before installer import so the installation can preserve bare-metal and elemental resources required by handoff.
+- Bare Metal creates the `dcs-import-extra-resources` ConfigMap before installer import so the installation can preserve the durable bare-metal and elemental owner resources required by handoff. It does not import Global plan Secrets or kubeadm bootstrap data Secrets; fresh handoff creates the initial Global plan Secrets after all target Global `MachineInventory` objects exist.
 - The standby cluster installs `global-etcd-sync` with connection values that point to the active primary after both installations succeed.
 
 ## Operational Scope
@@ -125,6 +125,8 @@ Synchronize the workload-cluster resources that allow standby to continue reconc
 - Provider referenced Secrets that must exist on the target side, including the encryption-provider Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef` when Bare Metal DR is enabled.
 - Exact shared auth bundle, once it exists: `ServiceAccount/cpaas-system/baremetal-system-agent`, `Secret/cpaas-system/baremetal-system-agent-token`, `Role/cpaas-system/baremetal-system-agent`, and `RoleBinding/cpaas-system/baremetal-system-agent`.
 
+Do not use the synchronization list in this section to populate Step 7 `dcs-import-extra-resources`; the initial Global handoff excludes Global plan Secrets, `KubeadmConfig` objects, and kubeadm bootstrap data Secrets.
+
 Do not synchronize:
 
 - `SeedImage`.
@@ -217,7 +219,7 @@ Bare Metal requires all of the following to be aligned:
 - The encryption provider Secret is imported into each final `global` cluster through `dcs-import-extra-resources`; it must not exist only in the bootstrap KIND cluster.
 - Same ServiceAccount signing key files and same issuer/audience values on both sides.
 - Same trusted platform HTTPS certificate on both sides, with the stable platform domain in its SAN list. Add a control-plane VIP SAN only when platform HTTPS intentionally uses that VIP; do not add internal Service names to `console.cert`. The registry on port `11443` uses an independently managed `global-registry-server` certificate chain.
-- `dcs-import-extra-resources` created before the installer API call on both sides.
+- `dcs-import-extra-resources` created before the installer API call on both sides, containing the durable Global Bare Metal and Elemental owner resources plus the referenced encryption-provider Secret. It must exclude Global plan Secrets, `KubeadmConfig` objects, and kubeadm bootstrap data Secrets; fresh handoff creates the initial Global plan Secrets with the live Global `MachineInventory` UID.
 - Bare Metal provider AppRelease values set with the local `handoffHook.controlPlaneVIP`, `handoffHook.directAPIServer: true`, `elemental.systemAgent.authMode: shared`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.globalServiceAccountName: baremetal-global-system-agent`. The active side sets `elemental.systemAgent.sharedAuthReadOnly: false`; the inactive side sets it to `true`.
 - The deployed `elemental-operator` image and every newly produced `baremetal-base-image` and `baremetal-base-image-iso` are built from the same pinned elemental commit. Rebuild the installation media whenever that commit changes.
 

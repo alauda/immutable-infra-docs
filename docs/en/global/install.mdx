@@ -1458,24 +1458,24 @@ kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
   </Tab>
   <Tab label="Bare Metal">
 
-Create and apply the Bare Metal import ConfigMap before you trigger the installer. This ConfigMap is required because the installer must import the bare-metal and elemental resources that were created in the bootstrap cluster before the `global` cluster exists.
+Create and apply the Bare Metal import ConfigMap before you trigger the installer. This ConfigMap imports the durable bare-metal and elemental owner resources that the fresh-install handoff uses to enumerate the installed Global machines. It must not import Elemental plan Secrets or kubeadm bootstrap data Secrets.
 
 <Directive type="warning" title="Import Before DCS API">
-  Create `dcs-import-extra-resources` before calling `POST /cpaas-installer/api/config/dcs`. If it is missing, the handoff job can run with an empty target list because the new `global` cluster does not contain the `BaremetalMachine`, `MachineInventory`, `MachineRegistration`, or plan Secret objects that describe the bootstrap `global` machines.
+  Create `dcs-import-extra-resources` before calling `POST /cpaas-installer/api/config/dcs`. If it is missing, the handoff job can run with an empty target list because the new `global` cluster does not contain the `BaremetalMachine`, `MachineInventory`, or `MachineRegistration` objects that describe the bootstrap `global` machines. Do not compensate by adding their plan Secrets or kubeadm bootstrap data Secrets to the ConfigMap.
 </Directive>
 
-Collect the plan Secret names and kubeadm bootstrap data Secret names after the `global` Cluster API resources have reconciled. These names do not exist before CAPI creates the Machines. For DR, also include the Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef` so the final `global` cluster contains the same encryption-provider configuration. Do not import arbitrary platform credential Secrets, and do not import the MachineRegistration token Secret.
+Collect the exact Global `MachineInventory` names from the reconciled `BaremetalMachine` objects and identify the bootstrap `MachineRegistration` used by those hosts. For DR, also collect the Secret name referenced by `BaremetalCluster.spec.encryptionProviderConfigRef` so the final `global` cluster contains the same encryption-provider configuration. Do not import arbitrary platform credential Secrets or the MachineRegistration token Secret.
 
 ```shell
-kubectl -n cpaas-system get machineinventory.elemental.cattle.io \
-  -o jsonpath='{range .items[*]}{.status.plan.secretRef.name}{"\n"}{end}'
 kubectl -n cpaas-system get baremetalmachine \
-  -o jsonpath='{range .items[*]}{.status.planSecretRef.name}{"\n"}{end}'
-kubectl -n cpaas-system get machine -l cluster.x-k8s.io/cluster-name=global \
-  -o jsonpath='{range .items[*]}{.spec.bootstrap.dataSecretName}{"\n"}{end}'
+  -l cluster.x-k8s.io/cluster-name=global \
+  -o custom-columns='NAME:.metadata.name,INVENTORY:.status.machineInventoryRef.name'
+kubectl -n cpaas-system get machineregistration.elemental.cattle.io
+kubectl -n cpaas-system get baremetalcluster global \
+  -o jsonpath='{.spec.encryptionProviderConfigRef.name}{"\n"}'
 ```
 
-Create the ConfigMap. Replace the placeholder inventory, plan Secret, and bootstrap data Secret names with the values from the commands above.
+Create the ConfigMap. Replace the inventory and MachineRegistration placeholders with the values from the commands above. For DR, also replace the encryption-provider Secret placeholder; for a non-DR installation that does not set `BaremetalCluster.spec.encryptionProviderConfigRef`, remove that Secret entry.
 
 ```shell
 mkdir -p /root/yamls
@@ -1522,18 +1522,6 @@ data:
       names: ["<global-machine-registration>"]
       etcdKeyBase: "/registry/elemental.cattle.io/machineregistrations/cpaas-system/"
       method: etcdctl
-    - resource: "secrets"
-      names:
-        - "<global-machine-plan-secret-1>"
-        - "<global-machine-plan-secret-2>"
-        - "<global-machine-plan-secret-3>"
-      method: kubectl
-    - resource: "secrets"
-      names:
-        - "<global-kubeadm-bootstrap-data-secret-1>"
-        - "<global-kubeadm-bootstrap-data-secret-2>"
-        - "<global-kubeadm-bootstrap-data-secret-3>"
-      method: kubectl
     # Required for DR when BaremetalCluster.spec.encryptionProviderConfigRef is set.
     # The name must match the Secret referenced by BaremetalCluster.
     - resource: "secrets"
@@ -1546,7 +1534,21 @@ kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
 kubectl -n cpaas-system get cm dcs-import-extra-resources -o yaml
 ```
 
-Do not add `SeedImage` objects or MachineRegistration token Secrets to this import list. A bootstrap `SeedImage` produces an ISO that points at the bootstrap environment and is no longer the correct lifecycle object after the `global` cluster has been handed off. The `seedimages.elemental.cattle.io` CRD is imported only so the new `global` cluster understands the API type.
+<Directive type="warning" title="Do Not Import Plan or Kubeadm Bootstrap Secrets">
+  The installer applies `method: kubectl` extras before its batched etcd import has finished creating their owner objects. An Elemental plan Secret imported at that point still references the bootstrap `MachineInventory` UID; that owner UID does not identify the later imported Global `MachineInventory`, so Kubernetes garbage collection can delete the Secret. Do not add Elemental plan Secrets, `KubeadmConfig` objects, or `Machine.spec.bootstrap.dataSecretName` Secrets to this ConfigMap.
+</Directive>
+
+The first-version fresh-install handoff handles this ordering explicitly. It verifies that all target Global `MachineInventory` objects exist, reads each source plan Secret from the still-running bootstrap cluster, and creates the Global plan Secret with the live Global `MachineInventory` UID as its controller owner.
+
+`KubeadmConfig` objects and kubeadm bootstrap data Secrets are not used by the first-version fresh-install handoff and must not be added to this ConfigMap.
+
+Before continuing to Step 8, check the rendered ConfigMap:
+
+- It includes the Bare Metal CRDs, `BaremetalCluster/global`, Bare Metal machine resources, the exact Global `MachineInventory` objects, and the Global `MachineRegistration`.
+- It does not include `SeedImage` objects, MachineRegistration token Secrets, Elemental plan Secrets, `KubeadmConfig` objects, or kubeadm bootstrap data Secrets.
+- For DR, it still includes the encryption-provider Secret whose name exactly matches `BaremetalCluster.spec.encryptionProviderConfigRef.name`.
+
+A bootstrap `SeedImage` produces an ISO that points at the bootstrap environment and is no longer the correct lifecycle object after the `global` cluster has been handed off. The `seedimages.elemental.cattle.io` CRD is imported only so the new `global` cluster understands the API type.
 
 For DR, verify after installation that the final `global` cluster has the imported encryption-provider Secret.
 
@@ -2074,7 +2076,7 @@ Keep the same DR `serverCertSANs` list on both the primary and standby installat
 
 Also keep the shared ServiceAccount signing key configuration from [Prepare Shared ServiceAccount Signing Key](#prepare-shared-serviceaccount-signing-key). Without that key, the standby API server cannot validate the `baremetal-system-agent` token that existing hosts received before failover.
 
-Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. The ConfigMap must import the bare-metal and elemental resources required by handoff, including the encryption-provider Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef`, and must not import `SeedImage`.
+Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. The ConfigMap must import the durable bare-metal and elemental owner resources required by handoff, including the encryption-provider Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef`. It must not import `SeedImage`, Elemental plan Secrets, `KubeadmConfig` objects, or kubeadm bootstrap data Secrets; the fresh-install handoff creates the initial Global plan Secrets only after all target Global `MachineInventory` objects are present.
 
 The Bare Metal provider AppRelease on both sides must enable the Global-local identity, shared workload identity, and direct kube-apiserver handoff for Global machines. Apply one of the following patches on each side's bootstrap cluster after creating the AppRelease and before calling the installer API.
 
