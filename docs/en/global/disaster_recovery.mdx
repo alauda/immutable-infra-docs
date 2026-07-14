@@ -72,7 +72,7 @@ Set `handoffHook.controlPlaneVIP` to the current side's VIP and set `handoffHook
   A `SeedImage` generated in the bootstrap KIND environment points at the bootstrap registration endpoint. After the `global` cluster is installed and handed off, create new `MachineRegistration` and `SeedImage` resources on the active `global` cluster for any new `global` hosts. A pre-failover workload ISO can be reused after failover only when its registration URL uses the platform domain and the matching non-`global` `MachineRegistration` was synchronized to standby.
 </Directive>
 
-For every post-handoff Global host registration, set the Global auth scope, the local side's direct API URL, and direct endpoint mode. A primary Global registration always uses the primary VIP, and a standby Global registration always uses the standby VIP; do not change existing Global host endpoints during failover.
+For every post-handoff Global host registration, set the Global auth scope, the local side's direct API URL, and direct endpoint mode. A primary Global registration uses the primary VIP, and a standby Global registration uses the standby VIP.
 
 ```yaml
 apiVersion: elemental.cattle.io/v1beta1
@@ -86,14 +86,14 @@ metadata:
     baremetal.cluster.io/system-agent-endpoint-mode: direct-apiserver
 ```
 
-`baremetal.cluster.io/system-agent-direct: "true"` remains an upgrade-compatibility alias for `direct-apiserver`. Do not use it in new registrations. If both annotations are present, the explicit `baremetal.cluster.io/system-agent-endpoint-mode` value takes precedence.
+Use the explicit `baremetal.cluster.io/system-agent-endpoint-mode: direct-apiserver` annotation for every new Global registration.
 
 ### System-Agent Identity Requirements
 
 Bare Metal DR uses two identity bundles:
 
 - The local Global bundle consists of `ServiceAccount`, token Secret, Role, and RoleBinding named `baremetal-global-system-agent` (the Secret name has the `-token` suffix). Each side generates and retains its own bundle. Its Role contains only that side's Global plan Secrets.
-- The workload shared bundle consists of the four `baremetal-system-agent` objects. Primary is authoritative before failover, and `etcd-sync` copies the bundle exactly to standby. Its Role contains only non-`global` workload plan Secrets.
+- The workload shared bundle consists of the four `baremetal-system-agent` objects. It may be absent on both sides before the first shared-scope workload plan exists. Once primary creates it, `etcd-sync` copies the bundle exactly to standby. Its Role contains only explicitly shared-scope, non-`global` workload plan Secrets.
 
 <Directive type="warning" title="Use the Standard System-Agent Names">
   Do not customize `baremetal-global-system-agent`, `baremetal-global-system-agent-token`, `baremetal-system-agent`, or `baremetal-system-agent-token`. The default `etcd-sync` exact-sync and ignore rules match these names literally. If a deployment must use different names, update and validate all corresponding `etcd-sync` rules before starting synchronization.
@@ -102,300 +102,6 @@ Bare Metal DR uses two identity bundles:
 Primary and standby must still use the same `/etc/kubernetes/pki/sa.key`, `/etc/kubernetes/pki/sa.pub`, `service-account-issuer`, and `api-audiences` values so that the shared workload token is valid on both API servers. The two local Global tokens are intentionally different and must not be synchronized.
 
 Set `elemental.systemAgent.splitAuthEnabled: true` on both provider AppRelease objects. This is the single source of truth used by both `elemental-operator` and handoff; do not configure a separate handoff auth-enable switch. With the split enabled, the active Global must set `elemental.systemAgent.sharedAuthReadOnly: false` so that `elemental-operator` reconciles the shared workload Role. The inactive Global must set it to `true` so that `etcd-sync`, not the local operator, owns the synchronized shared bundle. Both operators continue to reconcile their own Global-local bundles.
-
-### Migrating Existing Handoff State \{#migrating-existing-handoff-state}
-
-`ConfigMap/cpaas-system/baremetal-system-agent-handoff` is a versioned completion record. The direct-API split-auth configuration requires `data.ready: "true"`, `data.profile: split-local-direct-v1`, and a `data.config` value that is exactly 64 lowercase hexadecimal characters. The digest covers the effective endpoint, token/CA, identity names, and each Global target's names and object UIDs. A ConfigMap written by an older release with only `ready: "true"`, with a `legacy-shared-*` profile, or with a stale, missing, or malformed config digest must not cause the new handoff to skip.
-
-#### Protect Existing Global Plan Secrets Before the Upgrade
-
-If `etcd-sync` is already installed, protect the current Global plan Secrets before upgrading either Bare Metal provider AppRelease or running the new handoff. An older environment does not yet have the authoritative `Role/baremetal-global-system-agent`, so derive this temporary exact-ignore set from the current `Cluster/global` `BaremetalMachine` references and cross-check every name against its `MachineInventory`.
-
-First stop or suspend the mirror with the supported plugin lifecycle operation, and verify that `Deployment/cpaas-system/etcd-sync` has no Ready mirror Pods. Then run the following from a secured host with both direct Global kubeconfigs:
-
-```shell
-set -euo pipefail
-
-export PRIMARY_GLOBAL_KUBECONFIG="<path-to-primary-global-kubeconfig>"
-export STANDBY_GLOBAL_KUBECONFIG="<path-to-standby-global-kubeconfig>"
-export ETCD_SYNC_MODULEINFO_NAME="<installed-global-etcd-sync-moduleinfo-name>"
-
-existing_global_plan_secret_names() {
-  local kubeconfig=$1 targets names target inventory expected actual secret_type
-
-  targets="$(
-    kubectl --kubeconfig "${kubeconfig}" \
-      -n cpaas-system \
-      get baremetalmachines.infrastructure.cluster.x-k8s.io -o json | \
-    jq -c '[
-      .items[]
-      | select(.metadata.labels["cluster.x-k8s.io/cluster-name"] == "global")
-      | {
-          inventory: (.status.machineInventoryRef.name // ""),
-          plan: (.status.planSecretRef.name // "")
-        }
-    ]'
-  )"
-
-  printf '%s\n' "${targets}" | \
-    jq -e 'length > 0 and all(.[]; .inventory != "" and .plan != "")' \
-    >/dev/null || {
-      echo "Cluster/global has an incomplete inventory or plan reference" >&2
-      return 1
-    }
-
-  names="$(
-    while IFS= read -r target; do
-      inventory="$(printf '%s\n' "${target}" | jq -r '.inventory')"
-      expected="$(printf '%s\n' "${target}" | jq -r '.plan')"
-      actual="$(
-        kubectl --kubeconfig "${kubeconfig}" \
-          -n cpaas-system \
-          get machineinventory.elemental.cattle.io "${inventory}" \
-          -o jsonpath='{.status.plan.secretRef.name}'
-      )"
-      if [ "${actual}" != "${expected}" ]; then
-        echo "plan Secret mismatch for MachineInventory ${inventory}" >&2
-        return 1
-      fi
-      secret_type="$(
-        kubectl --kubeconfig "${kubeconfig}" \
-          -n cpaas-system get secret "${actual}" -o jsonpath='{.type}'
-      )"
-      if [ "${secret_type}" != "elemental.cattle.io/plan" ]; then
-        echo "Secret ${actual} is not an elemental plan" >&2
-        return 1
-      fi
-      printf '%s\n' "${actual}"
-    done < <(printf '%s\n' "${targets}" | jq -c '.[]')
-  )"
-
-  printf '%s\n' "${names}" | \
-    jq -Rsc 'split("\n") | map(select(length > 0)) | unique | sort'
-}
-
-PRIMARY_EXISTING_GLOBAL_PLAN_SECRET_NAMES="$(
-  existing_global_plan_secret_names "${PRIMARY_GLOBAL_KUBECONFIG}"
-)"
-STANDBY_EXISTING_GLOBAL_PLAN_SECRET_NAMES="$(
-  existing_global_plan_secret_names "${STANDBY_GLOBAL_KUBECONFIG}"
-)"
-
-CURRENT_ADDITIONAL_IGNORE_EQUAL_JSON="$(
-  kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
-    get moduleinfoes.cluster.alauda.io "${ETCD_SYNC_MODULEINFO_NAME}" -o json | \
-  jq -c '.spec.config.additional_ignore_equal // []'
-)"
-
-export DISCOVERED_GLOBAL_PLAN_IGNORE_EQUAL_JSON="$(
-  jq -cn \
-    --argjson primary "${PRIMARY_EXISTING_GLOBAL_PLAN_SECRET_NAMES}" \
-    --argjson standby "${STANDBY_EXISTING_GLOBAL_PLAN_SECRET_NAMES}" '
-      ($primary + $standby)
-      | unique
-      | sort
-      | map("/registry/secrets/cpaas-system/" + .)
-    '
-)"
-
-export TEMPORARY_GLOBAL_PLAN_IGNORE_EQUAL_JSON="$(
-  jq -cn \
-    --argjson current "${CURRENT_ADDITIONAL_IGNORE_EQUAL_JSON}" \
-    --argjson discovered "${DISCOVERED_GLOBAL_PLAN_IGNORE_EQUAL_JSON}" \
-    '($current + $discovered) | unique | sort'
-)"
-
-kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
-  patch moduleinfoes.cluster.alauda.io "${ETCD_SYNC_MODULEINFO_NAME}" \
-  --type=merge \
-  -p "$(
-    jq -cn --argjson keys "${TEMPORARY_GLOBAL_PLAN_IGNORE_EQUAL_JSON}" \
-      '{spec:{config:{additional_ignore_equal:$keys}}}'
-  )"
-```
-
-Do not resume synchronization yet. Wait until `ConfigMap/cpaas-system/etcd-sync-ignore-text` contains every temporary exact key. Then restart the monitor and restore or roll out the mirror with the supported plugin lifecycle operation, and wait for both Deployments as described in [etcd-sync Scope](#etcd-sync-scope). No Ready mirror Pod may start before the rendered filter contains the complete temporary set. Keep this set in place throughout both AppRelease upgrades and handoff migrations. Without it, the broad Secret synchronization rule can delete, replace, or roll back the plan that a Global host must apply.
-
-#### Re-run the Handoff After the AppRelease Upgrade
-
-Upgrade the Bare Metal provider AppRelease on each side's retained bootstrap KIND cluster with `handoffHook.delivery.enabled: true` and `handoffHook.delivery.mode: always`, in addition to the split-auth values for that side. The chart's Helm `post-upgrade` Job delivers the current `acp-post-install` script and chart environment; it does not execute the installer post-install stage again.
-
-Also do not assume that the delivery Job changed the physical bootstrap host's `/cpaas`. In a nested KIND environment, its `hostPath: /cpaas` can refer to the KIND node filesystem. The reliable upgrade procedure is to read the official script and environment from the chart-rendered ConfigMap and explicitly run that script on the physical bootstrap host:
-
-```shell
-set -euo pipefail
-
-export BOOTSTRAP_KUBECTL=/opt/kubectl
-export BOOTSTRAP_KUBECONFIG=/cpaas/data/alauda.kubeconfig
-export FINAL_GLOBAL_KUBECONFIG=/cpaas/data/admin.kubeconfig
-export HANDOFF_RERUN_DIR=/root/baremetal-handoff-rerun
-
-sudo install -d -m 0700 "${HANDOFF_RERUN_DIR}"
-
-sudo "${BOOTSTRAP_KUBECTL}" \
-  --kubeconfig "${BOOTSTRAP_KUBECONFIG}" \
-  -n cpaas-system get configmap baremetal-acp-post-install \
-  -o go-template='{{ index .data "acp-post-install" }}' | \
-sudo install -m 0700 /dev/stdin "${HANDOFF_RERUN_DIR}/acp-post-install"
-
-sudo "${BOOTSTRAP_KUBECTL}" \
-  --kubeconfig "${BOOTSTRAP_KUBECONFIG}" \
-  -n cpaas-system get configmap baremetal-acp-post-install \
-  -o go-template='{{ index .data "baremetal-handoff.env" }}' | \
-sudo install -m 0600 /dev/stdin \
-  "${HANDOFF_RERUN_DIR}/baremetal-handoff-chart.env"
-
-sudo env \
-  KUBECTL="${BOOTSTRAP_KUBECTL}" \
-  BOOTSTRAP_KUBECONFIG="${BOOTSTRAP_KUBECONFIG}" \
-  GLOBAL_KUBECONFIG="${FINAL_GLOBAL_KUBECONFIG}" \
-  BAREMETAL_HANDOFF_CHART_ENV_FILE="${HANDOFF_RERUN_DIR}/baremetal-handoff-chart.env" \
-  "${HANDOFF_RERUN_DIR}/acp-post-install"
-```
-
-Run this separately on the primary and standby bootstrap hosts. Use the ConfigMap from that same side's upgraded AppRelease; do not copy a rendered environment from the peer. The script deliberately replaces a completed, failed, or still-running `baremetal-system-agent-handoff` Job with the current image and arguments. The handoff binary then compares the versioned profile and configuration digest, so a matching configuration exits without rewriting hosts while an old or drifted configuration performs the required in-place migration. Do not write a replacement Job or RBAC manifest by hand.
-
-This chart-delivered migration path requires the original side-specific bootstrap KIND cluster and its valid bootstrap and final-Global kubeconfigs. If that bootstrap environment has already been removed, stop and use an approved support procedure; installing the AppRelease only on the final Global cluster does not recreate the installer execution context.
-
-The upgrade migrates the already installed Global hosts in place; it does not require the original bootstrap plan Secret. Keep this safety order for every current Global plan Secret:
-
-1. Create and validate the local Global ServiceAccount, token Secret, Role, and canonical RoleBinding. Create the independent temporary `RoleBinding/baremetal-global-system-agent-handoff-bridge`, which references the Global-local Role and binds only the old shared ServiceAccount. Do not modify the canonical RoleBinding or the synchronized shared Role.
-2. Write the handoff plan on that current Global plan Secret so the host switches to the local token and local direct API endpoint.
-3. Wait until the handoff checksum is Applied, then write and observe a Global-side probe with the new local identity.
-4. Only after the probe succeeds, delete the temporary bridge. Workload targets and the shared Role are not rewritten by this migration.
-5. Treat migration as complete only when all Global hosts have passed the probe, the bridge is absent, and the completion ConfigMap reports the exact new profile and config digest.
-
-This temporary overlap is deliberate: removing the bridge before the old host has consumed its token-switch plan can strand the host with `403 Forbidden`. Do not grant namespace-wide Secret access, do not use a `ClusterRoleBinding`, and do not manually patch completion fields to bypass the migration.
-
-```shell
-kubectl --kubeconfig <local-global-kubeconfig> \
-  -n cpaas-system get configmap baremetal-system-agent-handoff \
-  -o jsonpath='{.data.ready}{" "}{.data.profile}{" "}{.data.config}{"\n"}'
-```
-
-Expected output: `true split-local-direct-v1 <64-lowercase-hex-character-SHA-256>`.
-
-After both sides report the expected completion and neither side has the temporary bridge, replace the temporary pre-upgrade list with the authoritative list generated from both local Global Roles:
-
-```shell
-global_role_plan_secret_names() {
-  local kubeconfig=$1
-  kubectl --kubeconfig "${kubeconfig}" \
-    -n cpaas-system get role baremetal-global-system-agent -o json | \
-  jq -c '[
-    .rules[]?
-    | select(any(.apiGroups[]?; . == ""))
-    | select(any(.resources[]?; . == "secrets"))
-    | .resourceNames[]?
-  ] | unique | sort'
-}
-
-PRIMARY_AUTHORITATIVE_GLOBAL_PLAN_SECRET_NAMES="$(
-  global_role_plan_secret_names "${PRIMARY_GLOBAL_KUBECONFIG}"
-)"
-STANDBY_AUTHORITATIVE_GLOBAL_PLAN_SECRET_NAMES="$(
-  global_role_plan_secret_names "${STANDBY_GLOBAL_KUBECONFIG}"
-)"
-
-printf '%s\n' "${PRIMARY_AUTHORITATIVE_GLOBAL_PLAN_SECRET_NAMES}" | \
-  jq -e 'length > 0' >/dev/null
-printf '%s\n' "${STANDBY_AUTHORITATIVE_GLOBAL_PLAN_SECRET_NAMES}" | \
-  jq -e 'length > 0' >/dev/null
-
-AUTHORITATIVE_GLOBAL_PLAN_IGNORE_EQUAL_JSON="$(
-  jq -cn \
-    --argjson primary "${PRIMARY_AUTHORITATIVE_GLOBAL_PLAN_SECRET_NAMES}" \
-    --argjson standby "${STANDBY_AUTHORITATIVE_GLOBAL_PLAN_SECRET_NAMES}" '
-      ($primary + $standby)
-      | unique
-      | sort
-      | map("/registry/secrets/cpaas-system/" + .)
-    '
-)"
-
-CURRENT_ADDITIONAL_IGNORE_EQUAL_JSON="$(
-  kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
-    get moduleinfoes.cluster.alauda.io "${ETCD_SYNC_MODULEINFO_NAME}" -o json | \
-  jq -c '.spec.config.additional_ignore_equal // []'
-)"
-
-FINAL_ADDITIONAL_IGNORE_EQUAL_JSON="$(
-  jq -cn \
-    --argjson current "${CURRENT_ADDITIONAL_IGNORE_EQUAL_JSON}" \
-    --argjson temporary "${DISCOVERED_GLOBAL_PLAN_IGNORE_EQUAL_JSON}" \
-    --argjson authoritative "${AUTHORITATIVE_GLOBAL_PLAN_IGNORE_EQUAL_JSON}" '
-      (($current - $temporary) + $authoritative) | unique | sort
-    '
-)"
-
-kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
-  patch moduleinfoes.cluster.alauda.io "${ETCD_SYNC_MODULEINFO_NAME}" \
-  --type=merge \
-  -p "$(
-    jq -cn --argjson keys "${FINAL_ADDITIONAL_IGNORE_EQUAL_JSON}" \
-      '{spec:{config:{additional_ignore_equal:$keys}}}'
-  )"
-```
-
-If the shell that performed the pre-upgrade collection is no longer available, re-run `existing_global_plan_secret_names` to reconstruct `DISCOVERED_GLOBAL_PLAN_IGNORE_EQUAL_JSON` before calculating the final list. Review any other custom entries separately. The final configuration must ensure that:
-
-- the Global plan entries are exactly the merged `resourceNames` from both `Role/baremetal-global-system-agent` objects;
-- unrelated, explicitly approved additional ignore entries are preserved; and
-- any temporary Global plan entry that is absent from both local Roles is removed.
-
-Verify the rendered ignore ConfigMap again and restart both `etcd-sync` Deployments before synchronization continues. From this point forward, the two local Roles, not the legacy BaremetalMachine list, are the authoritative source for Global plan exact-ignore entries.
-
-Verify both permission boundaries before failover. Repeat the checks on primary and standby with an administrator kubeconfig that is allowed to impersonate ServiceAccounts. Set the two example Secret names from that same cluster.
-
-```shell
-export LOCAL_GLOBAL_KUBECONFIG="<path-to-this-global-kubeconfig>"
-export LOCAL_GLOBAL_PLAN_SECRET="<local-global-plan-secret>"
-export WORKLOAD_PLAN_SECRET="<workload-plan-secret>"
-
-# Expected: yes
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-global-system-agent \
-  -n cpaas-system auth can-i get "secret/${LOCAL_GLOBAL_PLAN_SECRET}"
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-global-system-agent \
-  -n cpaas-system auth can-i patch "secret/${LOCAL_GLOBAL_PLAN_SECRET}"
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-system-agent \
-  -n cpaas-system auth can-i get "secret/${WORKLOAD_PLAN_SECRET}"
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-system-agent \
-  -n cpaas-system auth can-i patch "secret/${WORKLOAD_PLAN_SECRET}"
-
-# Expected: no (cross-scope access)
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-global-system-agent \
-  -n cpaas-system auth can-i get "secret/${WORKLOAD_PLAN_SECRET}"
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-global-system-agent \
-  -n cpaas-system auth can-i patch "secret/${WORKLOAD_PLAN_SECRET}"
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-system-agent \
-  -n cpaas-system auth can-i get "secret/${LOCAL_GLOBAL_PLAN_SECRET}"
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-system-agent \
-  -n cpaas-system auth can-i patch "secret/${LOCAL_GLOBAL_PLAN_SECRET}"
-
-# Expected: no (namespace-wide or non-plan Secret access)
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-global-system-agent \
-  -n cpaas-system auth can-i list secrets
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-system-agent \
-  -n cpaas-system auth can-i list secrets
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-global-system-agent \
-  -n cpaas-system auth can-i get secret/global-registry-auth
-kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-  --as=system:serviceaccount:cpaas-system:baremetal-system-agent \
-  -n cpaas-system auth can-i get secret/global-registry-auth
-```
-
-Expected result: `get` and `patch` are allowed only within the matching permission scope. Every cross-scope check, both namespace-wide `list secrets` checks, and both `global-registry-auth` checks return `no`. Also compare the token hash in `/var/lib/elemental/agent/elemental_connection.json` on every Global host with the local `baremetal-global-system-agent-token` Secret; checking only the Kubernetes Secret does not prove that an existing host uses the expected token.
 
 ### etcd-sync Scope \{#etcd-sync-scope}
 
@@ -413,7 +119,7 @@ Synchronize the workload-cluster resources that allow standby to continue reconc
 - Non-`global` elemental resources: `MachineInventory` and `MachineRegistration`.
 - Plan Secrets, bootstrap data Secrets, workload kubeconfig Secrets, and workload credential Secrets that are required by the synchronized resources.
 - Provider referenced Secrets that must exist on the target side, including the encryption-provider Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef` when Bare Metal DR is enabled.
-- Exact shared auth bundle: `ServiceAccount/cpaas-system/baremetal-system-agent`, `Secret/cpaas-system/baremetal-system-agent-token`, `Role/cpaas-system/baremetal-system-agent`, and `RoleBinding/cpaas-system/baremetal-system-agent`.
+- Exact shared auth bundle, once it exists: `ServiceAccount/cpaas-system/baremetal-system-agent`, `Secret/cpaas-system/baremetal-system-agent-token`, `Role/cpaas-system/baremetal-system-agent`, and `RoleBinding/cpaas-system/baremetal-system-agent`.
 
 Do not synchronize:
 
@@ -421,138 +127,40 @@ Do not synchronize:
 - Standby `Cluster/cpaas-system/global`.
 - Standby `BaremetalCluster/cpaas-system/global`.
 - Standby `BaremetalMachine`, `MachineInventoryPool`, `MachineInventory`, and `MachineRegistration` objects that belong to the standby `global` cluster.
-- `ServiceAccount/cpaas-system/baremetal-global-system-agent`, `Secret/cpaas-system/baremetal-global-system-agent-token`, `Role/cpaas-system/baremetal-global-system-agent`, `RoleBinding/cpaas-system/baremetal-global-system-agent`, and the temporary `RoleBinding/cpaas-system/baremetal-global-system-agent-handoff-bridge` from either side.
+- `ServiceAccount/cpaas-system/baremetal-global-system-agent`, `Secret/cpaas-system/baremetal-global-system-agent-token`, `Role/cpaas-system/baremetal-global-system-agent`, and `RoleBinding/cpaas-system/baremetal-global-system-agent` from either side.
+- `ConfigMap/cpaas-system/baremetal-system-agent-handoff` from either side.
+- The standby-local token Secret selected by `active_cluster_token_secret_ref` and `ServiceMonitor/cpaas-system/etcd-sync-monitor`; MR `!179` renders exact-ignore entries for both.
 - Plan Secrets that belong to either side's local `Cluster/global`. Add their exact etcd keys to `etcd_sync.additional_ignore_equal` before starting synchronization.
 - Secrets from the primary cluster that are not required by workload cluster reconciliation.
 
-Before installing the ModuleInfo, follow the executable two-kubeconfig procedure in [Install Primary and Standby Clusters](./install.mdx#install-primary-and-standby-clusters) to collect `Role/baremetal-global-system-agent.rules[].resourceNames` from both sides, merge and de-duplicate the names, and populate `spec.config.additional_ignore_equal` with exact `/registry/secrets/cpaas-system/<plan-secret>` keys. Repeat that update before synchronization continues whenever either local Global Role gains another plan Secret.
+Before installing the ModuleInfo, follow the executable two-kubeconfig procedure in [Install Primary and Standby Clusters](./install.mdx#install-primary-and-standby-clusters) to collect `Role/baremetal-global-system-agent.rules[].resourceNames` from both sides, merge and de-duplicate the names, and populate `spec.config.additional_ignore_equal` with exactly the corresponding `/registry/secrets/cpaas-system/<plan-secret>` keys. Do not duplicate static ignore keys in this dynamic list.
 
-The mirror and monitor read their filter files at process startup. After every dynamic `additional_ignore_equal` update, first verify that the rendered `ConfigMap/cpaas-system/etcd-sync-ignore-text` contains every exact key, then trigger and wait for rollouts of both `Deployment/etcd-sync` and `Deployment/etcd-sync-monitor`. Updating ModuleInfo or waiting for the ConfigMap volume to refresh is not sufficient.
-
-```shell
-export STANDBY_GLOBAL_KUBECONFIG="<path-to-standby-global-kubeconfig>"
-
-IGNORE_EQUAL_TEXT="$(
-  kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
-    -n cpaas-system get configmap etcd-sync-ignore-text \
-    -o jsonpath='{.data.ignore-equal\.txt}'
-)"
-
-printf '%s\n' "${ETCD_SYNC_ADDITIONAL_IGNORE_EQUAL_JSON}" | jq -r '.[]' | \
-  while IFS= read -r key; do
-    if ! printf '%s\n' "${IGNORE_EQUAL_TEXT}" | grep -Fqx -- "${key}"; then
-      echo "missing etcd-sync ignore key: ${key}" >&2
-      exit 1
-    fi
-  done
-
-kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
-  -n cpaas-system rollout restart deployment/etcd-sync
-kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
-  -n cpaas-system rollout restart deployment/etcd-sync-monitor
-kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
-  -n cpaas-system rollout status deployment/etcd-sync --timeout=5m
-kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
-  -n cpaas-system rollout status deployment/etcd-sync-monitor --timeout=5m
-```
-
-### Adding a Global Host While Synchronization Is Configured \{#adding-a-global-host-while-synchronization-is-configured}
-
-Never create or allocate a new primary or standby Global host while the mirror is actively synchronizing and the new plan Secret is absent from `additional_ignore_equal`. Use this sequence:
-
-1. Stop or suspend the `etcd-sync` mirror with the supported plugin lifecycle operation, and verify that `Deployment/cpaas-system/etcd-sync` has no Ready mirror Pods. If a direct scale-to-zero is immediately reverted by ModuleInfo or AppRelease reconciliation, use the owning platform operation instead of racing the controller.
-2. Create the local Global `MachineRegistration` and `SeedImage`, register the host, and wait until the local `Role/baremetal-global-system-agent` contains the new plan Secret. Keep synchronization stopped.
-3. Re-run the two-kubeconfig collection, update `global-etcd-sync` ModuleInfo with the complete merged exact-key list, and verify the rendered `etcd-sync-ignore-text` ConfigMap.
-4. Restart the monitor and restore or roll out the mirror only after the new exact key is present. Wait for both Deployments to become available and confirm that the mirror remains healthy.
-5. Re-run the Global-local and shared RBAC allow/deny checks for the new plan Secret before considering the host operational.
-
-Do not guess a plan Secret name from the inventory name. Read it from the local Global Role or `MachineInventory.status.plan.secretRef.name`, and do not resume synchronization if the two sources disagree.
+MR `!179` adds a checksum of the rendered sync-key ConfigMap to both Deployment Pod templates. A fresh installation therefore starts with the final filter and does not need a manual rollout restart. Verify the dynamic and static entries, checksum annotations, Deployment readiness, and zero-difference monitor result with the installation guide's acceptance commands.
 
 <Directive type="warning" title="Secret Encryption Boundary">
-  Do not raw-sync every key under `/registry/secrets` when the primary and standby apiservers do not share the same Kubernetes encryption-provider configuration. The standby apiserver cannot decrypt ciphertext written with a different key. Sync only the required Secrets through a safe path that lets the standby apiserver store them with the standby encryption key, or use an approved exact-sync mechanism for the fixed auth bundle.
+  Do not raw-sync every key under `/registry/secrets` when the primary and standby apiservers do not share the same Kubernetes encryption-provider configuration. The standby apiserver cannot decrypt ciphertext written with a different key. The fresh DR installation must use the same encryption provider configuration on both sides before synchronization starts.
 </Directive>
 
 ### Failover Procedure
 
 Use this sequence for a planned or declared failover:
 
-1. Stop new writes through the old active platform entrance, but keep the old active etcd endpoint available for the final synchronization check. Stop or isolate the owning platform resources that can restore an entry-point Deployment; scaling a Deployment alone is not a fence because its owner can recreate it.
-2. On the old active Global cluster, update only the final Bare Metal provider AppRelease to `elemental.systemAgent.sharedAuthReadOnly: true`. Do not update the retained bootstrap AppRelease during the failover window. Wait for `Deployment/cpaas-system/elemental-operator` to roll out and verify that its arguments contain `--system-agent-shared-auth-read-only`. The new active side must still be read-only at this point, creating an intentional no-writer window for the shared bundle.
-3. Run the final `etcd-sync-monitor /check` and the separate shared ServiceAccount/token/RBAC semantic checks. Require zero missed and surplus keys. Immediately after that check, hard-fence the old active control plane so it cannot create any later writes. A hard fence must have an external readback, such as all old active control-plane VMs being powered off with autostart disabled, or equivalent API and etcd network isolation. DNS changes and controller scale-to-zero operations are not hard fences.
-4. Uninstall `etcd-sync` through its owning ModuleInfo. Do not delete only the AppRelease, scale the mirror, clear `ConfigMap/kube-public/etcd-sync`, or remove finalizers. Wait until the ModuleInfo, `AppRelease/cpaas-system/etcd-sync`, both `etcd-sync` Deployments, and `ConfigMap/kube-public/etcd-sync` are all absent.
-5. Switch the platform domain to the new active Global entrance and wait for both the platform endpoint and `${PLATFORM_HOST}:11443` to resolve to and answer from that side. This step must be after the plugin uninstall because the plugin DNS checker must not resolve its source domain to the target cluster itself. It must be before changing the new active AppRelease when that AppRelease downloads its chart from the platform-domain registry; otherwise the ownership update cannot render after the old active registry is fenced.
-6. On the Global cluster that is becoming active, update only the final Bare Metal provider AppRelease to `elemental.systemAgent.sharedAuthReadOnly: false` and wait for `Deployment/cpaas-system/elemental-operator` to roll out. Verify that its arguments no longer contain `--system-agent-shared-auth-read-only`, and verify that `Role/cpaas-system/baremetal-system-agent.resourceNames` matches the workload-scoped `MachineInventory.status.plan.secretRef.name` set. This confirms that the new active operator has taken ownership of shared RBAC.
+1. Fence the primary `global` write path. Stop or isolate the controllers and platform entry points that can continue writing workload cluster resources. Do this at the owning CR or platform-resource layer where possible; scaling a Deployment alone can be reverted by its owner.
+2. Wait until primary-to-standby `etcd-sync` is caught up, then freeze or stop it. Do not allow old primary data to overwrite new standby writes after failover.
+3. If your provider uses a sync gate, clear the gate after the sync has been stopped so standby controllers do not keep requeueing because they think synchronization is still in progress.
+4. Switch the platform domain to the standby platform entrance.
+5. Verify DNS and ingress:
 
    ```shell
-   export NEW_ACTIVE_GLOBAL_KUBECONFIG="<path-to-new-active-global-kubeconfig>"
-
-   kubectl --kubeconfig "${NEW_ACTIVE_GLOBAL_KUBECONFIG}" \
-     -n cpaas-system rollout status deployment/elemental-operator
-
-   if kubectl --kubeconfig "${NEW_ACTIVE_GLOBAL_KUBECONFIG}" \
-     -n cpaas-system get deployment elemental-operator -o json | \
-     jq -e '[.spec.template.spec.containers[].args[]?]
-       | index("--system-agent-shared-auth-read-only") != null' >/dev/null; then
-     echo "elemental-operator is still in shared auth read-only mode" >&2
-     exit 1
-   fi
-
-   WORKLOAD_PLAN_SECRET_NAMES="$(
-     kubectl --kubeconfig "${NEW_ACTIVE_GLOBAL_KUBECONFIG}" \
-       -n cpaas-system get machineinventories.elemental.cattle.io -o json | \
-     jq -c '[
-       .items[]
-       | . as $inventory
-       | (
-           $inventory.metadata.annotations["baremetal.cluster.io/system-agent-auth-scope"] //
-           (if (($inventory.metadata.annotations["baremetal.alauda.io/owner-cluster"] // "") | ascii_downcase) == "global"
-            then "global"
-            else "shared"
-            end)
-         ) as $scope
-       | select(($scope | ascii_downcase) == "shared")
-       | .status.plan.secretRef.name? // empty
-     ] | unique | sort'
-   )"
-   SHARED_ROLE_SECRET_NAMES="$(
-     kubectl --kubeconfig "${NEW_ACTIVE_GLOBAL_KUBECONFIG}" \
-       -n cpaas-system get role baremetal-system-agent -o json | \
-     jq -c '[
-       .rules[]?
-       | select(any(.apiGroups[]?; . == ""))
-       | select(any(.resources[]?; . == "secrets"))
-       | .resourceNames[]?
-     ] | unique | sort'
-   )"
-
-   if [ "${WORKLOAD_PLAN_SECRET_NAMES}" != "${SHARED_ROLE_SECRET_NAMES}" ]; then
-     echo "shared Role does not match workload plan Secrets" >&2
-     exit 1
-   fi
+   dig +short <platform-domain>
+   curl -kI https://<platform-domain>/kubernetes/global/version
+   curl -kI https://<standby-control-plane-vip>/kubernetes/global/version
    ```
 
-7. Wait until at least 60 seconds after `ConfigMap/kube-public/etcd-sync` disappeared, then verify that the new active controllers are no longer gated. Do not delete the gate ConfigMap by hand.
-8. Verify the workload ingress, registry, and the new active Global's direct API endpoint:
+   A `401` response is acceptable; it proves the request reached the platform ingress.
 
-   ```shell
-   export PLATFORM_DOMAIN="<platform-domain>"
-   export NEW_ACTIVE_CONTROL_PLANE_VIP="<new-active-control-plane-vip>"
-
-   dig +short "${PLATFORM_DOMAIN}"
-   curl -ksS -w '\nHTTP %{http_code}\n' \
-     "https://${PLATFORM_DOMAIN}/kubernetes/global/version"
-   curl -ksS -w '\nHTTP %{http_code}\n' \
-     "https://${PLATFORM_DOMAIN}:11443/v2/"
-   curl -ksS -w '\nHTTP %{http_code}\n' \
-     "https://${NEW_ACTIVE_CONTROL_PLANE_VIP}:6443/version"
-   ```
-
-   A Kubernetes version response with HTTP `200`, or an authentication/authorization response with HTTP `401` or `403`, proves that the request reached the intended API endpoint.
-
-9. Confirm the standby cluster has the provider components needed to manage Bare Metal workload clusters: CAPI core, kubeadm provider, Bare Metal provider, elemental-operator, cluster-transformer, and alive-related delivery components.
-10. Confirm existing workload hosts reconnect through the platform domain and can watch or patch their plan Secrets. Keep the former primary hard-fenced until the failback procedure has prepared it as the inactive peer.
-
-Failback uses the same ownership sequence in reverse. Start the original primary in isolation with `sharedAuthReadOnly: true`, install reverse `etcd-sync` on it, and synchronize from the currently active former standby. After reverse synchronization is caught up, first change the side becoming inactive to `true`, run the final checks, and hard-fence it. Uninstall the reverse mirror through its owning ModuleInfo and wait for the gate to disappear. Then switch the platform domain so the target AppRelease can use the target-side platform registry, change the side becoming active to `false`, verify ownership, and leave the inactive side fenced until forward synchronization has been re-established. Never reuse the old direction's token or exact-ignore array.
+6. Confirm the standby cluster has the provider components needed to manage Bare Metal workload clusters: CAPI core, kubeadm provider, Bare Metal provider, elemental-operator, cluster-transformer, and alive-related delivery components.
+7. Confirm existing workload hosts reconnect through the platform domain and can watch or patch their plan Secrets.
 
 ### Post-Failover Validation
 
@@ -564,7 +172,7 @@ After standby is active, validate in increasing risk order:
 - Worker scale-out allocates an available inventory and updates `Role/baremetal-system-agent.resourceNames` with the new plan Secret.
 - Worker scale-in runs a clean plan and releases inventory as designed.
 - Control-plane replacement restores the desired KCP replica count and etcd membership.
-- After following the stop-sync and exact-ignore update procedure, a new `MachineRegistration` and `SeedImage` created on standby can register a new host.
+- A new `MachineRegistration` and `SeedImage` created on standby can register a new host.
 - A pre-failover workload ISO is usable only if its registration URL uses the platform domain.
 
 ## Bare Metal Troubleshooting
@@ -572,263 +180,10 @@ After standby is active, validate in increasing risk order:
 | Symptom | Likely cause | First check |
 |---------|--------------|-------------|
 | Handoff target list is empty | `dcs-import-extra-resources` was missing or incomplete before the installer API call | `kubectl -n cpaas-system get cm dcs-import-extra-resources -o yaml`; check `baremetal-system-agent-handoff` Job logs |
-| Existing hosts get `401` or `Forbidden` after failover | ServiceAccount signing key, issuer, audience, token Secret, auth scope, or Role `resourceNames` does not match | `sha256sum /etc/kubernetes/pki/sa.key /etc/kubernetes/pki/sa.pub`; repeat the scoped `kubectl auth can-i` checks above |
-| Existing workload hosts fail TLS verification after the domain switch, or Global hosts fail against their local VIP | The platform certificate does not cover the platform domain, or the local kube-apiserver certificate/CA does not cover and trust the direct VIP | Check `cpaas-system/dex.tls`, the kube-apiserver serving certificate SANs, the agent connection CA, `curl -ksS https://<platform-domain>/kubernetes/global/version`, and `curl -ksS https://<local-global-control-plane-vip>:6443/version` |
-| Recovery registration completes but an older host reports `x509: certificate signed by unknown authority` against the direct API VIP | The operator lacks the legacy direct-API CA bundle compatibility, or its configured ingress CA Secret/key does not match the mounted certificate chain | Verify the operator image contains Elemental PR #3, compare the provider AppRelease CA values with the `elemental-operator` volume and `--ca-cert-file`, and confirm the ServiceAccount token Secret contains the kube-apiserver `ca.crt` |
+| Existing hosts get `401` or `Forbidden` after failover | ServiceAccount signing key, issuer, audience, token Secret, or Role `resourceNames` does not match | `sha256sum /etc/kubernetes/pki/sa.key /etc/kubernetes/pki/sa.pub`; `kubectl auth can-i` with the token |
+| Existing hosts fail TLS verification after DNS switch | Platform certificate chain or SAN does not cover the platform domain and both VIPs | Check `cpaas-system/dex.tls`, certificate SANs, and `curl -kI https://<vip>/kubernetes/global/version` |
 | Standby `global` resources are replaced by primary resources | `etcd-sync` ignore rules did not exclude `global` resources | Inspect the `etcd-sync` ignore ConfigMap and stop sync before restoring standby resources |
 | New host cannot register with an old ISO | ISO registration URL points to bootstrap or primary-only IP, or `MachineRegistration` was not synchronized | Inspect the `MachineRegistration` status and rebuild the ISO on active standby when needed |
-
-### Recover a Global Host That Cannot Authenticate During Migration \{#recover-a-global-host-that-cannot-authenticate-during-migration}
-
-Use this procedure only when an existing Global host cannot watch its plan because its legacy shared token no longer authenticates, for example after the shared ServiceAccount was replaced before that host consumed the split-auth migration plan. A temporary migration RoleBinding cannot repair an invalid JWT; it only preserves authorization for a token that the API server can still authenticate.
-
-This is an emergency connection repair for an already installed host. It reuses the existing registration state and MachineInventory. It must not reset, reinstall, or reprovision the host.
-
-Before starting, install the upgraded Bare Metal provider and `elemental-operator` on the affected final Global cluster. Wait for the local Global ServiceAccount, token Secret, Role, canonical RoleBinding, and the handoff-created migration bridge. Do not create the bridge manually.
-
-The operator image must include the legacy direct-kube-apiserver CA compatibility from Elemental PR #3 (`c8f7cf235cbfee0aa3973207f1091e5bc6c81cdd`, or an explicitly verified backport). For a direct-API registration update, that implementation returns the ingress and kube-apiserver CAs together in `Registration.CACert`, while keeping only the kube-apiserver CA in `SystemAgent.CACert`. Current register binaries use `SystemAgent.CACert`; older binaries, including the observed `fe5fd342` build that predates that field, ignore it and use the combined `Registration.CACert` when writing the direct-API kubeconfig.
-
-Confirm the deployed operator image digest belongs to a release containing that compatibility before creating a recovery capability. Record the host's existing `/usr/sbin/elemental-register --version`, but do not replace the installed binary. If the operator provenance is unknown, or it returns only the ingress CA in `Registration.CACert` for a direct-API registration, stop: the recovered agent will fail TLS verification against the kube-apiserver VIP.
-
-1. Create a dedicated recovery `MachineRegistration` on the affected final Global cluster. Copy only `spec` from the original bootstrap registration; do not copy `status`, UID, owner references, or a `SeedImage`.
-
-   ```shell
-   set -euo pipefail
-
-   export BOOTSTRAP_KUBECONFIG="<path-to-this-side-bootstrap-kubeconfig>"
-   export LOCAL_GLOBAL_KUBECONFIG="<path-to-this-side-final-global-kubeconfig>"
-   export BOOTSTRAP_MACHINE_REGISTRATION="<original-bootstrap-registration-name>"
-   export RECOVERY_MACHINE_REGISTRATION="global-system-agent-recovery"
-   export LOCAL_GLOBAL_CONTROL_PLANE_VIP="<this-side-control-plane-vip>"
-
-   kubectl --kubeconfig "${BOOTSTRAP_KUBECONFIG}" \
-     -n cpaas-system \
-     get machineregistration.elemental.cattle.io \
-     "${BOOTSTRAP_MACHINE_REGISTRATION}" -o json | \
-   jq --arg name "${RECOVERY_MACHINE_REGISTRATION}" \
-      --arg vip "${LOCAL_GLOBAL_CONTROL_PLANE_VIP}" '
-     {
-       apiVersion: .apiVersion,
-       kind: .kind,
-       metadata: {
-         name: $name,
-         namespace: "cpaas-system",
-         annotations: {
-           "baremetal.cluster.io/system-agent-auth-scope": "global",
-           "baremetal.cluster.io/system-agent-server-url": ("https://" + $vip + ":6443"),
-           "baremetal.cluster.io/system-agent-endpoint-mode": "direct-apiserver"
-         }
-       },
-       spec: .spec
-     }' | \
-   kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" apply -f -
-
-   kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-     -n cpaas-system wait --for=condition=Ready \
-     "machineregistration.elemental.cattle.io/${RECOVERY_MACHINE_REGISTRATION}" \
-     --timeout=180s
-
-   test "$(
-     kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-       -n cpaas-system get machineregistration.elemental.cattle.io \
-       "${RECOVERY_MACHINE_REGISTRATION}" \
-       -o jsonpath='{.status.serviceAccountRef.name}'
-   )" = "baremetal-global-system-agent"
-   ```
-
-   Do not print or copy `status.registrationURL` into a ticket, terminal transcript, or shared log. It contains a registration capability token.
-
-2. Verify that the existing MachineInventory plan Secret has the name required by the current registration server. If the two names differ, stop; this repair would connect the agent to the wrong Secret.
-
-   ```shell
-   export GLOBAL_MACHINE_INVENTORY="<affected-machine-inventory-name>"
-
-   PLAN_SECRET="$(
-     kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-       -n cpaas-system get machineinventory.elemental.cattle.io \
-       "${GLOBAL_MACHINE_INVENTORY}" \
-       -o jsonpath='{.status.plan.secretRef.name}'
-   )"
-
-   test "${PLAN_SECRET}" = "${GLOBAL_MACHINE_INVENTORY}"
-   ```
-
-3. Fetch the recovery registration configuration without switching global DNS and without exposing the capability URL in a process argument. Read the ingress CA Secret name and key from the affected cluster's actual Bare Metal provider AppRelease, and verify that they match the volume mounted into the running `elemental-operator`. Do not assume the key is `ca.crt`: a final Global `dex.tls` Secret can contain only `tls.crt` and `tls.key`, with the trusted certificate chain stored in `tls.crt`.
-
-   ```shell
-   set -euo pipefail
-   umask 077
-
-   export PLATFORM_DOMAIN="<platform-domain>"
-   export PROVIDER_APPRELEASE=cluster-api-provider-baremetal
-   W="$(mktemp -d)"
-   trap 'rm -rf "${W}"' EXIT
-
-   PROVIDER_APPRELEASE_JSON="$(
-     kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-       -n cpaas-system get apprelease "${PROVIDER_APPRELEASE}" -o json
-   )"
-
-   APPRELEASE_CA_SECRET_NAME="$(
-     printf '%s\n' "${PROVIDER_APPRELEASE_JSON}" | \
-       jq -r '.spec.values.elemental.tls.caCertSecretName // empty'
-   )"
-   APPRELEASE_CA_SECRET_KEY="$(
-     printf '%s\n' "${PROVIDER_APPRELEASE_JSON}" | \
-       jq -r '.spec.values.elemental.tls.caCertSecretKey // empty'
-   )"
-
-   # If the AppRelease omitted either value, set the corresponding RECOVERY_*
-   # override only after inspecting the deployed operator volume and argument.
-   RECOVERY_CA_SECRET_NAME="${RECOVERY_CA_SECRET_NAME:-${APPRELEASE_CA_SECRET_NAME}}"
-   RECOVERY_CA_SECRET_KEY="${RECOVERY_CA_SECRET_KEY:-${APPRELEASE_CA_SECRET_KEY}}"
-
-   if [ -z "${RECOVERY_CA_SECRET_NAME}" ] || [ -z "${RECOVERY_CA_SECRET_KEY}" ]; then
-     echo "the provider AppRelease does not identify the Elemental CA Secret and key" >&2
-     exit 1
-   fi
-
-   ELEMENTAL_OPERATOR_DEPLOYMENT_JSON="$(
-     kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-       -n cpaas-system get deployment elemental-operator -o json
-   )"
-   DEPLOYED_CA_SECRET_NAME="$(
-     printf '%s\n' "${ELEMENTAL_OPERATOR_DEPLOYMENT_JSON}" | \
-       jq -r '[.spec.template.spec.volumes[]?
-         | select(.name == "elemental-ca-cert")
-         | .secret.secretName][0] // empty'
-   )"
-   DEPLOYED_CA_SECRET_KEY="$(
-     printf '%s\n' "${ELEMENTAL_OPERATOR_DEPLOYMENT_JSON}" | \
-       jq -r '[.spec.template.spec.volumes[]?
-         | select(.name == "elemental-ca-cert")
-         | .secret.items[]?.key][0] // empty'
-   )"
-   DEPLOYED_CA_FILE_ARG="$(
-     printf '%s\n' "${ELEMENTAL_OPERATOR_DEPLOYMENT_JSON}" | \
-       jq -r '[.spec.template.spec.containers[].args[]?
-         | select(startswith("--ca-cert-file="))][0] // empty'
-   )"
-   DEPLOYED_CA_FILE_KEY="$(basename "${DEPLOYED_CA_FILE_ARG#*=}")"
-
-   if [ "${RECOVERY_CA_SECRET_NAME}" != "${DEPLOYED_CA_SECRET_NAME}" ] || \
-      [ "${RECOVERY_CA_SECRET_KEY}" != "${DEPLOYED_CA_SECRET_KEY}" ] || \
-      [ "${RECOVERY_CA_SECRET_KEY}" != "${DEPLOYED_CA_FILE_KEY}" ]; then
-     echo "confirmed CA Secret/key does not match the running elemental-operator" >&2
-     exit 1
-   fi
-
-   kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-     -n cpaas-system get machineregistration.elemental.cattle.io \
-     "${RECOVERY_MACHINE_REGISTRATION}" \
-     -o jsonpath='{.status.registrationURL}' > "${W}/registration-url"
-
-   kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-     -n cpaas-system get secret "${RECOVERY_CA_SECRET_NAME}" -o json | \
-   jq -er --arg key "${RECOVERY_CA_SECRET_KEY}" '
-     .data[$key] | select(type == "string" and length > 0)
-   ' | base64 -d > "${W}/registration-ca.crt"
-
-   grep -q -- '-----BEGIN CERTIFICATE-----' "${W}/registration-ca.crt"
-   openssl x509 -in "${W}/registration-ca.crt" -noout
-
-   {
-     printf 'url = "'
-     tr -d '\r\n' < "${W}/registration-url"
-     printf '"\n'
-     printf 'cacert = "%s"\n' "${W}/registration-ca.crt"
-     printf 'resolve = "%s:443:%s"\n' \
-       "${PLATFORM_DOMAIN}" "${LOCAL_GLOBAL_CONTROL_PLANE_VIP}"
-     printf 'fail\nsilent\nshow-error\n'
-   } > "${W}/curl.conf"
-
-   chmod 0600 "${W}"/*
-   curl --config "${W}/curl.conf" \
-     > "${W}/registration.yaml" \
-     2> "${W}/curl.log"
-   chmod 0600 "${W}/registration.yaml"
-   ```
-
-   This procedure fails closed if the AppRelease value, deployed Secret volume, and actual Secret key do not agree. If you must use a `RECOVERY_CA_SECRET_NAME` or `RECOVERY_CA_SECRET_KEY` override because an older AppRelease omitted explicit values, record the inspected Deployment volume and `--ca-cert-file` argument as evidence before setting it. Do not fall back from a missing `ca.crt` to `tls.crt` merely because that key exists.
-
-   `registration-url`, `curl.conf`, `registration.yaml`, and the command log are sensitive. Keep them readable only by root and never attach them to support records.
-
-4. Copy `registration.yaml` to a root-only directory under `/run` on the affected host.
-
-   ```shell
-   export GLOBAL_HOST_ADDRESS="<affected-global-host-address>"
-
-   ssh "root@${GLOBAL_HOST_ADDRESS}" \
-     'umask 077
-      install -d -m 0700 /run/elemental-reregister
-      install -m 0600 /dev/stdin /run/elemental-reregister/registration.yaml' \
-     < "${W}/registration.yaml"
-   ```
-
-5. On the affected host, verify and preserve the existing registration state, then run `elemental-register` in a temporary mount namespace. The temporary `/etc/hosts` bind mount makes only this command reach the local Global entrance; it does not change system DNS.
-
-   ```shell
-   export PLATFORM_DOMAIN="<platform-domain>"
-   export LOCAL_GLOBAL_CONTROL_PLANE_VIP="<this-side-control-plane-vip>"
-   R=/run/elemental-reregister
-
-   test -s /oem/registration/state.yaml
-   grep -q '^initialRegistration:' /oem/registration/state.yaml
-
-   cp -a /etc/hosts "${R}/hosts"
-   printf '\n%s %s\n' \
-     "${LOCAL_GLOBAL_CONTROL_PLANE_VIP}" "${PLATFORM_DOMAIN}" >> "${R}/hosts"
-
-   cp -a /var/lib/elemental/agent/elemental_connection.json \
-     "${R}/elemental_connection.before.json"
-   cp -a /oem/elemental-system-agent.yaml \
-     "${R}/elemental-system-agent.before.yaml"
-   chmod 0600 "${R}"/*
-
-   R="${R}" unshare --mount --propagation private sh -ceu '
-     mount --bind "${R}/hosts" /etc/hosts
-     exec /usr/sbin/elemental-register \
-       --config-path "${R}/registration.yaml" \
-       --state-path /oem/registration/state.yaml \
-       --install \
-       --no-toolkit
-   ' > "${R}/register.log" 2>&1
-
-   systemctl restart elemental-system-agent.service
-   systemctl is-active --quiet elemental-system-agent.service
-   ```
-
-   Never add `--reset`: it discards the update state and turns this into a new registration or reprovision path. Do not add `--debug`: the returned system-agent configuration and token can be written to the log. Even normal logging includes the registration URL, so keep `register.log` root-only.
-
-   The existing `/oem/registration/state.yaml` must retain the original TPM or emulated-TPM identity. If registration reports that the MachineInventory was not found and reprovisioning is needed, stop. Do not retry with an empty state or `--reset`.
-
-   On an older register binary, the recovered runtime kubeconfig is expected to use the combined `Registration.CACert` bundle returned by the compatible operator. On a current binary, it uses `SystemAgent.CACert`. In both cases, the resulting direct-API kubeconfig must contain the kube-apiserver CA, not only the ingress CA.
-
-6. As soon as the runtime files have been written, the agent has restarted, and the handoff Job or plan feedback proves that the agent can authenticate and consume its current plan Secret, delete the recovery `MachineRegistration`. This revokes the registration capability; it does not remove the shared local Global ServiceAccount token already written to the host. Do not keep the capability until the final probe merely for convenience.
-
-   ```shell
-   kubectl --kubeconfig "${LOCAL_GLOBAL_KUBECONFIG}" \
-     -n cpaas-system delete machineregistration.elemental.cattle.io \
-     "${RECOVERY_MACHINE_REGISTRATION}"
-   ```
-
-   If the agent still reports `the server has asked for the client to provide credentials`, TLS verification failure, or no plan observation, do not treat registration as successful and do not proceed to the completion gate. Preserve the root-only diagnostic files while investigating.
-
-7. Let a still-running handoff Job continue. If the Job already reached its timeout or failed while the host was stranded, re-run the chart-delivered official post-install hook described above; it records the failed logs, deletes the failed Job, and recreates it with the current image and arguments. Do not handcraft a replacement Job. Wait for the affected host's migration handoff checksum and probe to become Applied, then verify all of the normal completion gates:
-
-   - `/oem/elemental-system-agent.yaml` contains `https://<this-side-control-plane-vip>:6443`;
-   - the runtime token matches the local `baremetal-global-system-agent-token` Secret when compared by hash;
-   - the temporary bridge is deleted by handoff, not manually; and
-   - the completion ConfigMap reports `true split-local-direct-v1 <64-lowercase-hex-character-SHA-256>`.
-
-   The `--install --no-toolkit` command repairs the runtime system-agent connection files but does not write the persistent OEM handoff file or restart the agent by itself. The migration plan remains responsible for the persistent OEM update and final probe.
-
-8. Only after all completion gates pass, delete the root-only temporary files from the host:
-
-   ```shell
-   ssh "root@${GLOBAL_HOST_ADDRESS}" \
-     'rm -rf /run/elemental-reregister'
-   ```
 
 ## Provider Notes
 
@@ -860,7 +215,7 @@ Bare Metal requires all of the following to be aligned:
 - Same trusted platform certificate chain, with SANs that cover the platform domain, primary control-plane VIP, and standby control-plane VIP.
 - `dcs-import-extra-resources` created before the installer API call on both sides.
 - Bare Metal provider AppRelease values set with the local `handoffHook.controlPlaneVIP`, `handoffHook.directAPIServer: true`, `elemental.systemAgent.authMode: shared`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.globalServiceAccountName: baremetal-global-system-agent`. The active side sets `elemental.systemAgent.sharedAuthReadOnly: false`; the inactive side sets it to `true`.
-- The deployed `elemental-operator` image and every newly produced `baremetal-base-image` and `baremetal-base-image-iso` are built from the same pinned elemental commit. Rebuild new installation media whenever that commit changes. Already installed hosts retain their original register binary and rely on operator-side backward compatibility; do not replace that binary during handoff or recovery.
+- The deployed `elemental-operator` image and every newly produced `baremetal-base-image` and `baremetal-base-image-iso` are built from the same pinned elemental commit. Rebuild the installation media whenever that commit changes.
 
 Do not sync `SeedImage` from primary to standby. Sync non-`global` `MachineRegistration` resources when workload ISOs need to remain valid across failover. Do not sync primary Global `MachineRegistration` resources to standby. Create Global registrations locally with `baremetal.cluster.io/system-agent-auth-scope: global`, `baremetal.cluster.io/system-agent-server-url: https://<local-global-control-plane-vip>:6443`, and `baremetal.cluster.io/system-agent-endpoint-mode: direct-apiserver`.
 
