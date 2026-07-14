@@ -20,7 +20,7 @@ Use [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-reco
 That deployment procedure is the authoritative source for the installation-time DR configuration, including:
 
 - Primary and standby clusters use the same Kubernetes API server encryption provider configuration.
-- The etcd server certificate SAN list includes both the primary and standby control plane VIPs and the Platform Access Address.
+- The `KubeadmControlPlane` etcd server certificate SAN list includes both the primary and standby control plane VIPs and the Platform Access Address. This list is separate from the platform `console.cert` SAN list.
 - Huawei DCS deployments reference the shared encryption provider Secret from `DCSCluster.spec.encryptionProviderConfigRef`.
 - VMware vSphere deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Huawei Cloud Stack deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
@@ -185,7 +185,7 @@ After standby is active, validate in increasing risk order:
 |---------|--------------|-------------|
 | Handoff target list is empty | `dcs-import-extra-resources` was missing or incomplete before the installer API call | `kubectl -n cpaas-system get cm dcs-import-extra-resources -o yaml`; check `baremetal-system-agent-handoff` Job logs |
 | Existing hosts get `401` or `Forbidden` after failover | ServiceAccount signing key, issuer, audience, token Secret, or Role `resourceNames` does not match | `sha256sum /etc/kubernetes/pki/sa.key /etc/kubernetes/pki/sa.pub`; `kubectl auth can-i` with the token |
-| Existing hosts fail TLS verification after DNS switch | Platform certificate chain or SAN does not cover the platform domain and both VIPs | Check `cpaas-system/dex.tls`, certificate SANs, and `curl -kI https://<vip>/kubernetes/global/version` |
+| Existing workload hosts fail TLS verification after DNS switch | The standby serves an untrusted platform certificate, or the certificate does not cover the stable platform domain | Check `cpaas-system/dex.tls`, verify the `${PLATFORM_HOST}` SAN, and run `curl -kI https://<platform-domain>/kubernetes/global/version`. Check a VIP SAN only when platform HTTPS or registry access intentionally uses that VIP. |
 | Standby `global` resources are replaced by primary resources | `etcd-sync` ignore rules did not exclude `global` resources | Inspect the `etcd-sync` ignore ConfigMap and stop sync before restoring standby resources |
 | New host cannot register with an old ISO | ISO registration URL points to bootstrap or primary-only IP, or `MachineRegistration` was not synchronized | Inspect the `MachineRegistration` status and rebuild the ISO on active standby when needed |
 
@@ -216,7 +216,7 @@ Bare Metal requires all of the following to be aligned:
 - Same Kubernetes encryption provider Secret content on both sides, referenced by `BaremetalCluster.spec.encryptionProviderConfigRef`.
 - The encryption provider Secret is imported into each final `global` cluster through `dcs-import-extra-resources`; it must not exist only in the bootstrap KIND cluster.
 - Same ServiceAccount signing key files and same issuer/audience values on both sides.
-- Same trusted platform certificate chain, with SANs that cover the platform domain, primary control-plane VIP, and standby control-plane VIP.
+- Same trusted platform certificate on both sides, with the stable platform domain in its SAN list. Add a control-plane VIP SAN only when platform HTTPS or registry access intentionally uses that VIP; do not add internal Service names to `console.cert`.
 - `dcs-import-extra-resources` created before the installer API call on both sides.
 - Bare Metal provider AppRelease values set with the local `handoffHook.controlPlaneVIP`, `handoffHook.directAPIServer: true`, `elemental.systemAgent.authMode: shared`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.globalServiceAccountName: baremetal-global-system-agent`. The active side sets `elemental.systemAgent.sharedAuthReadOnly: false`; the inactive side sets it to `true`.
 - The deployed `elemental-operator` image and every newly produced `baremetal-base-image` and `baremetal-base-image-iso` are built from the same pinned elemental commit. Rebuild the installation media whenever that commit changes.
