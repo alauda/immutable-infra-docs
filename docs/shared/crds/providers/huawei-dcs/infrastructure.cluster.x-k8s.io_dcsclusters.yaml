@@ -72,10 +72,21 @@ spec:
                 properties:
                   host:
                     type: string
+                  interface:
+                    description: Interface is the NIC used by bootstrap VIP and alive.
+                      Empty means auto-detect by node IP.
+                    maxLength: 15
+                    pattern: ^[A-Za-z0-9_.:-]*$
+                    type: string
                   port:
                     format: int32
+                    maximum: 65535
+                    minimum: 1
                     type: integer
                   type:
+                    enum:
+                    - internal
+                    - external
                     type: string
                   vrid:
                     format: int64
