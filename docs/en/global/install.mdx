@@ -1734,7 +1734,7 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   </Tab>
   <Tab label="Bare Metal">
 
-The Bare Metal installer request includes the control-plane VIP because the `global` cluster uses the VIP exposed by `alive` after handoff. Set `REGISTRY_DOMAIN` to the platform registry address that the final `global` cluster should use. For DR, use `${PLATFORM_HOST}:11443` on both primary and standby so the registry follows the platform-domain switch. For a non-DR deployment, `${CONTROL_PLANE_VIP}:11443` is also valid. Do not use the bootstrap registry address in this field.
+The Bare Metal installer request includes the control-plane VIP because the `global` cluster uses the VIP exposed by `alive` after handoff. Set `REGISTRY_DOMAIN` to `${CONTROL_PLANE_VIP}:11443` for that side. In a DR pair, primary and standby must therefore use different Registry addresses: each Global keeps its own Registry on its own control-plane VIP, and Registry traffic does not follow the platform-domain DNS switch. Keep `registry.externalAddress` unset so the installer deploys and populates the local platform Registry. Do not use the bootstrap Registry address or `${PLATFORM_HOST}:11443` in this field.
 
 ```shell
 mkdir -p /root/yamls
@@ -1872,12 +1872,12 @@ export ENCRYPTION_PROVIDER_SECRET_B64="<base64-shared-etcd-encryption-key>"
 export PRIMARY_CLUSTER_VIP="<primary-ha-vip>"
 export STANDBY_CLUSTER_VIP="<standby-ha-vip>"
 export BAREMETAL_ENCRYPTION_PROVIDER_SECRET="global-encryption-provider-config"
-export ETCD_SYNC_VERSION="<etcd-sync-version-containing-4ff3b5e>"
+export ETCD_SYNC_VERSION="<etcd-sync-version-containing-86c2ce5>"
 export ETCD_SYNC_MODULEINFO="/root/yamls/global-etcd-sync-moduleinfo.json"
 export SERVICE_ACCOUNT_ISSUER="https://kubernetes.default.svc.cluster.local"
 ```
 
-Use the tested artifact produced from `etcd-sync` MR `!179` head commit `4ff3b5ee52ad0d9c7febf7a969bb99b4ca95e8e0` (`4ff3b5e`). That revision contains the Global-local identity, handoff completion, plugin ServiceMonitor exact-ignore rules, and dynamic Global plan-key input. It also removes the newly introduced legacy owner/cluster fallback: Global-local classification requires the explicit `baremetal.cluster.io/system-agent-auth-scope: global` annotation. An unannotated Elemental object is not protected as Global-local, remains eligible for the generic synchronization rules, and therefore fails fresh-install Global validation. Replace the placeholder with the published artifact version whose provenance proves it contains `4ff3b5e` or an explicitly verified equivalent merge commit. Do not infer compatibility from a higher-looking version string alone.
+Use the tested artifact produced from `etcd-sync` MR `!179` head commit `86c2ce500c059ff5226dd2f5ebb5b6e908faf06d` (`86c2ce5`). That revision contains the Global-local identity rules, plugin ServiceMonitor exact-ignore rule, dynamic Global plan-key input, and the local `public-registry-credential` exact-ignore rule required when each Global uses its own VIP Registry. It also removes the newly introduced legacy owner/cluster fallback: Global-local classification requires the explicit `baremetal.cluster.io/system-agent-auth-scope: global` annotation. An unannotated Elemental object is not protected as Global-local, remains eligible for the generic synchronization rules, and therefore fails fresh-install Global validation. Replace the placeholder with the published artifact version whose provenance proves it contains `86c2ce5` or an explicitly verified equivalent merge commit. Do not infer compatibility from a higher-looking version string alone.
 
 Create the encryption provider configuration file on both installation environments.
 
@@ -2194,7 +2194,51 @@ Use the provider-specific installer configuration differences for both sides:
 
 For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB. For Bare Metal, set both the manifest VIP and the installer VIP fields to the primary control-plane VIP.
 
-After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` as `${PLATFORM_HOST}:11443` on both sides. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
+After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and set `REGISTRY_DOMAIN` to the standby `${CONTROL_PLANE_VIP}:11443`. The primary installation must likewise use its own control-plane VIP. Do not change either Registry address when the platform domain switches. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
+
+For Bare Metal, verify the permanent Registry propagation on each final Global before installing `etcd-sync`. Keep `ProductBase.spec.registry.preferPlatformURL` at the installer-generated value; the Global-local Registry address is carried by `spec.registry.address` and the two Cluster annotations.
+
+```shell
+verify_baremetal_global_registry() {
+  kubeconfig=$1
+  expected_registry=$2
+
+  test "$(kubectl --kubeconfig "${kubeconfig}" \
+    get productbase.product.alauda.io base \
+    -o jsonpath='{.spec.registry.address}')" = "${expected_registry}"
+  test "$(kubectl --kubeconfig "${kubeconfig}" \
+    get cluster.platform.tkestack.io global \
+    -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}')" = \
+    "${expected_registry}"
+  test "$(kubectl --kubeconfig "${kubeconfig}" -n cpaas-system \
+    get cluster.cluster.x-k8s.io global \
+    -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}')" = \
+    "${expected_registry}"
+  test "$(kubectl --kubeconfig "${kubeconfig}" -n cpaas-system \
+    get secret public-registry-credential -o jsonpath='{.data.registry}' | \
+    base64 -d)" = "${expected_registry}"
+
+  kubectl --kubeconfig "${kubeconfig}" -n cpaas-system \
+    get secret global-registry-auth -o jsonpath='{.data.\.dockerconfigjson}' | \
+    base64 -d | jq -e --arg registry "${expected_registry}" \
+      '.auths[$registry] != null' >/dev/null
+
+  kubectl --kubeconfig "${kubeconfig}" get apprelease -A -o json | \
+    jq -e --arg registry "${expected_registry}" '
+      all(.items[];
+        .spec.source.repoURL == $registry and
+        .spec.values.global.registry.address == $registry)
+    ' >/dev/null
+}
+
+export PRIMARY_GLOBAL_REGISTRY_ADDRESS="<primary-control-plane-vip>:11443"
+export STANDBY_GLOBAL_REGISTRY_ADDRESS="<standby-control-plane-vip>:11443"
+
+verify_baremetal_global_registry \
+  "${PRIMARY_GLOBAL_KUBECONFIG}" "${PRIMARY_GLOBAL_REGISTRY_ADDRESS}"
+verify_baremetal_global_registry \
+  "${STANDBY_GLOBAL_KUBECONFIG}" "${STANDBY_GLOBAL_REGISTRY_ADDRESS}"
+```
 
 For Bare Metal, run the complete handoff gate on both sides before decommissioning either bootstrap KIND cluster. `GLOBAL_HOSTS` is the space-separated management address list for that side's installed Global machines. Run this from a secured host that can use both Global kubeconfigs and SSH to the machines. Keep shell tracing disabled because the runtime connection file contains a bearer token.
 
@@ -2457,7 +2501,7 @@ Do not reduce acceptance to the `ready` signal alone. A runtime token or CA mism
 
 After the standby installation succeeds, switch the platform domain back to the primary entrance before installing `global-etcd-sync`. Primary remains active during initial synchronization, and workload system-agent endpoints use the platform domain. Verify that DNS and `https://<platform-domain>/kubernetes/global/version` reach primary before continuing.
 
-Before you create the `global-etcd-sync` ModuleInfo, build `additional_ignore_equal` exclusively from both sides' local Global plan Secret names. MR `!179` already keeps the plugin's own `ServiceMonitor/etcd-sync-monitor` and the fixed Global-local objects local, so do not duplicate those static keys in the dynamic list. Run these commands from a host that has `jq` and two kubeconfigs. Each kubeconfig must address its own Global API server; do not rely on the platform domain, because that domain points to only one side at a time. If one kubeconfig contains both clusters, use two distinct contexts in the equivalent `kubectl --context` commands.
+Before you create the `global-etcd-sync` ModuleInfo, build `additional_ignore_equal` exclusively from both sides' local Global plan Secret names. MR `!179` already keeps the plugin's own `ServiceMonitor/etcd-sync-monitor`, the fixed Global-local objects, and `public-registry-credential` local, so do not duplicate those static keys in the dynamic list. Run these commands from a host that has `jq` and two kubeconfigs. Each kubeconfig must address its own Global API server; do not rely on the platform domain, because that domain points to only one side at a time. If one kubeconfig contains both clusters, use two distinct contexts in the equivalent `kubectl --context` commands.
 
 ```shell
 set -euo pipefail
@@ -2698,7 +2742,7 @@ rm -f "${ETCD_SYNC_MODULEINFO}"
 unset STANDBY_CLUSTER_BEARER_TOKEN
 ```
 
-Wait for the normalized ModuleInfo and its managed `AppRelease/cpaas-system/etcd-sync`. Do not declare the plugin installed until the AppRelease phase is `Success`, its installed revision matches `ETCD_SYNC_VERSION`, and both Deployments use an image built from `etcd-sync` MR `!179` head commit `4ff3b5e` or the explicitly verified equivalent merge commit.
+Wait for the normalized ModuleInfo and its managed `AppRelease/cpaas-system/etcd-sync`. Do not declare the plugin installed until the AppRelease phase is `Success`, its installed revision matches `ETCD_SYNC_VERSION`, and both Deployments use an image built from `etcd-sync` MR `!179` head commit `86c2ce5` or the explicitly verified equivalent merge commit.
 
 ```shell
 deadline=$((SECONDS + 600))
@@ -2719,7 +2763,7 @@ until kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
   sleep 10
 done
 
-export ETCD_SYNC_IMAGE_PROVENANCE_MARKER="4ff3b5e"
+export ETCD_SYNC_IMAGE_PROVENANCE_MARKER="86c2ce5"
 for deployment in etcd-sync etcd-sync-monitor; do
   kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
     -n cpaas-system get deployment "${deployment}" -o json | \
@@ -2729,9 +2773,9 @@ for deployment in etcd-sync etcd-sync-monitor; do
 done
 ```
 
-The marker is `4ff3b5e` for the reviewed MR head. If the published image uses a merge-commit marker instead, set `ETCD_SYNC_IMAGE_PROVENANCE_MARKER` to that auditable marker only after recording that the merge contains `4ff3b5ee52ad0d9c7febf7a969bb99b4ca95e8e0`; do not disable the provenance check.
+The marker is `86c2ce5` for the reviewed MR head. If the published image uses a merge-commit marker instead, set `ETCD_SYNC_IMAGE_PROVENANCE_MARKER` to that auditable marker only after recording that the merge contains `86c2ce500c059ff5226dd2f5ebb5b6e908faf06d`; do not disable the provenance check.
 
-Verify the Secret reference and the complete rendered filter before accepting the first synchronization. The dynamic list must contain only the two local Global Role plan-key union. The token Secret, Global-local bundle, handoff completion ConfigMap, and plugin ServiceMonitor are static exact-ignore entries in MR `!179` and must also be present. The shared workload bundle must remain in the exact-sync list.
+Verify the Secret reference and the complete rendered filter before accepting the first synchronization. The dynamic list must contain only the two local Global Role plan-key union. The token Secret, Global-local bundle, local `public-registry-credential`, and plugin ServiceMonitor are static exact-ignore entries in MR `!179` and must also be present. `ConfigMap/baremetal-system-agent-handoff` is already outside the configured synchronization ranges, so it remains local without an exact-ignore entry. The shared workload bundle must remain in the exact-sync list.
 
 ```shell
 kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
@@ -2797,7 +2841,7 @@ for key in \
   /registry/secrets/cpaas-system/baremetal-global-system-agent-token \
   /registry/roles/cpaas-system/baremetal-global-system-agent \
   /registry/rolebindings/cpaas-system/baremetal-global-system-agent \
-  /registry/configmaps/cpaas-system/baremetal-system-agent-handoff \
+  /registry/secrets/cpaas-system/public-registry-credential \
   /registry/monitoring.coreos.com/servicemonitors/cpaas-system/etcd-sync-monitor; do
   printf '%s\n' "${IGNORE_EQUAL_TEXT}" | grep -Fqx -- "${key}"
 done
