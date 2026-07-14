@@ -85,15 +85,24 @@ Use `LOCAL_REGISTRY_ADDRESS` when pushing packages from the bootstrap host. Use 
 
 ### Step 2 — Create the Bootstrap Cluster
 
-Run the bootstrap script provided by the Core Package. This brings up a temporary KIND-based bootstrap cluster named `minialauda` on the bootstrap host — the temporary Cluster API management cluster used only to provision the `global` cluster.
+Run the bootstrap script provided by the Core Package with Bash. This brings up a temporary KIND-based bootstrap cluster named `minialauda` on the bootstrap host — the temporary Cluster API management cluster used only to provision the `global` cluster. After it completes, make the matching `kubectl` client from the bootstrap control-plane container available on the bootstrap host and configure the exported kubeconfig.
 
 ```shell
 mkdir -p /root/cpaas-install
 tar -xvf <core-package> -C /root/cpaas-install
 cd /root/cpaas-install/installer
-sh setup.sh
-mkdir -p ~/.kube
+bash setup.sh
+mkdir -p "${HOME}/.local/bin" ~/.kube
+
+if ! command -v kubectl >/dev/null 2>&1; then
+  nerdctl cp minialauda-control-plane:/usr/bin/kubectl \
+    "${HOME}/.local/bin/kubectl"
+  chmod 0755 "${HOME}/.local/bin/kubectl"
+  export PATH="${HOME}/.local/bin:${PATH}"
+fi
+
 cp /var/cpaas/data/alauda.kubeconfig ~/.kube/config
+kubectl get nodes
 ```
 
 The bootstrap script provisions an embedded registry, the Cluster API control plane, and the installer components that drive the `global` cluster installation.
