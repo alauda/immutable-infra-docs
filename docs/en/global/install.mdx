@@ -1858,12 +1858,12 @@ export ENCRYPTION_PROVIDER_SECRET_B64="<base64-shared-etcd-encryption-key>"
 export PRIMARY_CLUSTER_VIP="<primary-ha-vip>"
 export STANDBY_CLUSTER_VIP="<standby-ha-vip>"
 export BAREMETAL_ENCRYPTION_PROVIDER_SECRET="global-encryption-provider-config"
-export ETCD_SYNC_VERSION="<etcd-sync-version-containing-555c699>"
+export ETCD_SYNC_VERSION="<etcd-sync-version-containing-2140831>"
 export ETCD_SYNC_MODULEINFO="/root/yamls/global-etcd-sync-moduleinfo.json"
 export SERVICE_ACCOUNT_ISSUER="https://kubernetes.default.svc.cluster.local"
 ```
 
-Use the tested artifact produced from `etcd-sync` MR `!179` head commit `555c699`. That revision contains the Global-local identity, handoff completion, and plugin ServiceMonitor exact-ignore rules, plus the dynamic Global plan-key input. Replace the placeholder with the published artifact version whose provenance proves it contains `555c699` or an explicitly verified equivalent merge commit. Do not infer compatibility from a higher-looking version string alone.
+Use the tested artifact produced from `etcd-sync` MR `!179` head commit `214083173102507d6c7971d3d589fd8b7dd00efb` (`2140831`). That revision contains the Global-local identity, handoff completion, plugin ServiceMonitor exact-ignore rules, dynamic Global plan-key input, and the fresh-install removal of the migration-bridge ignore. Replace the placeholder with the published artifact version whose provenance proves it contains `2140831` or an explicitly verified equivalent merge commit. Do not infer compatibility from a higher-looking version string alone.
 
 Create the encryption provider configuration file on both installation environments.
 
@@ -2580,7 +2580,7 @@ rm -f "${ETCD_SYNC_MODULEINFO}"
 unset STANDBY_CLUSTER_BEARER_TOKEN
 ```
 
-Wait for the normalized ModuleInfo and its managed `AppRelease/cpaas-system/etcd-sync`. Do not declare the plugin installed until the AppRelease phase is `Success`, its installed revision matches `ETCD_SYNC_VERSION`, and both Deployments use an image built from `etcd-sync` MR `!179` head commit `555c699` or the explicitly verified equivalent merge commit.
+Wait for the normalized ModuleInfo and its managed `AppRelease/cpaas-system/etcd-sync`. Do not declare the plugin installed until the AppRelease phase is `Success`, its installed revision matches `ETCD_SYNC_VERSION`, and both Deployments use an image built from `etcd-sync` MR `!179` head commit `2140831` or the explicitly verified equivalent merge commit.
 
 ```shell
 deadline=$((SECONDS + 600))
@@ -2601,7 +2601,7 @@ until kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
   sleep 10
 done
 
-export ETCD_SYNC_IMAGE_PROVENANCE_MARKER="555c699"
+export ETCD_SYNC_IMAGE_PROVENANCE_MARKER="2140831"
 for deployment in etcd-sync etcd-sync-monitor; do
   kubectl --kubeconfig "${STANDBY_GLOBAL_KUBECONFIG}" \
     -n cpaas-system get deployment "${deployment}" -o json | \
@@ -2611,7 +2611,7 @@ for deployment in etcd-sync etcd-sync-monitor; do
 done
 ```
 
-The marker is `555c699` for the reviewed MR head. If the published image uses a merge-commit marker instead, set `ETCD_SYNC_IMAGE_PROVENANCE_MARKER` to that auditable marker only after recording that the merge contains `555c699`; do not disable the provenance check.
+The marker is `2140831` for the reviewed MR head. If the published image uses a merge-commit marker instead, set `ETCD_SYNC_IMAGE_PROVENANCE_MARKER` to that auditable marker only after recording that the merge contains `214083173102507d6c7971d3d589fd8b7dd00efb`; do not disable the provenance check.
 
 Verify the Secret reference and the complete rendered filter before accepting the first synchronization. The dynamic list must contain only the two local Global Role plan-key union. The token Secret, Global-local bundle, handoff completion ConfigMap, and plugin ServiceMonitor are static exact-ignore entries in MR `!179` and must also be present. The shared workload bundle must remain in the exact-sync list.
 
