@@ -44,8 +44,9 @@ Upgrade DCS clusters in the following order:
 
 1. **(Prerequisite)** Upgrade the ACP platform on the management cluster first. This brings the cluster-api-provider-dcs controller and the related CAPI components (core, KubeadmControlPlane provider, bootstrap provider) to versions that understand the new schema. Trigger workload-cluster upgrades only after the management-side controllers have rolled out and become Ready.
 2. Upgrade the Distribution Version (Aligned Extensions) on the workload cluster. See [Upgrading Distribution Version](index.mdx).
-3. Upgrade the control plane Kubernetes version.
-4. Upgrade worker nodes to the target Kubernetes version.
+3. Upgrade Kube-OVN to the chart version required by the target ACP release and wait for the `AppRelease` to reach `Success`.
+4. Upgrade the control plane Kubernetes version.
+5. Upgrade worker nodes to the target Kubernetes version.
 
 Cluster API orchestrates rolling updates with built-in safety mechanisms to reduce service disruption.
 
@@ -117,11 +118,70 @@ The cells you read from that row map to the upgrade manifests as follows:
 | **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
 | **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
 | **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
-| **kube-ovn (chart)** | `Cluster.metadata.annotations["cpaas.io/kube-ovn-version"]` **and** the `cni-kube-ovn` `AppRelease` `spec.source.charts[0].targetRevision` on the workload cluster | The annotation records the intended chart version; on an existing cluster the chart revision must be patched separately (see step 3 below). This is the `acp/chart-cpaas-kube-ovn` chart version (for example `v4.3.3`), not the Kube-OVN component version. |
+| **kube-ovn (chart)** | `Cluster.metadata.annotations["cpaas.io/kube-ovn-version"]` **and** the `cni-kube-ovn` `AppRelease` `spec.source.charts[0].targetRevision` on the workload cluster | The annotation records the intended chart version; on an existing cluster the chart revision must be patched separately. Complete [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane) before changing `KubeadmControlPlane`. This is the `acp/chart-cpaas-kube-ovn` chart version (for example `v4.3.3`), not the Kube-OVN component version. |
 
 The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags. The Kube-OVN annotation lives on the `Cluster` resource, not on `KubeadmControlPlane`, because the DCS provider watches it independently of the Kubernetes control plane rollout.
 
 Confirm with the cluster's platform owner that the target Alauda OS image has already been uploaded to the DCS platform under the same name as the **Alauda OS Image Version** value in the matrix row. The upgrade fails if that VM template is not present on DCS when the `DCSMachineTemplate` is applied.
+
+### Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
+
+Upgrade Kube-OVN and wait for it to become healthy before you change `KubeadmControlPlane.spec.version`, its component image tags, or its machine template reference. This ordering ensures that the target network components are already running before control-plane nodes begin rolling replacement.
+
+Kube-OVN is a Core lifecycle component, but on immutable OS the DCS provider does not pin its chart version to the cluster's Kubernetes version. The chart version is carried by a separate `AppRelease` named `cni-kube-ovn` in the `cpaas-system` namespace of the workload cluster, and you move it forward in two steps: update the annotation on the `Cluster` resource for bookkeeping and future re-creation, then patch the existing `AppRelease` directly to bump the chart revision.
+
+:::warning
+**Why two steps are required on DCS**
+
+The DCS provider creates the `cni-kube-ovn` `AppRelease` the first time the cluster is built, and from then on it reconciles only the `spec.values` block (cluster name, CIDRs, registry, control-plane node list). It does not write to `spec.source.charts[0].targetRevision` on an `AppRelease` that already exists. As a result, changing `cpaas.io/kube-ovn-version` on the `Cluster` resource alone does not move the chart version on the workload cluster. The annotation must still be updated so the recorded target matches the OS Support Matrix row, but the chart upgrade itself is driven by a direct `AppRelease` patch.
+:::
+
+1. **Update the `cpaas.io/kube-ovn-version` annotation on the `Cluster` resource**
+
+   ```bash
+   kubectl annotate cluster <cluster-name> -n cpaas-system \
+     cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+   ```
+
+   The annotation does not update automatically when `spec.version` changes; keep it in step with the **kube-ovn (chart)** column of the target row.
+
+2. **Patch the `AppRelease` chart revision on the workload cluster**
+
+   Run the patch against the workload cluster's API server (not the bootstrap KIND or the `global` cluster):
+
+   ```bash
+   kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
+     -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<kube-ovn-version-from-matrix>"}]'
+   ```
+
+   Use the same value you set in the annotation. The `releaseName` (`cpaas-kube-ovn`) and `name` (`acp/chart-cpaas-kube-ovn`) are managed by the provider; do not change them.
+
+3. **Wait for reconciliation to complete before upgrading the control plane**
+
+   Watch the chart phase and the installed revision:
+
+   ```bash
+   # Overall AppRelease state — Sync and Health columns must reach a Success-equivalent reason
+   kubectl get apprelease cni-kube-ovn -n cpaas-system
+
+   # Installed revision and chart phase
+   kubectl get apprelease cni-kube-ovn -n cpaas-system \
+     -o jsonpath='Installed: {.status.charts.*.installedRevision}{"\n"}Phase: {.status.charts.*.phase}{"\n"}'
+   ```
+
+   The normal sequence is `Upgrading → HealthChecking → Success`. On small clusters the full transition typically completes within about one minute. Read the phases as follows:
+
+   | Phase | Meaning | `installedRevision` |
+   |---|---|---|
+   | `Upgrading` | Helm release upgrade in progress. `Sync` condition is `Unknown(Syncing)`. | Still the previous version |
+   | `HealthChecking` | Helm release applied; controller is verifying Kube-OVN pods. `Sync` condition is `True(Synced)`. | Already the target version |
+   | `Success` | All three conditions (`Validate`, `Sync`, `Health`) are `True`. | Target version |
+
+   :::warning
+   Do not start the KCP upgrade based on `installedRevision` alone. The field flips to the target value during `HealthChecking`, before pods have been verified Ready. Start the control-plane rollout only when `phase` is `Success` **and** `installedRevision` matches the target.
+   :::
+
+   The `AppRelease` API also defines `Downloading`, `Installing`, `Syncing`, `DownloadFailed`, `DeployFailed`, and `NotReady`. The first three are transient and the upgrade should converge on its own. The last three indicate a failure that needs manual investigation; start with `kubectl describe apprelease cni-kube-ovn -n cpaas-system` to read the per-condition `message` field.
 
 ### Upgrade Control Plane Infrastructure
 
@@ -175,7 +235,7 @@ Upgrading the control plane machine template lets you roll out updated VM specif
 
 Upgrading the control plane Kubernetes version on immutable OS is a delete-recreate workflow. The control plane VMs are replaced one by one from a new `DCSMachineTemplate` that points at the target Alauda OS VM template, and the `KubeadmControlPlane` resource is patched to carry the matching Kubernetes version, CoreDNS image tag, and etcd image tag.
 
-Before you start, collect every required value from the target ACP row in the OS Support Matrix as described in [Required Values From the OS Support Matrix](#required-values).
+Before you start, complete [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane) and verify that the `cni-kube-ovn` `AppRelease` is at the target revision with `phase=Success`. Then collect every required control-plane value from the target ACP row in the OS Support Matrix as described in [Required Values From the OS Support Matrix](#required-values).
 
 #### Procedure
 
@@ -204,64 +264,7 @@ Before you start, collect every required value from the target ACP row in the OS
 
    Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same Alauda OS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
-3. **Upgrade the Kube-OVN chart on the workload cluster**
-
-   Kube-OVN is a Core lifecycle component, but on immutable OS the DCS provider does not pin its chart version to the cluster's Kubernetes version. The chart version is carried by a separate `AppRelease` named `cni-kube-ovn` in the `cpaas-system` namespace of the workload cluster, and you move it forward in two steps: update the annotation on the `Cluster` resource for bookkeeping and future re-creation, then patch the existing `AppRelease` directly to bump the chart revision.
-
-   :::warning
-   **Why two steps are required on DCS**
-
-   The DCS provider creates the `cni-kube-ovn` `AppRelease` the first time the cluster is built, and from then on it reconciles only the `spec.values` block (cluster name, CIDRs, registry, control-plane node list). It does not write to `spec.source.charts[0].targetRevision` on an `AppRelease` that already exists. As a result, changing `cpaas.io/kube-ovn-version` on the `Cluster` resource alone does not move the chart version on the workload cluster. The annotation must still be updated so the recorded target matches the OS Support Matrix row, but the chart upgrade itself is driven by a direct `AppRelease` patch.
-   :::
-
-   3.1. **Update the `cpaas.io/kube-ovn-version` annotation on the `Cluster` resource**
-
-   ```bash
-   kubectl annotate cluster <cluster-name> -n cpaas-system \
-     cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
-   ```
-
-   The annotation does not update automatically when `spec.version` changes; keep it in step with the **kube-ovn (chart)** column of the target row.
-
-   3.2. **Patch the `AppRelease` chart revision on the workload cluster**
-
-   Run the patch against the workload cluster's API server (not the bootstrap KIND or the `global` cluster):
-
-   ```bash
-   kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
-     -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<kube-ovn-version-from-matrix>"}]'
-   ```
-
-   Use the same value you set in the annotation. The `releaseName` (`cpaas-kube-ovn`) and `name` (`acp/chart-cpaas-kube-ovn`) are managed by the provider; do not change them.
-
-   3.3. **Wait for reconciliation to complete**
-
-   Watch the chart phase and the installed revision:
-
-   ```bash
-   # Overall AppRelease state — Sync and Health columns must reach a Success-equivalent reason
-   kubectl get apprelease cni-kube-ovn -n cpaas-system
-
-   # Installed revision and chart phase
-   kubectl get apprelease cni-kube-ovn -n cpaas-system \
-     -o jsonpath='Installed: {.status.charts.*.installedRevision}{"\n"}Phase: {.status.charts.*.phase}{"\n"}'
-   ```
-
-   The normal sequence is `Upgrading → HealthChecking → Success`. On small clusters the full transition typically completes within about one minute. Read the phases as follows:
-
-   | Phase | Meaning | `installedRevision` |
-   |---|---|---|
-   | `Upgrading` | Helm release upgrade in progress. `Sync` condition is `Unknown(Syncing)`. | Still the previous version |
-   | `HealthChecking` | Helm release applied; controller is verifying Kube-OVN pods. `Sync` condition is `True(Synced)`. | Already the target version |
-   | `Success` | All three conditions (`Validate`, `Sync`, `Health`) are `True`. | Target version |
-
-   :::warning
-   Do not declare the upgrade complete on `installedRevision` alone. The field flips to the target value during `HealthChecking`, before pods have been verified Ready. The chart is only considered upgraded when `phase` is `Success` **and** `installedRevision` matches the target.
-   :::
-
-   The `AppRelease` API also defines `Downloading`, `Installing`, `Syncing`, `DownloadFailed`, `DeployFailed`, and `NotReady`. The first three are transient and the upgrade should converge on its own. The last three indicate a failure that needs manual investigation; start with `kubectl describe apprelease cni-kube-ovn -n cpaas-system` to read the per-condition `message` field.
-
-4. **Monitor the rolling update**
+3. **Monitor the rolling update**
 
    ```bash
    kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system -w
@@ -309,7 +312,7 @@ Procedure:
 
 - **Control plane**: patch `KubeadmControlPlane` to restore the previous `spec.machineTemplate.infrastructureRef.name`, `spec.version`, `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag`, and `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag`.
 - **Workers**: patch each `MachineDeployment` to restore the previous `spec.template.spec.infrastructureRef.name` and `spec.template.spec.version`.
-- **Kube-OVN**: if the Kube-OVN chart was upgraded, revert it the same way the upgrade was applied — first restore the annotation, then patch the `AppRelease` chart revision back. Verify with the same `installedRevision` + `phase=Success` check used in step 3.
+- **Kube-OVN**: if the Kube-OVN chart was upgraded, revert it the same way the upgrade was applied — first restore the annotation, then patch the `AppRelease` chart revision back. Verify with the same `installedRevision` + `phase=Success` check described in [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane).
 
   ```bash
   kubectl annotate cluster <cluster-name> -n cpaas-system \
@@ -345,6 +348,7 @@ Use this workflow to upgrade Kubernetes from the web UI after Phase 1 is complet
 ### Prerequisites
 
 - The Distribution Version upgrade is complete. See [Upgrading Distribution Version](index.mdx)
+- Kube-OVN has been upgraded to the target chart version and the `cni-kube-ovn` `AppRelease` has reached `phase=Success`. Complete [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane) with YAML before using the UI to upgrade a node pool.
 - The Control Plane Node Pool is in Running state
 - The IP Pool has sufficient capacity for rolling updates
 - If the upgrade relies on pool-managed persistent disks, ensure the required `DCSIpHostnamePool.spec.pool[].persistentDisk` entries have already been created or updated through YAML
@@ -353,9 +357,10 @@ Use this workflow to upgrade Kubernetes from the web UI after Phase 1 is complet
 
 Kubernetes upgrades follow this sequence after the Distribution Version upgrade:
 
-1. Upgrade the Control Plane Node Pool.
-2. Wait for the Control Plane Node Pool upgrade to complete.
-3. Upgrade Worker Node Pools in any order.
+1. Upgrade Kube-OVN with the YAML procedure and wait for the `AppRelease` to reach `phase=Success`.
+2. Upgrade the Control Plane Node Pool.
+3. Wait for the Control Plane Node Pool upgrade to complete.
+4. Upgrade Worker Node Pools in any order.
 
 ### Checking Available Upgrades
 

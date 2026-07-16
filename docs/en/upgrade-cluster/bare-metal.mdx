@@ -50,8 +50,9 @@ Upgrade bare-metal clusters in the following order:
 1. **(Prerequisite)** Upgrade the ACP platform on the `global` cluster. This brings the bare-metal provider, `elemental-operator`, and the related CAPI components to versions that understand the new schema. Trigger workload-cluster upgrades only after the management-side controllers have rolled out and become Ready.
 2. Upgrade the Distribution Version (Aligned Extensions) on the workload cluster. See [Upgrading Distribution Version](index.mdx).
 3. Ensure the target Kubernetes version is present in `elemental-image-catalog` (and the matching `-iso` repository is available for any future host re-registration).
-4. Upgrade the control plane Kubernetes version (replaces all control-plane nodes one at a time).
-5. Upgrade worker nodes to the target Kubernetes version (replaces all worker nodes within the `maxUnavailable` budget).
+4. Upgrade Kube-OVN to the chart version required by the target ACP release and wait for the `AppRelease` to reach `Success`.
+5. Upgrade the control plane Kubernetes version (replaces all control-plane nodes one at a time).
+6. Upgrade worker nodes to the target Kubernetes version (replaces all worker nodes within the `maxUnavailable` budget).
 
 Cluster API orchestrates the rolling replacement.
 
@@ -67,6 +68,8 @@ Before you start, ensure all of the following prerequisites are met:
 - The control plane is reachable through the existing `<control-plane-vip>:<control-plane-port>`.
 - All current nodes are healthy and `Ready`.
 - The target Kubernetes version is a key in `elemental-image-catalog`. If it is not, add it before starting (see [Update the Image Catalog](#update-the-image-catalog)).
+- The target **kube-ovn (chart)** version has been read from the matching ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
+- `BaremetalCluster.spec.networkType` is `kube-ovn`; the provider skips Kube-OVN reconciliation for any other value.
 - The platform registry is reachable from every host in the cluster.
 - Both `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0` are set — bare-metal does not over-provision physical hosts.
 - The relevant pools have enough capacity to replace one node at a time without falling below the desired replica count.
@@ -113,7 +116,71 @@ The key must include the leading `v` (for example `v1.34.5`). If the key is miss
 
 When the new version corresponds to a new Alauda OS / base-image release, the ISO variant for that release should also be available before the upgrade. The bare-metal provider does not rebuild SeedImages automatically, but you may want to refresh `MachineRegistration` / `SeedImage` for **future** host onboarding so the new hosts come up on the new release. The ISO repository is the same as the base-image repository with `-iso` appended.
 
+## Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
+
+Upgrade Kube-OVN and wait for it to become healthy before you change `KubeadmControlPlane.spec.version`. This ordering ensures that the target network components are already running before bare-metal control-plane nodes begin delete-reprovision replacement.
+
+The bare-metal provider's reconciliation behavior makes two operations necessary:
+
+- It reconciles Kube-OVN only when `BaremetalCluster.spec.networkType` is exactly `kube-ovn`.
+- It reads `Cluster.metadata.annotations["cpaas.io/kube-ovn-version"]` before falling back to the `kube-ovn` `ModulePlugin` version. However, after `cni-kube-ovn` already exists, the provider updates only `AppRelease.spec.values` and preserves `spec.source`, including the existing chart `targetRevision`. Therefore, changing the annotation alone records the intended version but does not upgrade the existing chart.
+
+1. **Verify that provider-managed Kube-OVN reconciliation is enabled**
+
+   Run this command against the management (`global`) cluster:
+
+   ```bash
+   kubectl -n cpaas-system get baremetalcluster <cluster-name> \
+     -o jsonpath='{.spec.networkType}{"\n"}'
+   # Expected output: kube-ovn
+   ```
+
+   If the output is empty or different, correct `BaremetalCluster.spec.networkType` before continuing. Otherwise, the provider skips Kube-OVN reconciliation, including the control-plane node list updates needed during replacement.
+
+2. **Record the target chart version on the CAPI `Cluster`**
+
+   Use the **kube-ovn (chart)** value from the target ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx):
+
+   ```bash
+   kubectl annotate cluster <cluster-name> -n cpaas-system \
+     cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+   ```
+
+   Run this command against the management (`global`) cluster where the CAPI `Cluster` exists. The annotation takes precedence over the provider's `ModulePlugin` fallback and keeps the cluster's recorded target deterministic.
+
+3. **Patch the existing `AppRelease` chart revision**
+
+   Run this command against the workload cluster's API server, not the management cluster:
+
+   ```bash
+   kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
+     -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<kube-ovn-version-from-matrix>"}]'
+   ```
+
+   Use the same chart version that you set in the annotation. Do not change the provider-managed chart name (`acp/chart-cpaas-kube-ovn`) or release name (`cpaas-kube-ovn`).
+
+4. **Wait for reconciliation to complete before upgrading the control plane**
+
+   ```bash
+   # Overall AppRelease state — Sync and Health must reach a Success-equivalent reason
+   kubectl get apprelease cni-kube-ovn -n cpaas-system
+
+   # Installed revision and chart phase
+   kubectl get apprelease cni-kube-ovn -n cpaas-system \
+     -o jsonpath='Installed: {.status.charts.*.installedRevision}{"\n"}Phase: {.status.charts.*.phase}{"\n"}'
+   ```
+
+   The normal sequence is `Upgrading → HealthChecking → Success`. Do not start the KCP rollout based on `installedRevision` alone: it changes during `HealthChecking`, before Kube-OVN pods have been verified Ready. Continue only when `phase` is `Success` **and** `installedRevision` matches the target chart version.
+
+   If the `AppRelease` reaches `DownloadFailed`, `DeployFailed`, or `NotReady`, stop before changing `KubeadmControlPlane` and inspect the condition messages:
+
+   ```bash
+   kubectl describe apprelease cni-kube-ovn -n cpaas-system
+   ```
+
 ## Upgrade the Control Plane \{#upgrade-control-plane}
+
+Before continuing, complete [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane) and verify that `cni-kube-ovn` is at the target installed revision with `phase=Success`.
 
 Patch `KubeadmControlPlane.spec.version` to the new Kubernetes version. Where component image tags are pinned (DNS, etcd), update them in the same edit:
 
@@ -172,13 +239,16 @@ If the new release also requires a bootstrap-template change (different cloud-in
 
 ## Cross-Version Upgrades
 
-Kubernetes only supports single-minor upgrades for the control plane (skew policy). To move from v1.32 → v1.34:
+Kubernetes control planes must move through supported minor-version hops. Use [Preparing for Cross-Version Upgrades](./index.mdx#cross-version-preparation) to identify and pre-stage every intermediate ACP row.
 
-1. Add the v1.33 entry to `elemental-image-catalog` and upgrade the control plane to v1.33; wait for the rollout to complete.
-2. Add the v1.34 entry; upgrade the control plane to v1.34.
-3. Upgrade the worker `MachineDeployment` to v1.34.
+For each intermediate row, and finally for the target row:
 
-The bare-metal rollout strategy already serializes node replacement, so cross-version upgrades do not require additional pool capacity beyond what was already needed for a same-minor upgrade.
+1. Ensure that row's Kubernetes version exists in `elemental-image-catalog`.
+2. Upgrade Kube-OVN to that row's **kube-ovn (chart)** version and wait for `phase=Success`.
+3. Upgrade the control plane to that row's Kubernetes version and wait for every control-plane node to become `Ready`.
+4. Upgrade every worker `MachineDeployment` to the same Kubernetes version and wait for the rollout to complete before starting the next hop.
+
+The version values always come from the OS Support Matrix; they are not fixed examples in this guide. The bare-metal rollout strategy already serializes node replacement, so cross-version upgrades do not require additional pool capacity beyond what is needed for a same-minor upgrade.
 
 ## Verification
 
@@ -187,10 +257,11 @@ After the rollout completes:
 ```bash
 kubectl -n cpaas-system get baremetalmachines.infrastructure.cluster.x-k8s.io
 kubectl -n cpaas-system get machines.cluster.x-k8s.io
+kubectl -n cpaas-system get apprelease cni-kube-ovn
 kubectl get nodes -o wide
 ```
 
-All `BaremetalMachine` objects should be `Running`. Every CAPI `Machine` should report the new `spec.version`. Every workload `Node` should be `Ready` with the new `kubelet` version, and every `MachineInventory` plan secret should carry `baremetal.alauda.io/plan.type=reprovision` (the most recent plan applied).
+The `cni-kube-ovn` `AppRelease` should report the target installed revision with `phase=Success`. All `BaremetalMachine` objects should be `Running`. Every CAPI `Machine` should report the new `spec.version`. Every workload `Node` should be `Ready` with the new `kubelet` version, and every `MachineInventory` plan secret should carry `baremetal.alauda.io/plan.type=reprovision` (the most recent plan applied).
 
 `MachineInventoryPool.status` should satisfy `available + allocated + preparing + reprovisioning + unavailable = total` with `preparing = reprovisioning = 0`.
 
@@ -198,6 +269,7 @@ All `BaremetalMachine` objects should be `Running`. Every CAPI `Machine` should 
 
 | Issue | What to check |
 |---|---|
+| The Kube-OVN annotation changed but the installed chart revision did not | This is expected for an existing `AppRelease`: the bare-metal provider preserves `spec.source` and updates only `spec.values`. Patch `spec.source.charts[0].targetRevision` directly as described in [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane). |
 | Rollout stuck on the first new node | `BaremetalMachine.status.conditions[ImageResolved]` — confirm the new key is in `elemental-image-catalog` and that the `Cluster` carries `cpaas.io/registry-address`. |
 | Host reboots into a state that never joins the cluster | `MachineInventory.status.plan.state` (`Failed` is terminal); inspect the host's serial console for `elemental upgrade` errors. Verify the platform registry is reachable from the host. |
 | New control-plane node fails `kubeadm join` | Confirm the VIP is still reachable; `alive` may have lost the lock. Check `kubectl -n kube-system get lease`, `ipvsadm -Ln`, `keepalived` logs from the static pod. |
