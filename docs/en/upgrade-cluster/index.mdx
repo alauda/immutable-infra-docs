@@ -96,6 +96,8 @@ After the Distribution Version upgrade completes:
 After upgrading Distribution Version, upgrade Kubernetes on each Node Pool.
 Provider-specific guides contain the Phase 2 procedures for each platform.
 
+For Huawei DCS, Huawei Cloud Stack, VMware vSphere, and bare-metal clusters, upgrade the Kube-OVN chart for the current upgrade hop **before** changing `KubeadmControlPlane`. Wait until the workload cluster's `cni-kube-ovn` `AppRelease` reports the target installed revision and `phase=Success`, then upgrade the control plane, followed by worker nodes. Repeat this Kube-OVN-first ordering for every intermediate Kubernetes minor in a cross-version upgrade.
+
 See platform-specific guides:
 - [Huawei DCS](./huawei-dcs.mdx)
 - [Huawei Cloud Stack](./huawei-cloud-stack.mdx)
@@ -137,7 +139,7 @@ The control plane and worker rollouts then step through the intermediate OS imag
 
 ### Step 3 — Apply the platform-specific procedure for each intermediate version
 
-Repeat the platform-specific Phase 2 procedure for each intermediate ACP version in turn, using that version's row in [OS Support Matrix](../overview/os-support-matrix.mdx) for `KubeadmControlPlane` and `MachineDeployment` values. For each hop, complete the provider's standard procedure — control plane first, then workers, per the Kubernetes version skew policy — before starting the next. After all intermediate hops succeed, apply the same procedure once more for the target ACP version.
+Repeat the platform-specific Phase 2 procedure for each intermediate ACP version in turn, using that version's row in [OS Support Matrix](../overview/os-support-matrix.mdx) for Kube-OVN, `KubeadmControlPlane`, and `MachineDeployment` values. For each hop, upgrade Kube-OVN first and wait for `phase=Success`, then upgrade the control plane, followed by workers. Complete the whole hop before starting the next one. After all intermediate hops succeed, apply the same procedure once more for the target ACP version.
 
 ---
 
