@@ -20,14 +20,14 @@ Use [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-reco
 That deployment procedure is the authoritative source for the installation-time DR configuration, including:
 
 - Primary and standby clusters use the same Kubernetes API server encryption provider configuration.
-- The etcd server certificate SAN list includes both the primary and standby control plane VIPs and the Platform Access Address.
+- The `KubeadmControlPlane` etcd server certificate SAN list includes both the primary and standby control plane VIPs and the Platform Access Address. This list is separate from the platform `console.cert` SAN list.
 - Huawei DCS deployments reference the shared encryption provider Secret from `DCSCluster.spec.encryptionProviderConfigRef`.
 - VMware vSphere deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Huawei Cloud Stack deployments write the same `/etc/kubernetes/encryption-provider.conf` file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Bare Metal deployments reference the shared encryption provider Secret from `BaremetalCluster.spec.encryptionProviderConfigRef` and use the same Kubernetes ServiceAccount signing key on both sides.
 - Huawei DCS, VMware vSphere, and Huawei Cloud Stack create the `dcs-import-extra-resources` ConfigMap before installer import so the installation can import referenced credential Secrets and, where applicable, provider-specific infrastructure resources. The name keeps the `dcs` prefix for historical installer compatibility.
-- Bare Metal creates the `dcs-import-extra-resources` ConfigMap before installer import so the installation can preserve bare-metal and elemental resources required by handoff.
-- The primary cluster installs `global-etcd-sync` with the standby cluster connection values after both installations succeed.
+- Bare Metal creates the `dcs-import-extra-resources` ConfigMap before installer import so the installation can preserve the durable bare-metal and elemental owner resources required by handoff. It does not import Global plan Secrets or kubeadm bootstrap data Secrets; fresh handoff creates the initial Global plan Secrets after all target Global `MachineInventory` objects exist.
+- The standby cluster installs `global-etcd-sync` with connection values that point to the active primary after both installations succeed.
 
 ## Operational Scope
 
@@ -45,26 +45,38 @@ A disaster recovery switchover and a DR-aware `global` cluster upgrade both unin
 
 ## Bare Metal DR Model
 
-Bare Metal DR adds host-level state that does not exist in VM-based providers. The `global` cluster does not create physical machines; it manages long-lived `MachineInventory` objects and writes plan Secrets that are consumed by `elemental-system-agent` on each host. Because of that, a standby `global` cluster must be able to accept the existing system-agent token and must receive the workload cluster inventory and plan state without overwriting its own `global` inventory.
+<Directive type="warning" title="Bare Metal Fresh-install Scope">
+  The split-auth model below describes only the target state created by a fresh primary and standby `global` installation. It is not an upgrade or migration procedure for an existing Bare Metal DR pair and does not cover the repair or recovery of a failed environment. Use a separately validated operations runbook for those lifecycle tasks.
+</Directive>
+
+Bare Metal DR adds host-level state that does not exist in VM-based providers. The `global` cluster does not create physical machines; it manages long-lived `MachineInventory` objects and writes plan Secrets that are consumed by `elemental-system-agent` on each host. Global-cluster machines therefore use a cluster-local identity, while non-`global` workload machines use a shared identity that follows the synchronized workload state. A standby `global` cluster must preserve its local Global identity while accepting the shared workload token from primary.
 
 ### Endpoint Rules
 
 Use different system-agent endpoints for `global` hosts and workload-cluster hosts:
 
-| Machine type | Endpoint |
-|--------------|----------|
-| Machines that belong to the active `global` cluster | `https://<current-global-control-plane-vip>/kubernetes/global` |
-| Machines that belong to non-`global` workload clusters | `https://<platform-domain>/kubernetes/global` |
+| Machine type | Endpoint | Identity | Synchronized |
+|--------------|----------|----------|--------------|
+| Machines that belong to the local `global` cluster | `https://<local-global-control-plane-vip>:6443` | `baremetal-global-system-agent` | No |
+| Machines that belong to non-`global` workload clusters | `https://<platform-domain>/kubernetes/global` | `baremetal-system-agent` | Yes, primary to standby |
 
-By default both endpoints are platform ingress paths, not direct kube-apiserver `:6443` endpoints. For the bootstrap KIND phase, `global` host registration uses the bootstrap host endpoint, normally `https://<bootstrap-host-ip>:12443`. Handoff changes only the installed `global` hosts to the final VIP endpoint.
+Global hosts always use their own side's direct kube-apiserver VIP; they do not follow the platform domain when active and standby switch roles. Workload hosts always use the platform domain so that their endpoint follows the active Global cluster.
 
-For a DR `global` cluster that must keep managing its own hosts without depending on its own ingress, opt in to direct kube-apiserver access by setting `handoffHook.directAPIServer: true` on the Bare Metal provider AppRelease (this requires `handoffHook.controlPlaneVIP`). Handoff then points `global`-cluster machines at `https://<current-global-control-plane-vip>:6443` directly, with no `/kubernetes/global` ingress path, and the agent trusts the apiserver with the in-cluster apiserver CA instead of the platform-ingress certificate. The parameter defaults to `false` (the ingress endpoint above); it applies only to `global`-cluster machines, and workload-cluster machines always keep the ingress path.
+During the bootstrap KIND phase, a Global host registration still uses the bootstrap endpoint, normally `https://<bootstrap-host-ip>:12443`. The bootstrap `MachineRegistration` must set the Global auth scope, but it must not set `baremetal.cluster.io/system-agent-server-url`; handoff has not happened yet.
+
+```yaml
+metadata:
+  annotations:
+    baremetal.cluster.io/system-agent-auth-scope: global
+```
+
+Set `handoffHook.controlPlaneVIP` to the current side's VIP and set `handoffHook.directAPIServer: true` on both Bare Metal provider AppRelease objects. Handoff then rewrites only the installed Global hosts to `https://<local-global-control-plane-vip>:6443`, with no `/kubernetes/global` path. The agent uses the kube-apiserver CA from the local ServiceAccount token Secret. Workload hosts keep the platform ingress path.
 
 <Directive type="warning" title="Do Not Reuse the Bootstrap ISO After Handoff">
   A `SeedImage` generated in the bootstrap KIND environment points at the bootstrap registration endpoint. After the `global` cluster is installed and handed off, create new `MachineRegistration` and `SeedImage` resources on the active `global` cluster for any new `global` hosts. A pre-failover workload ISO can be reused after failover only when its registration URL uses the platform domain and the matching non-`global` `MachineRegistration` was synchronized to standby.
 </Directive>
 
-For a post-handoff `global` host registration, set the system-agent server URL annotation to the current active `global` control-plane VIP. The elemental operator appends the `/kubernetes/global` path when it renders the system-agent endpoint. Use the primary VIP before failover and the standby VIP after failover.
+For every post-handoff Global host registration, set the Global auth scope, the local side's direct API URL, and direct endpoint mode. A primary Global registration uses the primary VIP, and a standby Global registration uses the standby VIP.
 
 ```yaml
 apiVersion: elemental.cattle.io/v1beta1
@@ -73,34 +85,29 @@ metadata:
   name: global-<purpose>
   namespace: cpaas-system
   annotations:
-    baremetal.cluster.io/system-agent-server-url: https://<current-global-control-plane-vip>
+    baremetal.cluster.io/system-agent-auth-scope: global
+    baremetal.cluster.io/system-agent-server-url: https://<local-global-control-plane-vip>:6443
+    baremetal.cluster.io/system-agent-endpoint-mode: direct-apiserver
 ```
 
-When the `global` cluster was handed off with `handoffHook.directAPIServer: true`, keep new `global` registrations on the same direct-apiserver endpoint instead: set `baremetal.cluster.io/system-agent-server-url: https://<current-global-control-plane-vip>:6443` and add `baremetal.cluster.io/system-agent-direct: "true"`. The elemental operator then serves that URL verbatim and does not append `/kubernetes/global`.
+Use the explicit `baremetal.cluster.io/system-agent-endpoint-mode: direct-apiserver` annotation for every new Global registration.
 
-### Shared Token Requirements
+### System-Agent Identity Requirements
 
-Existing hosts keep the `baremetal-system-agent` token that they received before failover. For that token to work on the standby cluster:
+Bare Metal DR uses two identity bundles:
 
-- Primary and standby must use the same `/etc/kubernetes/pki/sa.key` and `/etc/kubernetes/pki/sa.pub`.
-- Primary and standby must use the same `service-account-issuer` and `api-audiences` values, normally `https://kubernetes.default.svc.cluster.local`.
-- The `ServiceAccount`, token Secret, Role, and RoleBinding for `baremetal-system-agent` must be synchronized exactly to standby.
-- `Role/baremetal-system-agent.rules[].resourceNames` must contain only plan Secret names. Do not grant namespace-wide Secret access and do not add registry, bootstrap, kubeconfig, or platform credential Secrets.
+- The local Global bundle consists of `ServiceAccount`, token Secret, Role, and RoleBinding named `baremetal-global-system-agent` (the Secret name has the `-token` suffix). Each side generates and retains its own bundle. Its Role contains only that side's Global plan Secrets.
+- The workload shared bundle consists of the four `baremetal-system-agent` objects. It may be absent on both sides before the first shared-scope workload plan exists. Once primary creates it, `etcd-sync` copies the bundle exactly to standby. Its Role contains only explicitly shared-scope, non-`global` workload plan Secrets.
 
-Verify the permission boundary on standby before failover.
+<Directive type="warning" title="Use the Standard System-Agent Names">
+  Do not customize `baremetal-global-system-agent`, `baremetal-global-system-agent-token`, `baremetal-system-agent`, or `baremetal-system-agent-token`. The default `etcd-sync` exact-sync and ignore rules match these names literally. If a deployment must use different names, update and validate all corresponding `etcd-sync` rules before starting synchronization.
+</Directive>
 
-```shell
-TOKEN=$(kubectl -n cpaas-system get secret baremetal-system-agent-token -o jsonpath='{.data.token}' | base64 -d)
+Primary and standby must still use the same `/etc/kubernetes/pki/sa.key`, `/etc/kubernetes/pki/sa.pub`, `service-account-issuer`, and `api-audiences` values so that the shared workload token is valid on both API servers. The two local Global tokens are intentionally different and must not be synchronized.
 
-kubectl --token="${TOKEN}" -n cpaas-system auth can-i get secret <plan-secret-name>
-kubectl --token="${TOKEN}" -n cpaas-system auth can-i patch secret <plan-secret-name>
-kubectl --token="${TOKEN}" -n cpaas-system auth can-i get secret global-registry-auth
-kubectl --token="${TOKEN}" -n cpaas-system auth can-i list secrets
-```
+Set `elemental.systemAgent.splitAuthEnabled: true` on both provider AppRelease objects. This is the single source of truth used by both `elemental-operator` and handoff; do not configure a separate handoff auth-enable switch. With the split enabled, the active Global must set `elemental.systemAgent.sharedAuthReadOnly: false` so that `elemental-operator` reconciles the shared workload Role. The inactive Global must set it to `true` so that `etcd-sync`, not the local operator, owns the synchronized shared bundle. Both operators continue to reconcile their own Global-local bundles.
 
-Expected result: `get` and `patch` are allowed only for plan Secrets; `global-registry-auth` and namespace-wide `list secrets` are denied.
-
-### etcd-sync Scope
+### etcd-sync Scope \{#etcd-sync-scope}
 
 Deploy `etcd-sync` on the standby cluster. The sync direction is one-way before failover:
 
@@ -116,7 +123,9 @@ Synchronize the workload-cluster resources that allow standby to continue reconc
 - Non-`global` elemental resources: `MachineInventory` and `MachineRegistration`.
 - Plan Secrets, bootstrap data Secrets, workload kubeconfig Secrets, and workload credential Secrets that are required by the synchronized resources.
 - Provider referenced Secrets that must exist on the target side, including the encryption-provider Secret referenced by `BaremetalCluster.spec.encryptionProviderConfigRef` when Bare Metal DR is enabled.
-- Exact shared auth bundle: `ServiceAccount/cpaas-system/baremetal-system-agent`, `Secret/cpaas-system/baremetal-system-agent-token`, `Role/cpaas-system/baremetal-system-agent`, and `RoleBinding/cpaas-system/baremetal-system-agent`.
+- Exact shared auth bundle, once it exists: `ServiceAccount/cpaas-system/baremetal-system-agent`, `Secret/cpaas-system/baremetal-system-agent-token`, `Role/cpaas-system/baremetal-system-agent`, and `RoleBinding/cpaas-system/baremetal-system-agent`.
+
+Do not use the synchronization list in this section to populate Step 7 `dcs-import-extra-resources`; the initial Global handoff excludes Global plan Secrets, `KubeadmConfig` objects, and kubeadm bootstrap data Secrets.
 
 Do not synchronize:
 
@@ -124,10 +133,18 @@ Do not synchronize:
 - Standby `Cluster/cpaas-system/global`.
 - Standby `BaremetalCluster/cpaas-system/global`.
 - Standby `BaremetalMachine`, `MachineInventoryPool`, `MachineInventory`, and `MachineRegistration` objects that belong to the standby `global` cluster.
+- `ServiceAccount/cpaas-system/baremetal-global-system-agent`, `Secret/cpaas-system/baremetal-global-system-agent-token`, `Role/cpaas-system/baremetal-global-system-agent`, and `RoleBinding/cpaas-system/baremetal-global-system-agent` from either side.
+- `ConfigMap/cpaas-system/baremetal-system-agent-handoff` from either side.
+- The standby-local token Secret selected by `active_cluster_token_secret_ref` and `ServiceMonitor/cpaas-system/etcd-sync-monitor`; MR `!179` renders exact-ignore entries for both.
+- Plan Secrets that belong to either side's local `Cluster/global`. Add their exact etcd keys to `etcd_sync.additional_ignore_equal` before starting synchronization.
 - Secrets from the primary cluster that are not required by workload cluster reconciliation.
 
+Before installing the ModuleInfo, follow the executable two-kubeconfig procedure in [Install Primary and Standby Clusters](./install.mdx#install-primary-and-standby-clusters) to collect `Role/baremetal-global-system-agent.rules[].resourceNames` from both sides, merge and de-duplicate the names, and populate `spec.config.additional_ignore_equal` with exactly the corresponding `/registry/secrets/cpaas-system/<plan-secret>` keys. Do not duplicate static ignore keys in this dynamic list.
+
+MR `!179` adds a checksum of the rendered sync-key ConfigMap to both Deployment Pod templates. A fresh installation therefore starts with the final filter and does not need a manual rollout restart. Verify the dynamic and static entries, checksum annotations, Deployment readiness, and zero-difference monitor result with the installation guide's acceptance commands.
+
 <Directive type="warning" title="Secret Encryption Boundary">
-  Do not raw-sync every key under `/registry/secrets` when the primary and standby apiservers do not share the same Kubernetes encryption-provider configuration. The standby apiserver cannot decrypt ciphertext written with a different key. Sync only the required Secrets through a safe path that lets the standby apiserver store them with the standby encryption key, or use an approved exact-sync mechanism for the fixed auth bundle.
+  Do not raw-sync every key under `/registry/secrets` when the primary and standby apiservers do not share the same Kubernetes encryption-provider configuration. The standby apiserver cannot decrypt ciphertext written with a different key. The fresh DR installation must use the same encryption provider configuration on both sides before synchronization starts.
 </Directive>
 
 ### Failover Procedure
@@ -170,7 +187,7 @@ After standby is active, validate in increasing risk order:
 |---------|--------------|-------------|
 | Handoff target list is empty | `dcs-import-extra-resources` was missing or incomplete before the installer API call | `kubectl -n cpaas-system get cm dcs-import-extra-resources -o yaml`; check `baremetal-system-agent-handoff` Job logs |
 | Existing hosts get `401` or `Forbidden` after failover | ServiceAccount signing key, issuer, audience, token Secret, or Role `resourceNames` does not match | `sha256sum /etc/kubernetes/pki/sa.key /etc/kubernetes/pki/sa.pub`; `kubectl auth can-i` with the token |
-| Existing hosts fail TLS verification after DNS switch | Platform certificate chain or SAN does not cover the platform domain and both VIPs | Check `cpaas-system/dex.tls`, certificate SANs, and `curl -kI https://<vip>/kubernetes/global/version` |
+| Existing workload hosts fail TLS verification after DNS switch | The standby serves an untrusted platform certificate, or the certificate does not cover the stable platform domain | Check `cpaas-system/dex.tls`, verify the `${PLATFORM_HOST}` SAN, and run `curl -kI https://<platform-domain>/kubernetes/global/version`. Check a VIP SAN only when platform HTTPS intentionally uses that VIP. The registry on port `11443` uses its separate `global-registry-server` certificate chain. |
 | Standby `global` resources are replaced by primary resources | `etcd-sync` ignore rules did not exclude `global` resources | Inspect the `etcd-sync` ignore ConfigMap and stop sync before restoring standby resources |
 | New host cannot register with an old ISO | ISO registration URL points to bootstrap or primary-only IP, or `MachineRegistration` was not synchronized | Inspect the `MachineRegistration` status and rebuild the ISO on active standby when needed |
 
@@ -201,11 +218,12 @@ Bare Metal requires all of the following to be aligned:
 - Same Kubernetes encryption provider Secret content on both sides, referenced by `BaremetalCluster.spec.encryptionProviderConfigRef`.
 - The encryption provider Secret is imported into each final `global` cluster through `dcs-import-extra-resources`; it must not exist only in the bootstrap KIND cluster.
 - Same ServiceAccount signing key files and same issuer/audience values on both sides.
-- Same trusted platform certificate chain, with SANs that cover the platform domain, primary control-plane VIP, and standby control-plane VIP.
-- `dcs-import-extra-resources` created before the installer API call on both sides.
-- Bare Metal provider AppRelease values set with `handoffHook.controlPlaneVIP` for the local side and `elemental.systemAgent.authMode: shared`. Add `handoffHook.directAPIServer: true` only when the `global`-cluster machines must reach the kube-apiserver directly at `https://<control-plane-vip>:6443` instead of the ingress path (see Endpoint Rules); it defaults to `false`.
+- Same trusted platform HTTPS certificate on both sides, with the stable platform domain in its SAN list. Add a control-plane VIP SAN only when platform HTTPS intentionally uses that VIP; do not add internal Service names to `console.cert`. The registry on port `11443` uses an independently managed `global-registry-server` certificate chain.
+- `dcs-import-extra-resources` created before the installer API call on both sides, containing the durable Global Bare Metal and Elemental owner resources plus the referenced encryption-provider Secret. It must exclude Global plan Secrets, `KubeadmConfig` objects, and kubeadm bootstrap data Secrets; fresh handoff creates the initial Global plan Secrets with the live Global `MachineInventory` UID.
+- Bare Metal provider AppRelease values set with the local `handoffHook.controlPlaneVIP`, `handoffHook.directAPIServer: true`, `elemental.systemAgent.authMode: shared`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.globalServiceAccountName: baremetal-global-system-agent`. The active side sets `elemental.systemAgent.sharedAuthReadOnly: false`; the inactive side sets it to `true`.
+- The deployed `elemental-operator` image and every newly produced `baremetal-base-image` and `baremetal-base-image-iso` are built from the same pinned elemental commit. Rebuild the installation media whenever that commit changes.
 
-Do not sync `SeedImage` from primary to standby. Sync non-`global` `MachineRegistration` resources when workload ISOs need to remain valid across failover. Do not sync primary `global` `MachineRegistration` resources to standby; create them locally on the active side and set `baremetal.cluster.io/system-agent-server-url` to that side's control-plane VIP.
+Do not sync `SeedImage` from primary to standby. Sync non-`global` `MachineRegistration` resources when workload ISOs need to remain valid across failover. Do not sync primary Global `MachineRegistration` resources to standby. Create Global registrations locally with `baremetal.cluster.io/system-agent-auth-scope: global`, `baremetal.cluster.io/system-agent-server-url: https://<local-global-control-plane-vip>:6443`, and `baremetal.cluster.io/system-agent-endpoint-mode: direct-apiserver`.
 
 After failover, keep the primary fenced until a separate failback plan is executed. Do not run primary and standby Bare Metal providers against the same workload inventories at the same time.
 
