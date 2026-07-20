@@ -282,6 +282,10 @@ Create a `ClusterResourceSet` so the workload cluster receives the vSphere CPI c
 In the baseline workflow `VSphereCluster.spec.failureDomainSelector` is intentionally not set and the CPI `vsphere.conf` does not include a `[Labels]` block. Both are required only after you enable failure domains; configure them together as described in [Extension Scenarios](./extension-scenarios.mdx). Adding `[Labels]` to `vsphere.conf` without matching `VSphereFailureDomain` objects causes the CPI to look up zone and region tags that do not exist.
 </Directive>
 
+<Directive type="info">
+The vSphere CPI TLS bypass option is `insecure-flag`. Keep `insecure-flag = "1"` in the `[Global]` section of `<cluster_name>-vsphere-cpi-config` so the CPI can connect when the vCenter certificate is self-signed or not trusted by the workload cluster nodes. The CPI applies the global value to vCenter entries that do not set their own `insecure-flag`.
+</Directive>
+
 <Directive type="warning">
 The CPI `ConfigMap`, `Secret`, and `ClusterResourceSet` resources **must** be created in the same namespace as the `Cluster` resource. In this guide that namespace is `cpaas-system`. A `ClusterResourceSet` can only match clusters within its own namespace; deploying it in a different namespace will silently prevent resource delivery.
 </Directive>
@@ -314,7 +318,7 @@ data:
         secret-namespace = "kube-system"
         service-account = "cloud-controller-manager"
         port = "443"
-        insecure-flag = "<cpi_insecure_flag>"
+        insecure-flag = "1"
         datacenters = "<cpi_datacenters>"
 
         [VirtualCenter "<vsphere_server>"]
@@ -985,6 +989,7 @@ spec:
         extraArgs:
           bind-address: "::"
           cloud-provider: external
+          flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           profiling: "false"
           tls-min-version: VersionTLS12
       scheduler:
@@ -1000,6 +1005,7 @@ spec:
         kubeletExtraArgs:
           cloud-provider: external
           node-labels: kube-ovn/role=master
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
         name: '{{ local_hostname }}'
       patches:
         directory: /etc/kubernetes/patches

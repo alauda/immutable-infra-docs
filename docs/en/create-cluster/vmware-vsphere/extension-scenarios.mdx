@@ -266,7 +266,7 @@ Also add the `[Labels]` block to the CPI `ConfigMap` so the vSphere CPI publishe
         secret-namespace = "kube-system"
         service-account = "cloud-controller-manager"
         port = "443"
-        insecure-flag = "<cpi_insecure_flag>"
+        insecure-flag = "1"
         datacenters = "<cpi_datacenters>"
 
         [Labels]
