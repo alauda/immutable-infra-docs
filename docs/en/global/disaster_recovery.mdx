@@ -27,20 +27,40 @@ That deployment procedure is the authoritative source for the installation-time 
 - Bare Metal deployments reference the shared encryption provider Secret from `BaremetalCluster.spec.encryptionProviderConfigRef` and use the same Kubernetes ServiceAccount signing key on both sides.
 - Huawei DCS, VMware vSphere, and Huawei Cloud Stack create the `dcs-import-extra-resources` ConfigMap before installer import so the installation can import referenced credential Secrets and, where applicable, provider-specific infrastructure resources. The name keeps the `dcs` prefix for historical installer compatibility.
 - Bare Metal creates the `dcs-import-extra-resources` ConfigMap before installer import so the installation can preserve bare-metal and elemental resources required by handoff.
-- The primary cluster installs `global-etcd-sync` with the standby cluster connection values after both installations succeed.
+- After both clusters are installed, install **<Term name="product" /> etcd Synchronizer** on the standby cluster. It reads etcd data from the primary cluster and writes it to the standby cluster's local etcd.
+
+## Network Requirements \{#network-requirements}
+
+A stable Platform Access Address that uses a DNS name is a prerequisite for disaster recovery. During normal operation, the domain resolves only to the primary `global` cluster VIP. The standby `global` cluster uses the domain to access platform services on the primary `global` cluster.
+
+Before installing either cluster, complete both of the following network preparations:
+
+- Configure each cluster's load balancer to forward the required TCP ports on its VIP to the control plane nodes behind that VIP. Configure port `80` only when users access the platform over HTTP.
+- Allow the required TCP ports in **both directions** between the primary and standby cluster networks. Apply the rules to firewalls, security groups, router ACLs, and any other inter-site network controls.
+
+| TCP port | Service | Why it is required |
+|----------|---------|--------------------|
+| `443` | <Term name="productShort" /> platform HTTPS | The standby cluster uses the Platform Access Address to reach the active platform. **<Term name="product" /> etcd Synchronizer** uses this address, and logging and monitoring components send alert callbacks to it. |
+| `80` | <Term name="productShort" /> platform HTTP | Required only when users access the platform over HTTP. The connectivity requirement is otherwise the same as for port `443`. |
+| `6443` | Kubernetes API server | During installation or reinstallation of **<Term name="product" /> etcd Synchronizer**, the standby cluster connects to the active cluster API server to obtain the etcd CA material required for synchronization. |
+| `11443` | Built-in image registry | The standby cluster pulls platform and plugin images from the registry configured through the Platform Access Address. |
+| `2379` | etcd | **<Term name="product" /> etcd Synchronizer** on the standby cluster reads etcd data from the primary cluster and writes it to the local standby etcd. |
+
+The network policy must be bidirectional because the cluster roles are reversed after failover. Before failover, the effective service traffic is normally from standby to primary. After failover, the former primary becomes the new standby and must reach the new primary on the same ports. This requirement does not make etcd replication bidirectional: **<Term name="product" /> etcd Synchronizer** runs only on the current standby cluster and writes synchronized data to its local etcd.
 
 ## Operational Scope
 
 After the primary and standby clusters are installed, operate DR as a separate lifecycle process. Keep the installation manifests aligned with the installation guide, then use an approved operations runbook for the following tasks:
 
-- Verify `etcd-sync` health and replication lag.
+- Verify the health and replication lag of **<Term name="product" /> etcd Synchronizer**.
 - Verify that the standby cluster can decrypt Kubernetes Secrets created on the primary cluster.
 - Validate the primary and standby control plane VIPs and the platform access path before a planned failover.
+- Before a planned failover or failback, verify that the required ports are allowed in both directions between the two cluster networks. After the switch, the former standby becomes the new primary and the former primary becomes the new standby, so the direction of service traffic is reversed.
 - Execute failover and failback with an approved operations procedure.
 - Reconcile provider-specific resources after a failover.
 
-<Directive type="warning" title="Verify consistency before uninstalling the etcd synchronization plugin">
-A disaster recovery switchover and a DR-aware `global` cluster upgrade both uninstall the etcd synchronization plugin. Before that uninstall, confirm that the standby `global` cluster data is consistent with the primary. On Immutable Infrastructure, workload-cluster nodes are backed by Cluster API `Machine` objects, so an incorrect owner-reference resolution after an inconsistent sync can delete those `Machine` objects and destroy the backing virtual machines. If the consistency check reports missing or surplus keys, do not uninstall the plugin; resolve the inconsistency or contact technical support first. For the detailed switchover and upgrade procedures, see <ExternalSiteLink name="acp" href="/install/global_dr.html" children="Global Cluster Disaster Recovery" /> and <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />.
+<Directive type="warning" title="Verify consistency before uninstalling Alauda Container Platform etcd Synchronizer">
+A disaster recovery switchover and a DR-aware `global` cluster upgrade both uninstall **<Term name="product" /> etcd Synchronizer**. Before that uninstall, confirm that the standby `global` cluster data is consistent with the primary. On Immutable Infrastructure, workload-cluster nodes are backed by Cluster API `Machine` objects, so an incorrect owner-reference resolution after an inconsistent sync can delete those `Machine` objects and destroy the backing virtual machines. If the consistency check reports missing or surplus keys, do not uninstall the plugin; resolve the inconsistency or contact technical support first. For the detailed switchover and upgrade procedures, see <ExternalSiteLink name="acp" href="/install/global_dr.html" children="Global Cluster Disaster Recovery" /> and <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />.
 </Directive>
 
 ## Bare Metal DR Model
@@ -100,9 +120,9 @@ kubectl --token="${TOKEN}" -n cpaas-system auth can-i list secrets
 
 Expected result: `get` and `patch` are allowed only for plan Secrets; `global-registry-auth` and namespace-wide `list secrets` are denied.
 
-### etcd-sync Scope
+### Alauda Container Platform etcd Synchronizer Scope
 
-Deploy `etcd-sync` on the standby cluster. The sync direction is one-way before failover:
+Deploy **<Term name="product" /> etcd Synchronizer** on the standby cluster. The sync direction is one-way before failover:
 
 ```text
 source: primary global etcd
@@ -135,7 +155,7 @@ Do not synchronize:
 Use this sequence for a planned or declared failover:
 
 1. Fence the primary `global` write path. Stop or isolate the controllers and platform entry points that can continue writing workload cluster resources. Do this at the owning CR or platform-resource layer where possible; scaling a Deployment alone can be reverted by its owner.
-2. Wait until primary-to-standby `etcd-sync` is caught up, then freeze or stop it. Do not allow old primary data to overwrite new standby writes after failover.
+2. Wait until **<Term name="product" /> etcd Synchronizer** has synchronized the latest primary data to the standby, then stop it. Do not allow old primary data to overwrite new standby writes after failover.
 3. If your provider uses a sync gate, clear the gate after the sync has been stopped so standby controllers do not keep requeueing because they think synchronization is still in progress.
 4. Switch the platform domain to the standby platform entrance.
 5. Verify DNS and ingress:
@@ -171,7 +191,7 @@ After standby is active, validate in increasing risk order:
 | Handoff target list is empty | `dcs-import-extra-resources` was missing or incomplete before the installer API call | `kubectl -n cpaas-system get cm dcs-import-extra-resources -o yaml`; check `baremetal-system-agent-handoff` Job logs |
 | Existing hosts get `401` or `Forbidden` after failover | ServiceAccount signing key, issuer, audience, token Secret, or Role `resourceNames` does not match | `sha256sum /etc/kubernetes/pki/sa.key /etc/kubernetes/pki/sa.pub`; `kubectl auth can-i` with the token |
 | Existing hosts fail TLS verification after DNS switch | Platform certificate chain or SAN does not cover the platform domain and both VIPs | Check `cpaas-system/dex.tls`, certificate SANs, and `curl -kI https://<vip>/kubernetes/global/version` |
-| Standby `global` resources are replaced by primary resources | `etcd-sync` ignore rules did not exclude `global` resources | Inspect the `etcd-sync` ignore ConfigMap and stop sync before restoring standby resources |
+| Standby `global` resources are replaced by primary resources | **<Term name="product" /> etcd Synchronizer** ignore rules did not exclude `global` resources | Inspect the synchronizer ignore ConfigMap and stop synchronization before restoring standby resources |
 | New host cannot register with an old ISO | ISO registration URL points to bootstrap or primary-only IP, or `MachineRegistration` was not synchronized | Inspect the `MachineRegistration` status and rebuild the ISO on active standby when needed |
 
 ## Provider Notes
