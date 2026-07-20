@@ -27,7 +27,26 @@ That deployment procedure is the authoritative source for the installation-time 
 - Bare Metal deployments reference the shared encryption provider Secret from `BaremetalCluster.spec.encryptionProviderConfigRef` and use the same Kubernetes ServiceAccount signing key on both sides.
 - Huawei DCS, VMware vSphere, and Huawei Cloud Stack create the `dcs-import-extra-resources` ConfigMap before installer import so the installation can import referenced credential Secrets and, where applicable, provider-specific infrastructure resources. The name keeps the `dcs` prefix for historical installer compatibility.
 - Bare Metal creates the `dcs-import-extra-resources` ConfigMap before installer import so the installation can preserve bare-metal and elemental resources required by handoff.
-- The primary cluster installs `global-etcd-sync` with the standby cluster connection values after both installations succeed.
+- The standby cluster installs `global-etcd-sync` with connection values that point to the primary cluster after both installations succeed.
+
+## Network Requirements \{#network-requirements}
+
+A stable Platform Access Address that uses a DNS name is a prerequisite for disaster recovery. During normal operation, the domain resolves only to the primary `global` cluster VIP. The standby `global` cluster therefore reaches services on the primary through the domain or the primary VIP.
+
+Before installing either cluster, complete both of the following network preparations:
+
+- Configure each cluster's load balancer to forward the required TCP ports on its VIP to the control plane nodes behind that VIP. Configure port `80` only when users access the platform over HTTP.
+- Allow the required TCP ports in **both directions** between the primary and standby cluster networks. Apply the rules to firewalls, security groups, router ACLs, and any other inter-site network controls.
+
+| TCP port | Service | Why it is required |
+|----------|---------|--------------------|
+| `443` | <Term name="productShort" /> platform HTTPS | The standby cluster uses the Platform Access Address to reach the active platform. The etcd synchronization plugin uses this address, and logging and monitoring components send alert callbacks to it. |
+| `80` | <Term name="productShort" /> platform HTTP | Required only when users access the platform over HTTP. The connectivity requirement is otherwise the same as for port `443`. |
+| `6443` | Kubernetes API server | During installation or reinstallation of the etcd synchronization plugin, the standby cluster connects to the active cluster API server to obtain the etcd CA material required for synchronization. |
+| `11443` | Built-in image registry | The standby cluster pulls platform and plugin images from the registry configured through the Platform Access Address. |
+| `2379` | etcd | The etcd synchronization plugin on the standby cluster reads etcd data from the primary cluster and writes it to the local standby etcd. |
+
+The network policy must be bidirectional because the cluster roles are reversed after failover. Before failover, the effective service traffic is normally from standby to primary. After failover, the former primary becomes the new standby and must reach the new primary on the same ports. This requirement does not make etcd replication bidirectional: only the current standby cluster runs synchronization toward its local etcd.
 
 ## Operational Scope
 
@@ -36,6 +55,7 @@ After the primary and standby clusters are installed, operate DR as a separate l
 - Verify `etcd-sync` health and replication lag.
 - Verify that the standby cluster can decrypt Kubernetes Secrets created on the primary cluster.
 - Validate the primary and standby control plane VIPs and the platform access path before a planned failover.
+- Revalidate the bidirectional inter-cluster network rules before failover or failback because the source and destination roles are reversed.
 - Execute failover and failback with an approved operations procedure.
 - Reconcile provider-specific resources after a failover.
 

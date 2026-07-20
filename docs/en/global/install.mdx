@@ -1842,6 +1842,8 @@ Issues that are not listed here usually point to environment-specific causes. Ca
 
 Use this section when you deploy primary and standby `global` clusters for disaster recovery. Complete these additions before you apply the provider-specific manifest for each `global` cluster.
 
+Before you begin, complete the [bidirectional DR network requirements](./disaster_recovery.mdx#network-requirements). Do not start either installation until both cluster VIPs have the required load-balancer listeners and the inter-cluster network rules allow the required traffic in both directions. The direction used during normal operation is standby to primary, but it reverses after failover.
+
 Primary and standby clusters must use the same encryption provider configuration. For Bare Metal, primary and standby must also use the same Kubernetes ServiceAccount signing key so that the fixed `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
 
 ### Prepare Shared DR Variables
