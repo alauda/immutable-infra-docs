@@ -41,7 +41,7 @@ The following prerequisites apply to every provider:
 <Directive type="warning" title="Naming Convention (Required)">
   This rule applies to **every** infrastructure provider supported by this install path — Huawei DCS, Huawei Cloud Stack, VMware vSphere, and any provider added in the future. Every manifest you author in Step 4 must follow it. Misnaming these resources has two distinct failure modes, both detailed below; one breaks initial provisioning, the other only surfaces during disaster recovery.
 
-  - The CAPI `Cluster` and the provider's infrastructure cluster resource (for example, `DCSCluster` for Huawei DCS or `HCSCluster` for Huawei Cloud Stack; each provider has its own equivalent) **must** be named exactly `global`. `cpaas-installer` looks them up by literal name, and the Huawei Cloud Stack provider only allocates the global ELB listener ports (`11443` for the registry and console, `2379` for DR etcd-sync, `443` for web access) when the infra cluster is named `global`. A different name silently breaks registry pull, DR etcd-sync, and the web console.
+  - The CAPI `Cluster` and the provider's infrastructure cluster resource (for example, `DCSCluster` for Huawei DCS or `HCSCluster` for Huawei Cloud Stack; each provider has its own equivalent) **must** be named exactly `global`. `cpaas-installer` looks them up by literal name, and the Huawei Cloud Stack provider only allocates the global ELB listener ports (`11443` for the registry and console, `2379` for DR etcd synchronization, `443` for web access) when the infra cluster is named `global`. A different name silently breaks registry pull, DR etcd synchronization, and the web console.
   - Every other CAPI resource (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`) and every other provider infrastructure resource (machine templates, IP/hostname pools, machine config pools, and any other per-provider resource) **must** use a name with the `global-` prefix. The DR (failover) mechanism uses this prefix to identify resources owned by the `global` cluster. **A `global` cluster resource without the `global-` prefix is invisible to DR and causes the standby cluster's machines to be deleted at failover time** — the cluster will provision and run normally, then lose nodes the first time DR is exercised. This is a hard requirement, not a stylistic convention.
   - `Cluster.spec.controlPlaneRef.name` and any other cross-references must match the prefixed names exactly.
 </Directive>
@@ -1841,6 +1841,8 @@ Issues that are not listed here usually point to environment-specific causes. Ca
 
 Use this section when you deploy primary and standby `global` clusters for disaster recovery. Complete these additions before you apply the provider-specific manifest for each `global` cluster.
 
+Before you begin, complete the [bidirectional DR network requirements](./disaster_recovery.mdx#network-requirements). Do not start either installation until both cluster VIPs have the required load-balancer listeners and the inter-cluster network rules allow the required traffic in both directions. The direction used during normal operation is standby to primary, but it reverses after failover.
+
 Primary and standby clusters must use the same encryption provider configuration. For Bare Metal, primary and standby must also use the same Kubernetes ServiceAccount signing key so that the fixed `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
 
 ### Prepare Shared DR Variables
@@ -2103,7 +2105,7 @@ For the primary cluster, make sure the platform domain resolves to the primary H
 
 After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby KIND host, set `hostIP` to the standby KIND node IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` as `${PLATFORM_HOST}:11443` on both sides. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby KIND host; do not reuse the primary KIND host value.
 
-After both clusters are installed, get the primary `k8sadmin` token on a primary control plane node. `etcd-sync` is installed only on the standby cluster, and its `active_cluster_*` values point to the primary cluster. Keep this value in its original base64 Secret form for `active_cluster_token`.
+After both clusters are installed, get the primary `k8sadmin` token on a primary control plane node. **<Term name="product" /> etcd Synchronizer** is installed only on the standby cluster, and its `active_cluster_*` values point to the primary cluster. Keep this value in its original base64 Secret form for `active_cluster_token`.
 
 ```shell
 export PRIMARY_CLUSTER_TOKEN_B64="$(sudo kubectl get secret -n cpaas-system k8sadmin -o jsonpath='{.data.token}')"
@@ -2149,7 +2151,7 @@ cat > "${ETCD_SYNC_MODULEINFO}" <<EOF
 EOF
 ```
 
-Install `global-etcd-sync` by calling the ModuleInfo API on the standby cluster.
+Install **<Term name="product" /> etcd Synchronizer** on the standby cluster by submitting the `global-etcd-sync` ModuleInfo payload.
 
 ```shell
 curl -sk -X POST "https://${STANDBY_CLUSTER_VIP}/apis/cluster.alauda.io/v1alpha1/moduleinfoes" \
