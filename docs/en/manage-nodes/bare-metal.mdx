@@ -80,6 +80,8 @@ spec:
 
 ### Step 3: Configure the Bootstrap Template \{#step-3-configure-bootstrap-template}
 
+`imagePullCredentialsVerificationPolicy: NeverVerify` is required only starting with Kubernetes 1.35. Omit this parameter when creating workers with Kubernetes 1.34 or earlier.
+
 ```yaml
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
 kind: KubeadmConfigTemplate
@@ -103,6 +105,7 @@ spec:
             {
               "apiVersion": "kubelet.config.k8s.io/v1beta1",
               "kind": "KubeletConfiguration",
+              "imagePullCredentialsVerificationPolicy": "NeverVerify",
               "protectKernelDefaults": true,
               "staticPodPath": null,
               "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
@@ -339,7 +342,7 @@ To roll out a bootstrap change:
      > new-worker-bootstrap.yaml
    ```
 
-2. Change `metadata.name`, remove server-generated fields (`resourceVersion`, `uid`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration`) and the entire `status`, and edit the desired fields.
+2. Change `metadata.name`, remove server-generated fields (`resourceVersion`, `uid`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration`) and the entire `status`, and edit the desired fields. For Kubernetes 1.35 or later, add the [required kubelet patch settings](../upgrade-cluster/index.mdx#kubernetes-1-35-kubelet-patch) to `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json`.
 3. Apply the new template:
 
    ```bash
