@@ -280,6 +280,7 @@ Complete [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-th
    - `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` ← **coredns** column from the same row
    - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← **etcd** column from the same row
    - `spec.machineTemplate.infrastructureRef.name` ← the new `HCSMachineTemplate` name created in step 1
+   - When the target is Kubernetes 1.35 or later, update `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json` in `spec.kubeadmConfigSpec.files` in this same edit, as described in [Required kubelet patch for Kubernetes 1.35](./index.mdx#kubernetes-1-35-kubelet-patch)
 
      ```bash
      kubectl edit kubeadmcontrolplane <kcp-name> -n cpaas-system

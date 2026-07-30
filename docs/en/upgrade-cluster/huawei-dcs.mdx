@@ -257,6 +257,7 @@ Before you start, complete [Upgrade Kube-OVN Before the Control Plane](#upgrade-
    - `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` ← **coredns** column from the same row
    - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← **etcd** column from the same row
    - `spec.machineTemplate.infrastructureRef.name` ← the new `DCSMachineTemplate` name created in step 1
+   - When the target is Kubernetes 1.35 or later, update `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json` in `spec.kubeadmConfigSpec.files` in this same edit, as described in [Required kubelet patch for Kubernetes 1.35](./index.mdx#kubernetes-1-35-kubelet-patch)
 
      ```bash
      kubectl edit kubeadmcontrolplane <kcp-name> -n cpaas-system
@@ -290,7 +291,7 @@ Before you start, read the **Alauda OS Image Version** and **Kubernetes Version*
 2. **Update the `MachineDeployment`**
    - Set `spec.template.spec.version` to the **Kubernetes Version** value from the same OS Support Matrix row
    - Set `spec.template.spec.infrastructureRef.name` to the new `DCSMachineTemplate` name created in step 1
-   - Optionally update `spec.template.spec.bootstrap.configRef.name` if bootstrap configuration changes are required for this release
+   - When the target is Kubernetes 1.35 or later, create a new `KubeadmConfigTemplate` containing the required kubelet patch and set `spec.template.spec.bootstrap.configRef.name` to that template in the same edit; for earlier versions, update the bootstrap reference only when other bootstrap changes are required
 
 3. **Monitor the rolling update**
    - Verify that the rolling update completes successfully

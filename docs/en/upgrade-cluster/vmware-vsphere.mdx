@@ -200,6 +200,7 @@ Before you start, complete [Upgrade Kube-OVN Before the Control Plane](#upgrade-
    - `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` ← **coredns** column from the same row
    - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← **etcd** column from the same row
    - `spec.machineTemplate.infrastructureRef.name` ← the new `VSphereMachineTemplate` name created above
+   - When the target is Kubernetes 1.35 or later, update `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json` in `spec.kubeadmConfigSpec.files` in this same edit, as described in [Required kubelet patch for Kubernetes 1.35](./index.mdx#kubernetes-1-35-kubelet-patch)
 
      ```bash
      kubectl edit kubeadmcontrolplane <cluster_name> -n <namespace>
@@ -222,9 +223,11 @@ Typical changes include:
 
 - `spec.template.spec.version` — the target Kubernetes version
 - `spec.template.spec.infrastructureRef.name` — the new `VSphereMachineTemplate` name
-- `spec.template.spec.bootstrap.configRef.name` — the new `KubeadmConfigTemplate` name, if bootstrap settings must change (see [Updating Bootstrap Templates](../manage-nodes/vmware-vsphere.mdx#updating-bootstrap-templates))
+- `spec.template.spec.bootstrap.configRef.name` — the new `KubeadmConfigTemplate` name. This is required for Kubernetes 1.35 or later so the worker receives the [required kubelet patch](./index.mdx#kubernetes-1-35-kubelet-patch); for earlier versions, change it only when other bootstrap settings must change. See [Updating Bootstrap Templates](../manage-nodes/vmware-vsphere.mdx#updating-bootstrap-templates).
 
 Apply the changes:
+
+The following command includes the bootstrap reference required for Kubernetes 1.35 or later. For an earlier target with no bootstrap change, omit the `bootstrap` object.
 
 ```bash
 kubectl patch machinedeployment <cluster_name>-md-0 -n <namespace> \
@@ -235,6 +238,11 @@ kubectl patch machinedeployment <cluster_name>-md-0 -n <namespace> \
           "version": "<target_kubernetes_version>",
           "infrastructureRef": {
             "name": "<new-worker-template-name>"
+          },
+          "bootstrap": {
+            "configRef": {
+              "name": "<new-bootstrap-template-name>"
+            }
           }
         }
       }
