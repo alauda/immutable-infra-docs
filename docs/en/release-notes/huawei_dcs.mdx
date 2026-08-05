@@ -14,6 +14,34 @@ This page tracks release notes for the Alauda Container Platform Huawei DCS Infr
 
 For the current full capability list and installation steps, see [Huawei DCS Provider Installation](../install/huawei-dcs.mdx).
 
+## v1.0.21 (2026-06-17) \{#v1-0-21}
+
+### New Features
+
+- **Control plane high availability on Huawei DCS** — Set `DCSCluster.spec.controlPlaneHA.enabled` to have the provider create and maintain a DCS DRS mutual-exclusion rule for the control-plane VMs. DCS performs the actual placement and migration; the provider updates the rule as control-plane VMs change. This option requires DRS to be enabled and sufficient host capacity. See [Cross-Host High Availability for Control Plane](../infrastructure/huawei-dcs.mdx#cross-host-ha).
+
+### Enhancements
+
+- **More efficient DCS authentication during reconciliation** — The provider reuses valid DCS SDK authentication tokens and clients instead of repeatedly requesting new remote logins, reducing unnecessary control-plane traffic during normal operations.
+
+## v1.0.20 (2026-06-04) \{#v1-0-20}
+
+### New Features
+
+- **Thin-provisioning option for pool-managed persistent disks** — `DCSIpHostnamePool.spec.pool[].persistentDisk.isThin` lets you request the DCS thin-provisioning setting when the provider creates a new persistent volume. This field is creation-only: changing it does not convert an existing volume.
+
+- **Automatic CD-ROM detach after node bootstrap** — The provider detaches the bootstrapping CD-ROM after the VM is created, removing a common constraint on later DRS migration and control-plane placement operations.
+
+### Fixed Issues
+
+- **Configured primary node IP on multi-NIC Alauda OS nodes** — The configured kubelet `node-ip` is now applied through the supported bootstrap configuration path, so a node with multiple NICs reliably registers the intended primary address.
+
+## v1.0.19 (2026-05-29) \{#v1-0-19}
+
+### Enhancements
+
+- **Alauda OS template compatibility** — Node bootstrap configuration now renders the `/home` mount only for compatible Alauda OS templates. Existing manifests require no change.
+
 ## v1.0.18 (2026-05-19) \{#v1-0-18}
 
 ### New Features
