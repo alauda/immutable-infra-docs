@@ -27,7 +27,7 @@ VMware vSphere is the industry-leading virtualization platform from VMware. The 
 - **Multi-NIC Support**: Primary and additional NICs per node, where the primary NIC drives the kubelet `node-ip` and additional NICs are attached in declared order for management, storage, or service networks
 - **Multiple Datacenters and Failure Domains**: Distribute control plane and worker nodes across multiple vCenter datacenters or compute clusters through `VSphereFailureDomain` and `VSphereDeploymentZone` for high availability
 - **Flexible Persistent Disks**: Declarative data disks with optional format/mount, `wipeFilesystem` control for etcd rolling updates, and raw-device mode exposed at `/dev/disk/by-capv/<name>` for application-managed disks
-- **Immutable-Template Rolling Updates**: Control plane and worker updates go through new `VSphereMachineTemplate` and `KubeadmConfigTemplate` resources, giving Cluster API a clean rollback path on failed upgrades
+- **Immutable-Template Rolling Updates**: Control plane and worker updates use new `VSphereMachineTemplate` and `KubeadmConfigTemplate` resources, enabling reproducible replacement and same-minor template recovery
 
 ## Supported Resources
 

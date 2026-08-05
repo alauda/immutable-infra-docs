@@ -70,6 +70,7 @@ Before you start, ensure all of the following prerequisites are met:
 - The Distribution Version upgrade is complete.
 - The control plane is reachable.
 - All nodes are healthy and in `Ready` state.
+- A current etcd backup has been taken and verified by using the supported ACP backup procedure.
 - The target VM image is present in the HCS environment under the same name as the **Alauda OS Image Version** value in the OS Support Matrix row. The upgrade fails if the image is not present when the new `HCSMachineTemplate` is applied.
 - For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM images are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
 - The target Kubernetes version is compatible with your workloads and add-ons.
@@ -108,9 +109,9 @@ Every upgrade step on this page therefore creates a new `HCSMachineTemplate` wit
 :::
 
 :::info
-**Fleet Essentials UI does not support ACP 4.3 cluster upgrades**
+**Fleet Essentials boundary**
 
-The Fleet Essentials UI workflow has not been adapted to the Cluster Version Operator (CVO) mechanism introduced in ACP 4.3. HCS clusters do not currently expose a Fleet Essentials UI upgrade path; use the YAML procedure documented below, or the two-step upgrade flow built into the ACP Core platform — see <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
+Fleet Essentials 1.0.4 and later can request the ACP 4.3-and-later Distribution Version upgrade through CVO. It does not perform the HCS Kubernetes and Alauda OS replacement described on this page. Complete Phase 1 with the ACP workflow, then use the YAML procedure below for Phase 2.
 :::
 
 ## Control Plane Upgrades
@@ -313,31 +314,35 @@ Worker node upgrades are managed via `MachineDeployment` resources.
 For detailed worker node procedures, see the [Managing Nodes](../manage-nodes/huawei-cloud-stack.mdx#upgrading-kubernetes-version) section.
 :::
 
-## Rolling Back a Failed Upgrade
+## Recovering From a Failed Phase 2 Upgrade
 
-If the rolling update fails — new VMs fail to boot, nodes do not become `Ready`, or the new Kubernetes minor version surfaces an incompatibility — revert the template reference and Kubernetes-version fields back to the previous values. Cluster API treats the reversion as a new spec drift and rolls the v2 machines back to the previous template, one at a time.
+Do not treat a Kubernetes minor downgrade as an ordinary rollback. Choose the recovery path from the rollout stage:
 
-Three facts to internalize before rolling back:
+1. **No target-version control-plane `Machine` has been created**: restore the previous Kube-OVN state and the previous `KubeadmControlPlane` and `MachineDeployment` manifest values. This cancels the target rollout before a new control-plane data format is introduced.
+2. **Only the machine template or OS image changed, and the Kubernetes minor did not change**: point the controlling resource back to the previous template. Cluster API performs another replacement rollout. Keep the Kubernetes minor unchanged.
+3. **A control-plane `Machine` on the target Kubernetes minor has joined the cluster**: do not patch Kubernetes, CoreDNS, or etcd back to the previous minor. Stop further rollout, repair forward on the target minor, or restore the cluster from the verified pre-upgrade backup by using the supported ACP recovery procedure.
 
-- **The old VMs are gone.** They were destroyed during the upgrade. Rollback uses the old template to build a fresh set of replacement machines; it does not restore the original VMs.
-- **The old `HCSMachineTemplate` resource must still exist.** Do not delete the previous template until the new rollout is healthy. If you already deleted it, recreate it from version control or backup before rolling back.
+If a target-minor control-plane `Machine` was created but never joined, first restore healthy etcd quorum and determine whether the failed replacement can be removed safely. Do not assume that changing the version fields alone is sufficient.
+
+Keep these infrastructure facts in mind during any recovery:
+
+- **The old VMs are gone.** They were destroyed during the upgrade. Template recovery builds a fresh set of replacement machines; it does not restore the original VMs.
+- **The old `HCSMachineTemplate` resource must still exist.** Do not delete the previous template until the new rollout is healthy. If you already deleted it, recreate it from version control or backup before attempting same-minor template recovery.
 - **Only pool-managed persistent disks preserve node-local state.** Data written to `HCSMachineTemplate.spec.template.spec.dataVolumes[]` during the upgrade window is lost when that VM is replaced. Data written to disks declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` is retained and reattached to the replacement VM. Application data should still use external persistent storage such as HCS EVS CSI unless your operational design explicitly depends on node-local state.
 
-Procedure:
+For stage 1, restore the provider-managed Kube-OVN state in both places. The HCS provider reconciles `AppRelease.spec.values`, but it does not restore an existing chart revision from the `Cluster` annotation alone:
 
-- **Control plane**: patch `KubeadmControlPlane` to restore the previous `spec.machineTemplate.infrastructureRef.name`, `spec.version`, `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag`, and `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag`.
-- **Workers**: patch each `MachineDeployment` to restore the previous `spec.template.spec.infrastructureRef.name` and `spec.template.spec.version`.
-- **Kube-OVN**: if the Kube-OVN chart was upgraded, revert it the same way the upgrade was applied — first restore the annotation, then patch the `AppRelease` chart revision back. Verify with the same `installedRevision` + `phase=Success` check described in [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane).
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<previous-kube-ovn-version> --overwrite
 
-  ```bash
-  kubectl annotate cluster <cluster-name> -n cpaas-system \
-    cpaas.io/kube-ovn-version=<previous-kube-ovn-version> --overwrite
+kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
+  -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<previous-kube-ovn-version>"}]'
+```
 
-  kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
-    -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<previous-kube-ovn-version>"}]'
-  ```
+Wait until `installedRevision` matches the restored revision and `phase=Success` before changing control-plane manifests. If the target-minor control plane has already joined, keep the target Kube-OVN baseline and use forward recovery or backup restore instead of attempting an independent chart downgrade.
 
-If the new control plane never reached etcd quorum, the `KubeadmControlPlane` controller may refuse to roll back any machine because its preflight checks block on an unhealthy etcd. Recover etcd quorum first (operator intervention) before retrying the rollback.
+The `KubeadmControlPlane` controller can block replacement while etcd is unhealthy. Recover quorum before retrying any safe replacement action.
 
 ## Additional Resources
 

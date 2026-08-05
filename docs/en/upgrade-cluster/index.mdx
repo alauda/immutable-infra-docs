@@ -19,82 +19,61 @@ This section provides instructions for upgrading Kubernetes clusters managed by 
 
 Cluster upgrades on Immutable Infrastructure follow a two-phase approach:
 
-1. **Phase 1**: Upgrade Distribution Version (Aligned Extensions)
-2. **Phase 2**: Upgrade Kubernetes Version
+1. **Phase 1**: Upgrade ACP Core and the cluster Distribution Version through CVO.
+2. **Phase 2**: Upgrade Kubernetes and replace nodes with the matching Alauda OS image.
 
 :::info
-This two-phase upgrade ensures that all cluster extensions and plugins are compatible with the new platform version before upgrading the underlying Kubernetes components.
+The ACP product documentation owns Phase 1 prerequisites, supported ACP upgrade paths, artifact preparation, and CVO procedures. This site owns the Immutable Infrastructure Kubernetes and OS replacement procedures in Phase 2.
 :::
 
 ### Distribution Version vs Kubernetes Version
 
-| Component | Description | Managed By |
+| Component | Description | Managed by |
 |-----------|-------------|------------|
-| Distribution Version | ACP platform version (e.g., ACP 4.3.0) | Aligned Extensions upgrade |
-| Kubernetes Version | Kubernetes component version | Node Pool upgrade |
+| Distribution Version | The ACP Core release installed on the cluster. | CVO workflow documented in the ACP product documentation. |
+| Kubernetes and OS baseline | A validated Kubernetes minor, component set, and Alauda OS image for the installed ACP release. | Cluster API and the provider-specific Phase 2 procedure. |
 
-Each Distribution Version corresponds to a specific Kubernetes version. Upgrading the Distribution Version updates cluster extensions and may enable new Kubernetes versions.
+An ACP minor release line can offer more than one validated Kubernetes target over its patch lifecycle. Use [OS Support Matrix](../overview/os-support-matrix.mdx) for the exact patch-specific Kubernetes, component, and Alauda OS image values offered for Phase 2.
 
 ### Prerequisites
 
-- Control Plane is reachable and healthy
-- All nodes are in Ready state
-- Sufficient IP Pool capacity for rolling updates
+- Complete <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />, including validation that the source ACP release can upgrade to the target Distribution Version.
+- Complete the ACP Core and Distribution Version upgrade before starting Phase 2.
+- Verify that the control plane is reachable and healthy.
+- Verify that all nodes are in the `Ready` state.
+- Take and verify the backups required by the provider-specific procedure.
+- Confirm sufficient IP or machine-slot capacity for rolling replacement.
 
 ---
 
-## Phase 1: Upgrading Distribution Version (Aligned Extensions)
+## Phase 1: Upgrade ACP Core and Distribution Version
 
-Upgrading the Distribution Version updates the cluster's Aligned Extensions (L3 and L4 plugins).
+Use the ACP product documentation as the single procedure owner for this phase:
 
-### Using the Web UI
+- <ExternalSiteLink name="acp" href="/upgrade/overview.html" children="Upgrade Overview" />
+- <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />
+- <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />
+- <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html" children="Upgrade workload clusters" />
 
-**Navigation**: Clusters → Clusters → Select cluster → Aligned Extensions Tab → Click **Upgrade**
+Follow that sequence to prepare artifacts and plugin packages, upgrade the `global` tier, and then move each workload cluster to the target Distribution Version through CVO. Do not use intermediate Kubernetes hops in Phase 2 to bypass an unsupported ACP Core upgrade path.
 
-#### Step 1: Review Modifications
-
-:::warning
-⚠️ All modifications must be reviewed with technical support to confirm whether they should be preserved or deleted. Unconfirmed modifications may cause the upgrade to fail.
+:::info
+Fleet Essentials 1.0.4 and later can use the ACP 4.3-and-later CVO workflow to request a Distribution Version upgrade. That capability covers Phase 1 only. Fleet Essentials does not replace immutable nodes or perform the Kubernetes and Alauda OS rollout in Phase 2; use the provider-specific YAML procedure on this site.
 :::
-
-Review any detected modifications that may affect the upgrade.
-
-**Operations**:
-- **Acknowledge**: Confirm review and proceed to Step 2
-- **Cancel**: Abort the upgrade process
-
-#### Step 2: Upgrade Aligned Extensions
-
-**Version Information**:
-- **Current Version**: The cluster's current Distribution Version
-- **Target Version**: The global cluster's Distribution Version
-
-**Plugin Impact Assessment**:
-
-| Plugin | Current Version | Target Version | Impact |
-|--------|----------------|----------------|--------|
-| [Plugin List] | ... | ... | Low/Medium/High |
-
-For Medium and High impact plugins, check **Acknowledge** to confirm you understand the risks.
-
-**Operations**:
-- **Back**: Return to Step 1 to re-review modifications
-- **Start Upgrade**: Begin the upgrade (only available after acknowledging Medium/High impacts)
-- **Cancel**: Abort the upgrade process
 
 ### Post-Upgrade Verification
 
 After the Distribution Version upgrade completes:
-- Cluster's Distribution Version is updated
-- Node Pools' Kubernetes versions are now lower than the new Distribution Version supports
-- Proceed to Phase 2 to upgrade Kubernetes
+
+- Verify that the cluster reports the target Distribution Version and CVO is no longer progressing or blocked.
+- Confirm that the target row and all required intermediate rows exist in the OS Support Matrix.
+- Proceed to Phase 2 only after the management-side Cluster API providers are healthy.
 
 ---
 
 ## Phase 2: Upgrading Kubernetes Version
 
-After upgrading Distribution Version, upgrade Kubernetes on each Node Pool.
-Provider-specific guides contain the Phase 2 procedures for each platform.
+After upgrading the Distribution Version, upgrade Kubernetes and the Alauda OS image through the provider-specific Cluster API procedure.
 
 For Huawei DCS, Huawei Cloud Stack, VMware vSphere, and bare-metal clusters, upgrade the Kube-OVN chart for the current upgrade hop **before** changing `KubeadmControlPlane`. Wait until the workload cluster's `cni-kube-ovn` `AppRelease` reports the target installed revision and `phase=Success`, then upgrade the control plane, followed by worker nodes. Repeat this Kube-OVN-first ordering for every intermediate Kubernetes minor in a cross-version upgrade.
 
@@ -130,7 +109,7 @@ See platform-specific guides:
 
 When the target ACP Distribution Version is more than one Kubernetes minor above the cluster's current version, additional preparation is required before starting Phase 2. Single-minor upgrades skip this section.
 
-On Immutable Infrastructure, each Kubernetes minor is baked into a matching OS image, and each Kubernetes minor maps to a specific ACP version row in [OS Support Matrix](../overview/os-support-matrix.mdx). The Kubernetes version therefore moves forward one minor at a time, stepping through the OS image of each intermediate ACP row. The ACP Core (Distribution Version) itself is still upgraded directly to the target version through the Cluster Version Operator — only the Kubernetes version steps through the intermediate minors.
+On Immutable Infrastructure, each Kubernetes minor is baked into a matching OS image, and each Kubernetes minor maps to a specific ACP version row in [OS Support Matrix](../overview/os-support-matrix.mdx). The Kubernetes version therefore moves forward one minor at a time, stepping through the OS image of each intermediate ACP row. The ACP Core (Distribution Version) moves according to the supported path in <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />; only the Kubernetes and OS rollout uses the intermediate minor hops described here.
 
 Identify every ACP minor between the current and target versions, use the latest patch in each row, and complete the following pre-staging for each intermediate version before starting Phase 2.
 

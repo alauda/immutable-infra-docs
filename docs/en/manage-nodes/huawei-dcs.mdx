@@ -895,23 +895,16 @@ Existing machines continue using the old bootstrap configuration. Only newly cre
 
 ### Upgrading Kubernetes Version
 
-For Kubernetes upgrades on Huawei DCS, see [Upgrading Kubernetes on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx). That guide covers the required upgrade order, the YAML workflow for `MachineDeployment` resources, and the web UI workflow for Node Pool upgrades.
+For Kubernetes and Alauda OS upgrades on Huawei DCS, see [Upgrading Kubernetes on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx). That guide covers the required order and the YAML workflow for control plane and worker replacement.
 
 ---
 
 ## Managing Node Pools Using the Web UI
 
-:::warning
-**Fleet Essentials UI does not support ACP 4.3 cluster upgrades**
+:::info
+**Fleet Essentials upgrade boundary**
 
-The Fleet Essentials UI workflow has not been adapted to the Cluster Version Operator (CVO) mechanism introduced in ACP 4.3. Do not use the Fleet Essentials UI to upgrade DCS clusters on ACP 4.3.
-
-Two supported alternatives:
-
-- **YAML path** — Follow the YAML-based upgrade procedure in [Upgrading Kubernetes on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx).
-- **ACP Core cluster management UI** — Use the two-step upgrade flow built into the ACP Core platform; see <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html#request-the-upgrade" children="Request the upgrade for the global cluster" /> or <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
-
-Adding, deleting, and viewing node pools through the Fleet Essentials UI are unaffected by this limitation.
+Fleet Essentials 1.0.4 and later can request the ACP 4.3-and-later Distribution Version upgrade through CVO. It does not perform the DCS Kubernetes and Alauda OS replacement. Use [Upgrading Kubernetes on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx) for that Phase 2 YAML procedure. Adding, deleting, and viewing node pools through Fleet Essentials are unaffected by this boundary.
 :::
 
 Node pools provide a declarative way to manage groups of nodes with identical configurations. You can view, add, and delete worker node pools through the web UI.
