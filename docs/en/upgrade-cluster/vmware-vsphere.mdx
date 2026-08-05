@@ -44,10 +44,12 @@ Before you begin, ensure the following conditions are met:
 - The distribution-version upgrade is complete.
 - The control plane is healthy and reachable.
 - All nodes are in the `Ready` state.
+- A current etcd backup has been taken and verified by using the supported ACP backup procedure.
 - The target VM template is present in the vSphere environment under the same name as the **Alauda OS Image Version** value in the OS Support Matrix row. The upgrade fails if the template is not present when the new `VSphereMachineTemplate` is applied.
 - For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM templates are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
 - The target Kubernetes version is compatible with your workloads and add-ons.
 - The machine config pools have enough capacity for rolling updates.
+- If you rely on pool-managed persistent disks, keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` and each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge: 0` so the replacement can reuse the same slot and disk identity.
 - Review the Kubernetes upgrade path and version skew policy.
 
 :::warning
@@ -72,9 +74,9 @@ Upgrades rely on Cluster API's rolling replacement mechanism. Each cluster has f
 :::
 
 :::info
-**Fleet Essentials UI does not support ACP 4.3 cluster upgrades**
+**Fleet Essentials boundary**
 
-vSphere clusters do not currently expose a Fleet Essentials UI upgrade path. Use the YAML procedure documented below, or the two-step upgrade flow built into the ACP Core platform — see <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
+Fleet Essentials 1.0.4 and later can request the ACP 4.3-and-later Distribution Version upgrade through CVO. It does not perform the vSphere Kubernetes and Alauda OS replacement described on this page. Complete Phase 1 with the ACP workflow, then use the YAML procedure below for Phase 2.
 :::
 
 ## Required Values From the OS Support Matrix \{#required-values}
@@ -260,28 +262,32 @@ kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get nodes -o wide
 
 </Steps>
 
-## Rolling Back a Failed Upgrade
+## Recovering From a Failed Phase 2 Upgrade
 
-If the rolling update fails — new VMs fail to boot, nodes do not become `Ready`, or the new Kubernetes minor version surfaces an incompatibility — revert the template reference and Kubernetes-version fields back to the previous values. Cluster API treats the reversion as a new spec drift and rolls the v2 machines back to the previous template, one at a time.
+Do not treat a Kubernetes minor downgrade as an ordinary rollback. Choose the recovery path from the rollout stage:
 
-Three facts to internalize before rolling back:
+1. **No target-version control-plane `Machine` has been created**: restore the previous Kube-OVN annotation and the previous `KubeadmControlPlane` and `MachineDeployment` manifest values. This cancels the target rollout before a new control-plane data format is introduced.
+2. **Only the machine template or OS image changed, and the Kubernetes minor did not change**: point the controlling resource back to the previous template. Cluster API performs another replacement rollout. Keep the Kubernetes minor unchanged.
+3. **A control-plane `Machine` on the target Kubernetes minor has joined the cluster**: do not patch Kubernetes, CoreDNS, or etcd back to the previous minor. Stop further rollout, repair forward on the target minor, or restore the cluster from the verified pre-upgrade backup by using the supported ACP recovery procedure.
 
-- **The old VMs are gone.** They were destroyed during the upgrade. Rollback uses the old template to build a fresh set of replacement machines; it does not restore the original VMs.
-- **The old `VSphereMachineTemplate` resource must still exist.** Do not delete the previous template until the new rollout is healthy. If you already deleted it, recreate it from version control or backup before rolling back.
-- **Pool-managed disk identity is preserved, but data state is not.** Disks declared in `VSphereMachineConfigPool.spec.slot[].persistentDisks` reattach to the rolled-back machines at the same slot, but any data written to those disks during the upgrade window (for example, etcd entries in the new Kubernetes minor format) stays. If the new format is unreadable by the older Kubernetes minor version, the rollback may still fail and require manual etcd restoration.
+If a target-minor control-plane `Machine` was created but never joined, first restore healthy etcd quorum and determine whether the failed replacement can be removed safely. Do not assume that changing the version fields alone is sufficient.
 
-Procedure:
+Keep these infrastructure facts in mind during any recovery:
 
-- **Control plane**: patch `KubeadmControlPlane` to restore the previous `spec.machineTemplate.infrastructureRef.name`, `spec.version`, `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag`, and `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag`.
-- **Workers**: patch each `MachineDeployment` to restore the previous `spec.template.spec.infrastructureRef.name` and `spec.template.spec.version`.
-- **Kube-OVN**: if the kube-ovn annotation was changed, restore the previous value on the `Cluster` resource and verify reconciliation with the same target-revision and `phase=Success` checks described in [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane):
+- **The old VMs are gone.** They were destroyed during the upgrade. Template recovery builds a fresh set of replacement machines; it does not restore the original VMs.
+- **The old `VSphereMachineTemplate` resource must still exist.** Do not delete the previous template until the new rollout is healthy. If you already deleted it, recreate it from version control or backup before attempting same-minor template recovery.
+- **Pool-managed disk identity is preserved, but data state is not.** Disks declared in `VSphereMachineConfigPool.spec.slot[].persistentDisks` reattach to the replacement machines at the same slot, but data written during the upgrade window remains on those disks.
 
-  ```bash
-  kubectl annotate cluster <cluster_name> -n <namespace> \
-    cpaas.io/kube-ovn-version=<previous-kube-ovn-version> --overwrite
-  ```
+For stage 1, restore the previous Kube-OVN annotation:
 
-If the new control plane never reached etcd quorum, the `KubeadmControlPlane` controller may refuse to roll back any machine because its preflight checks block on an unhealthy etcd. Recover etcd quorum first (operator intervention) before retrying the rollback.
+```bash
+kubectl annotate cluster <cluster_name> -n <namespace> \
+  cpaas.io/kube-ovn-version=<previous-kube-ovn-version> --overwrite
+```
+
+The vSphere provider reconciles the complete Kube-OVN `AppRelease` specification from this annotation. Wait until `installedRevision` matches the restored revision and `phase=Success` before changing control-plane manifests. If the target-minor control plane has already joined, keep the target Kube-OVN baseline and use forward recovery or backup restore instead of attempting an independent chart downgrade.
+
+The `KubeadmControlPlane` controller can block replacement while etcd is unhealthy. Recover quorum before retrying any safe replacement action.
 
 ## Verification
 
