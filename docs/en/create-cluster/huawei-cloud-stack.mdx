@@ -471,6 +471,10 @@ spec:
 
 The `KubeadmControlPlane` defines the Kubernetes control plane configuration.
 
+<Directive type="warning" title="Kubernetes 1.35 kubelet settings">
+  `imagePullCredentialsVerificationPolicy: NeverVerify` is required only starting with Kubernetes 1.35. Omit this parameter when creating a cluster with Kubernetes 1.34 or earlier.
+</Directive>
+
 ```yaml
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
@@ -517,6 +521,7 @@ spec:
           {
             "apiVersion": "kubelet.config.k8s.io/v1beta1",
             "kind": "KubeletConfiguration",
+            "imagePullCredentialsVerificationPolicy": "NeverVerify",
             "protectKernelDefaults": true,
             "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
             "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key",
