@@ -16,6 +16,24 @@ The Kubeadm Provider is platform-wide and is consumed by every infrastructure pr
 
 For installation and capability details, see the platform installation documentation.
 
+## v1.0.12 (2026-07-28) \{#v1-0-12}
+
+### Fixed Issues
+
+- **Standby Global Cluster protection** — Kubeadm bootstrap and control-plane reconciliation remain inactive on a standby Global Cluster. Replicated workload-cluster resources are therefore not acted on until the standby cluster is promoted during disaster recovery.
+
+## v1.0.11 (2026-06-10) \{#v1-0-11}
+
+### Fixed Issues
+
+- **More reliable control-plane rollout readiness** — The rollout gate now validates the identity of replacement control-plane nodes and waits for a stable control-plane node set before refreshing platform registry state. This prevents stale node records from leaving a rollout waiting indefinitely.
+
+## v1.0.10 (2026-05-25) \{#v1-0-10}
+
+### Fixed Issues
+
+- **Platform registry refresh after control-plane VM replacement** — A Global Cluster now refreshes the platform registry state when a replacement control-plane VM reuses the prior node name and IP address. This allows the rolling update to continue after node-local platform services are prepared on the replacement VM.
+
 ## v1.0.9 (2026-05-21) \{#v1-0-9}
 
 ### Notes
