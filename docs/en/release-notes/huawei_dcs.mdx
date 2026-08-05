@@ -24,6 +24,10 @@ For the current full capability list and installation steps, see [Huawei DCS Pro
 
 - **More efficient DCS authentication during reconciliation** — The provider reuses valid DCS SDK authentication tokens and clients instead of repeatedly requesting new remote logins, reducing unnecessary control-plane traffic during normal operations.
 
+### Fixed Issues
+
+- **Alauda OS compatibility for ACP v4.3.2 and later** — The provider reliably applies the configured primary node address on multi-NIC nodes during bootstrap. DCS Provider `v1.0.21` is required when a DCS cluster uses the Alauda OS image for ACP `v4.3.2` or later, including ACP `v4.4.0` and later. Select the image from the OS Support Matrix row for the same ACP release. Do not pair DCS Provider `v1.0.21` or later with an Alauda OS image for an ACP release earlier than `v4.3.2`. See [Alauda OS and Provider Compatibility](../overview/providers/huawei-dcs.mdx#alauda-os-and-provider-compatibility).
+
 ## v1.0.20 (2026-06-04) \{#v1-0-20}
 
 ### New Features
@@ -31,10 +35,6 @@ For the current full capability list and installation steps, see [Huawei DCS Pro
 - **Thin-provisioning option for pool-managed persistent disks** — `DCSIpHostnamePool.spec.pool[].persistentDisk.isThin` lets you request the DCS thin-provisioning setting when the provider creates a new persistent volume. This field is creation-only: changing it does not convert an existing volume.
 
 - **Automatic CD-ROM detach after node bootstrap** — The provider detaches the bootstrapping CD-ROM after the VM is created, removing a common constraint on later DRS migration and control-plane placement operations.
-
-### Fixed Issues
-
-- **Configured primary node IP on multi-NIC Alauda OS nodes** — The configured kubelet `node-ip` is now applied through the supported bootstrap configuration path, so a node with multiple NICs reliably registers the intended primary address.
 
 ## v1.0.19 (2026-05-29) \{#v1-0-19}
 
