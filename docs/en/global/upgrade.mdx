@@ -44,6 +44,10 @@ Like workload clusters, the `global` cluster on Immutable Infrastructure follows
 
 After installation, the Cluster API controllers that manage the `global` cluster run on the `global` cluster itself. Use the `global` kubeconfig for the `kubectl` commands in this procedure.
 
+<Directive type="warning" title="Required when the target is Kubernetes 1.35">
+  `imagePullCredentialsVerificationPolicy: NeverVerify` is required only starting with Kubernetes 1.35. On the hop to Kubernetes 1.35 or later, add it to the kubelet patch used by every replacement node. Update the control-plane file in the same `KubeadmControlPlane` edit as `spec.version`. For workers, create a new `KubeadmConfigTemplate` with the updated patch and switch `MachineDeployment.spec.template.spec.bootstrap.configRef.name` in the same edit as the version. Do not add this parameter for Kubernetes 1.34 or earlier. See [Required kubelet patch for Kubernetes 1.35](../upgrade-cluster/index.mdx#kubernetes-1-35-kubelet-patch).
+</Directive>
+
 ### Step 1 — Update the global Cluster Manifest
 
 Update the Cluster API manifests of the `global` cluster to reference the new Alauda OS image and Kubernetes version. The manifest fields to update are provider-specific.
@@ -58,6 +62,7 @@ Update the control plane resources:
 - Create a new `DCSMachineTemplate` for the target image and set `spec.template.spec.vmTemplateName` to the Alauda OS template that matches the target Kubernetes version.
 - Keep preserved node-local data, including `/var/cpaas`, in `DCSIpHostnamePool.spec.pool[].persistentDisk`. Do not move preserved disks back into `DCSMachineTemplate`.
 - Set `KubeadmControlPlane.spec.version` to the target Kubernetes version.
+- When the target is Kubernetes 1.35 or later, update the control-plane kubelet patch in `KubeadmControlPlane.spec.kubeadmConfigSpec.files` in the same manifest edit.
 - Point `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` to the new `DCSMachineTemplate`.
 - Keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` when the cluster uses pool-managed persistent disks.
 
@@ -65,6 +70,7 @@ Update worker node resources:
 
 - Create a new worker `DCSMachineTemplate` with the target `vmTemplateName`.
 - Set each `MachineDeployment.spec.template.spec.version` to the target Kubernetes version.
+- When the target is Kubernetes 1.35 or later, create a new worker `KubeadmConfigTemplate` with the required kubelet patch and point `MachineDeployment.spec.template.spec.bootstrap.configRef.name` to it.
 - Point each `MachineDeployment.spec.template.spec.infrastructureRef.name` to the new worker `DCSMachineTemplate`.
 - Keep each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge: 0` when the worker pool uses pool-managed persistent disks.
 
@@ -112,6 +118,7 @@ Update the control plane resources:
 - Keep preserved node-local data, including `/var/cpaas`, in `HCSMachineConfigPool.spec.configs[].persistentDisks[]`. Do not move preserved disks back into `HCSMachineTemplate.spec.template.spec.dataVolumes[]`.
 - Leave runtime identity fields unset in the new template, including `spec.template.spec.providerID` and `spec.template.spec.serverId`.
 - Set `KubeadmControlPlane.spec.version` to the target Kubernetes version.
+- When the target is Kubernetes 1.35 or later, update the control-plane kubelet patch in `KubeadmControlPlane.spec.kubeadmConfigSpec.files` in the same manifest edit.
 - Point `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` to the new `HCSMachineTemplate`.
 - Keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` when the control plane pool uses pool-managed persistent disks.
 
@@ -119,6 +126,7 @@ Update worker node resources:
 
 - Create a new worker `HCSMachineTemplate` with the target `imageName`.
 - Set each `MachineDeployment.spec.template.spec.version` to the target Kubernetes version.
+- When the target is Kubernetes 1.35 or later, create a new worker `KubeadmConfigTemplate` with the required kubelet patch and point `MachineDeployment.spec.template.spec.bootstrap.configRef.name` to it.
 - Point each `MachineDeployment.spec.template.spec.infrastructureRef.name` to the new worker `HCSMachineTemplate`.
 - Keep each `MachineDeployment.spec.strategy.rollingUpdate.maxSurge: 0` when the worker pool uses pool-managed persistent disks.
 
