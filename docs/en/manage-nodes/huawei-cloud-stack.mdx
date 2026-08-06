@@ -9,6 +9,7 @@ queries:
   - hcs machine deployment
   - hcs worker persistent disks
   - hcs node pools web ui manage ips
+  - hcs worker node pool availability zone
 ---
 
 # Managing Nodes on Huawei Cloud Stack
@@ -65,6 +66,8 @@ The Node Pools tab shows the Control Plane Node Pool and each Worker Node Pool a
 ### Adding a Worker Node Pool
 
 Click **Add Worker Node Pool** and complete the dialog. The fields match Step 5 of the [creation wizard](../create-cluster/huawei-cloud-stack.mdx#using-the-web-ui): pool name (prefixed with `<cluster-name>-`), Flavor, Availability Zone, Machine Configs (hostname, networks, persistent disks), System Disk, Data Volumes, Replicas, Rollout Strategy, and SSH Authorized Keys. New nodes appear in the Nodes tab after the pool is created.
+
+The selected Availability Zone applies to every node in the new worker pool. To place worker nodes in another zone, create a separate worker pool and select that zone; one pool does not automatically spread its replicas across zones. The dropdown disables zones that HCS reports as unavailable. See [Availability Zone Placement](../infrastructure/huawei-cloud-stack.mdx#availability-zone-placement) for automatic selection, persistent disk, and control plane placement constraints.
 
 ### Managing Node IP Addresses \{#manage-ips}
 
@@ -230,7 +233,7 @@ spec:
 |-----------|------|----------|-------------|
 | `.spec.template.spec.imageName` | string | Yes | VM image name |
 | `.spec.template.spec.flavorName` | string | Yes | Provider-recognized HCS API value matched against `Flavor.Name` |
-| `.spec.template.spec.availabilityZone` | string | No | Provider-recognized HCS API value matched against `ZoneName` |
+| `.spec.template.spec.availabilityZone` | string | No | Provider-recognized HCS API value matched against `ZoneName`. Every worker created from this template uses the selected zone. If omitted, the Provider selects a zone reported as available by HCS. See [Availability Zone Placement](../infrastructure/huawei-cloud-stack.mdx#availability-zone-placement) |
 | `.spec.template.spec.rootVolume.type` | string | Yes | Volume type |
 | `.spec.template.spec.rootVolume.size` | int | Yes | System disk size in GB |
 | `.spec.template.spec.configPoolRef.name` | string | Yes | Referenced HCSMachineConfigPool name |
@@ -246,7 +249,7 @@ spec:
 
 **Note:** Do not set runtime identity fields such as `providerID` or `serverId` in `HCSMachineTemplate` manifests. The provider assigns these values when it creates HCS instances.
 
-**Note:** Tenant administrators cannot retrieve the provider-recognized `flavorName` and `availabilityZone` values from the HCS UI. Get the exact values from the HCS administrator before you apply the manifest.
+**Note:** The ACP web UI loads flavors and availability zones through the selected HCS credential. When you write YAML, get the exact provider-recognized `Flavor.Name` and `ZoneName` values from the HCS administrator because the native HCS tenant console might not expose them.
 
 #### Step 3: Configure Bootstrap Template
 

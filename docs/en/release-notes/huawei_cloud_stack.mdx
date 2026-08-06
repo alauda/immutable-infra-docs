@@ -4,6 +4,7 @@ queries:
   - hcs release notes
   - huawei cloud stack version
   - what changed hcs provider
+  - hcs availability zone version
 ---
 
 # Huawei Cloud Stack Provider Release Notes
@@ -20,11 +21,13 @@ For the current full capability list and installation steps, see [Huawei Cloud S
 
 ### New Features
 
-- **Web UI for HCS cluster management** — HCS clusters can now be created and managed through the web UI. A guided wizard creates clusters, the Node Pools tab manages the control plane and worker node pools, and the Manage IPs dialog edits the reserved node IP addresses of an existing pool. This workflow requires Fleet Essentials `1.0.2` or later. See [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx#using-the-web-ui) and [Managing Nodes on Huawei Cloud Stack](../manage-nodes/huawei-cloud-stack.mdx#managing-node-pools-using-the-web-ui).
+- **Web UI node pool workflow stabilization** — This release is the documented minimum HCS Provider version for the web UI workflow and requires Fleet Essentials `1.0.2` or later. It improves the Node Pools cards, prevents duplicate or stale subnet IP selections, validates required subnet and IP values, and corrects the day-2 Manage IPs workflow. When you create a control plane or worker node pool, the Availability Zone list uses zones reported by HCS and disables zones reported as unavailable. See [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx#using-the-web-ui) and [Managing Nodes on Huawei Cloud Stack](../manage-nodes/huawei-cloud-stack.mdx#managing-node-pools-using-the-web-ui).
 
 ## v1.0.2 (2026-06-26) \{#v1-0-2}
 
 ### New Features
+
+- **Initial HCS web UI integration** — The Provider package now includes the initial HCS web UI for guided cluster creation and Node Pools operations. The UI loads infrastructure values, including flavors and availability zones, through the selected HCS credential. For the documented web UI workflow and subsequent node pool fixes, use HCS Provider `v1.0.3` or later with Fleet Essentials `1.0.2` or later.
 
 - **Control plane high availability (server group anti-affinity)** — `HCSCluster` accepts a new `spec.controlPlaneHA` block with `enabled` and `policy` (`anti-affinity` or `soft-anti-affinity`). When enabled, the provider creates and maintains an HCS server group and spreads the control-plane ECS instances across different physical hosts. The feature covers the control plane only, the provider owns the server group rather than referencing an existing one, and existing clusters converge through control plane rolling replacement. See [Configure HCSCluster](../create-cluster/huawei-cloud-stack.mdx#configure-hcscluster) for the field reference and [Control Plane HA Placement Plan](../infrastructure/huawei-cloud-stack.mdx#control-plane-ha-placement) for planning guidance.
 
@@ -41,6 +44,8 @@ For the current full capability list and installation steps, see [Huawei Cloud S
 ### New Features
 
 - **Cluster lifecycle on Huawei Cloud Stack** — Create, scale, and delete Kubernetes clusters that use HCS as the infrastructure backend. Cluster creation reuses an existing VPC, subnet, and security group; the provider creates and binds the control plane ELB automatically and writes back the resulting `controlPlaneEndpoint`.
+
+- **Availability zone selection** — Set `HCSMachineTemplate.spec.template.spec.availabilityZone` to place the control plane or a worker node pool in one provider-recognized HCS availability zone. Different worker node pools can use different templates and availability zones, but replicas in one pool are not automatically spread across zones. If the field is omitted, the Provider selects an availability zone reported as available by HCS. See [Availability Zone Placement](../infrastructure/huawei-cloud-stack.mdx#availability-zone-placement).
 
 - **Reserved hostname and IP pool (`HCSMachineConfigPool`)** — Reserve fixed hostnames, subnet assignments, and static IP slots for cluster nodes. Slots are released and reused when nodes are deleted. Required when persistent node-local disks must be preserved across node replacement.
 
