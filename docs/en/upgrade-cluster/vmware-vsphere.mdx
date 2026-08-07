@@ -61,7 +61,7 @@ Upgrades rely on Cluster API's rolling replacement mechanism. Each cluster has f
 |---|---|---|---|
 | System disk (root volume) | The VM template used for `spec.template.spec.template` | ❌ Never | OS + kubelet/kubeadm/containerd. Rebuilt from the new template every replacement. |
 | Template-local disks | `VSphereMachineTemplate.spec.template.spec.*` (additional disks declared in the template) | ❌ Never | Ephemeral cache. Destroyed with the old VM. |
-| Pool-managed persistent disks | `VSphereMachineConfigPool.spec.slot[].persistentDisks` | ✅ Detached from old VM and reattached to the new VM at the same slot | Platform state such as `/var/cpaas`. |
+| Pool-managed persistent disks | `VSphereMachineConfigPool.spec.configs[].persistentDisks[]` | ✅ Detached from old VM and reattached to the new VM at the same slot | Platform state such as `/var/cpaas`. |
 | External CSI volumes (vSphere CSI, etc.) | Workload PVCs / CSI driver | ✅ Unrelated to node lifecycle | Application data. |
 
 **"Preserved" means the same disk identity is reattached** — it does not mean the disk's contents are time-traveled. Anything written to a pool-managed disk during the upgrade window stays after the upgrade and stays after a rollback.
@@ -276,7 +276,7 @@ Keep these infrastructure facts in mind during any recovery:
 
 - **The old VMs are gone.** They were destroyed during the upgrade. Template recovery builds a fresh set of replacement machines; it does not restore the original VMs.
 - **The old `VSphereMachineTemplate` resource must still exist.** Do not delete the previous template until the new rollout is healthy. If you already deleted it, recreate it from version control or backup before attempting same-minor template recovery.
-- **Pool-managed disk identity is preserved, but data state is not.** Disks declared in `VSphereMachineConfigPool.spec.slot[].persistentDisks` reattach to the replacement machines at the same slot, but data written during the upgrade window remains on those disks.
+- **Pool-managed disk identity is preserved, but data state is not.** Disks declared in `VSphereMachineConfigPool.spec.configs[].persistentDisks[]` reattach to the replacement machines at the same slot, but data written during the upgrade window remains on those disks.
 
 For stage 1, restore the previous Kube-OVN annotation:
 

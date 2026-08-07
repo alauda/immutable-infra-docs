@@ -163,7 +163,7 @@ Update the control plane resources:
 
 - Export the current `VSphereMachineTemplate`, give the copy a new name, remove server-generated metadata and `status`, and set `spec.template.spec.template` to the target Alauda OS VM template from the OS Support Matrix.
 - Preserve the existing vCenter, folder, datastore, network, clone-mode, CPU, memory, and disk configuration unless the release procedure explicitly changes it. Leave `spec.template.spec.providerID` unset.
-- Keep preserved node-local data, including `/var/cpaas`, in `VSphereMachineConfigPool.spec.slot[].persistentDisks`; do not move it into the machine template.
+- Keep preserved node-local data, including `/var/cpaas`, in `VSphereMachineConfigPool.spec.configs[].persistentDisks[]`; do not move it into the machine template.
 - Set `KubeadmControlPlane.spec.version`, CoreDNS, and etcd tags from the same OS Support Matrix row.
 - When the target is Kubernetes 1.35 or later, update the control-plane kubelet patch in `KubeadmControlPlane.spec.kubeadmConfigSpec.files` in the same manifest edit.
 - Point `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` to the new `VSphereMachineTemplate`.
