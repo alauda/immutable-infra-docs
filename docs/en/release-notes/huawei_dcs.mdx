@@ -20,6 +20,8 @@ For the current full capability list and installation steps, see [Huawei DCS Pro
 
 - **Control plane high availability on Huawei DCS** — Set `DCSCluster.spec.controlPlaneHA.enabled` to have the provider create and maintain a DCS DRS mutual-exclusion rule for the control-plane VMs. DCS performs the actual placement and migration; the provider updates the rule as control-plane VMs change. This option requires DRS to be enabled and sufficient host capacity. See [Cross-Host High Availability for Control Plane](../infrastructure/huawei-dcs.mdx#cross-host-ha).
 
+- **Automatic CD-ROM detach after node bootstrap** — The provider detaches the bootstrapping CD-ROM after the VM is created, removing a common constraint on later DRS migration and control-plane placement operations.
+
 ### Enhancements
 
 - **More efficient DCS authentication during reconciliation** — The provider reuses valid DCS SDK authentication tokens and clients instead of repeatedly requesting new remote logins, reducing unnecessary control-plane traffic during normal operations.
@@ -33,8 +35,6 @@ For the current full capability list and installation steps, see [Huawei DCS Pro
 ### New Features
 
 - **Thin-provisioning option for pool-managed persistent disks** — `DCSIpHostnamePool.spec.pool[].persistentDisk.isThin` lets you request the DCS thin-provisioning setting when the provider creates a new persistent volume. This field is creation-only: changing it does not convert an existing volume.
-
-- **Automatic CD-ROM detach after node bootstrap** — The provider detaches the bootstrapping CD-ROM after the VM is created, removing a common constraint on later DRS migration and control-plane placement operations.
 
 ## v1.0.19 (2026-05-29) \{#v1-0-19}
 
