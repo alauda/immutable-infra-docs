@@ -77,6 +77,233 @@ After upgrading the Distribution Version, upgrade Kubernetes and the Alauda OS i
 
 For Huawei DCS, Huawei Cloud Stack, VMware vSphere, and bare-metal clusters, upgrade the Kube-OVN chart for the current upgrade hop **before** changing `KubeadmControlPlane`. Wait until the workload cluster's `cni-kube-ovn` `AppRelease` reports the target installed revision and `phase=Success`, then upgrade the control plane, followed by worker nodes. Repeat this Kube-OVN-first ordering for every intermediate Kubernetes minor in a cross-version upgrade.
 
+### Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
+
+Use this section as the authoritative Kube-OVN procedure for workload and `global` clusters. For every Kubernetes and OS hop, read the **kube-ovn (chart)** version from the matching [OS Support Matrix](../overview/os-support-matrix.mdx) row, complete the provider-version-specific procedure below, and verify the resulting `AppRelease` before changing `KubeadmControlPlane`.
+
+Run provider-version checks and `Cluster` or infrastructure-cluster commands against the management cluster. Run `cni-kube-ovn` `AppRelease` commands against the cluster being upgraded. When upgrading the `global` cluster, both resources are on the `global` cluster, so use the `global` kubeconfig for all commands.
+
+#### Identify the Installed Provider Version
+
+Do not infer the provider version from the ACP Distribution Version. Inspect the provider `AppRelease` on the management cluster. The resource name can vary, so the following command finds the provider by chart name and prints the requested and installed revisions:
+
+```bash
+kubectl -n cpaas-system get apprelease \
+  -o custom-columns='APPRELEASE:.metadata.name,CHART:.spec.source.charts[*].name,REQUESTED:.spec.source.charts[*].targetRevision,INSTALLED:.status.charts[*].installedRevision,PHASE:.status.charts[*].phase'
+```
+
+Find the row whose chart name ends with `chart-cluster-api-provider-dcs`, `chart-cluster-api-provider-hcs`, `chart-cluster-api-provider-vsphere`, or `chart-cluster-api-provider-baremetal`, as appropriate. Use the **installed revision** to select a tab. If the requested and installed revisions differ, or the provider chart is not in `Success`, finish or repair the provider upgrade before starting the cluster upgrade.
+
+| Provider | Full-source reconciliation | Legacy behavior retained in this guide |
+|---|---|---|
+| Huawei DCS | `v1.0.22` and later | `v1.0.21` and earlier |
+| Huawei Cloud Stack | `v1.0.4` and later | `v1.0.3` and earlier |
+| VMware vSphere | `v1.0.16` and later | `v1.0.15` and earlier |
+| Bare Metal | `v0.0.1` and later | None; `v0.0.1` is the first supported release for this procedure. |
+
+The Kube-OVN chart source also changes at chart version `v4.4`:
+
+| Target Kube-OVN chart version | Expected `spec.source.charts[0].name` |
+|---|---|
+| Earlier than `v4.4` | `acp/chart-cpaas-kube-ovn` |
+| `v4.4` and later | `acp/chart-kube-ovn` |
+
+If the target OS Support Matrix row uses Kube-OVN chart `v4.4` or later, upgrade the infrastructure provider to the full-source reconciliation version in the table before continuing. A manual Kube-OVN source patch is not a substitute for that provider upgrade because the same provider releases also reconcile the required CoreDNS and kube-proxy repository changes.
+
+#### Apply the Provider-Version-Specific Procedure
+
+##### Huawei DCS
+
+Verify that the DCS infrastructure cluster uses Kube-OVN:
+
+```bash
+kubectl get dcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{.spec.networkType}{"\n"}'
+# Expected output: kube-ovn
+```
+
+<Tabs>
+  <Tab label="DCS v1.0.22+">
+
+Update the target chart version on the CAPI `Cluster`. The provider selects the chart name from the target version and reconciles the complete `AppRelease` source and specification.
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+Do not patch the `AppRelease` source manually. Continue with [Verify the Kube-OVN AppRelease](#verify-the-kube-ovn-apprelease).
+
+  </Tab>
+  <Tab label="DCS v1.0.21 and earlier">
+
+:::warning
+This legacy flow is valid only when the target Kube-OVN chart is earlier than `v4.4`. For chart `v4.4` or later, upgrade the DCS provider to `v1.0.22` or later first.
+:::
+
+The legacy provider updates `spec.values` but preserves the existing source. Record the target on the `Cluster`, then patch only the existing legacy chart revision on the cluster being upgraded:
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+
+kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
+  -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<kube-ovn-version-from-matrix>"}]'
+```
+
+Keep the legacy chart name `acp/chart-cpaas-kube-ovn`. Do not use this patch to move an old provider to chart `v4.4` or later.
+
+  </Tab>
+</Tabs>
+
+##### Huawei Cloud Stack
+
+Verify that the HCS infrastructure cluster uses Kube-OVN:
+
+```bash
+kubectl get hcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{.spec.networkType}{"\n"}'
+# Expected output: kube-ovn
+```
+
+<Tabs>
+  <Tab label="HCS v1.0.4+">
+
+Update the target chart version on the CAPI `Cluster`. The provider selects the chart name from the target version and reconciles the complete `AppRelease` source and specification.
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+Do not patch the `AppRelease` source manually. Continue with [Verify the Kube-OVN AppRelease](#verify-the-kube-ovn-apprelease).
+
+  </Tab>
+  <Tab label="HCS v1.0.3 and earlier">
+
+:::warning
+This legacy flow is valid only when the target Kube-OVN chart is earlier than `v4.4`. For chart `v4.4` or later, upgrade the HCS provider to `v1.0.4` or later first.
+:::
+
+The legacy provider updates `spec.values` but preserves the existing source. Record the target on the `Cluster`, then patch only the existing legacy chart revision on the cluster being upgraded:
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+
+kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
+  -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<kube-ovn-version-from-matrix>"}]'
+```
+
+Keep the legacy chart name `acp/chart-cpaas-kube-ovn`. Do not use this patch to move an old provider to chart `v4.4` or later.
+
+  </Tab>
+</Tabs>
+
+##### VMware vSphere
+
+Verify that the CAPI `Cluster` enables Kube-OVN reconciliation:
+
+```bash
+kubectl get cluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{.metadata.annotations.cpaas\.io/network-type}{"\n"}'
+# Expected output: kube-ovn
+```
+
+<Tabs>
+  <Tab label="vSphere v1.0.16+">
+
+Update the target chart version on the CAPI `Cluster`. The provider selects the chart name from the target version and reconciles the complete `AppRelease` source and specification.
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+Do not patch the `AppRelease` source manually. Continue with [Verify the Kube-OVN AppRelease](#verify-the-kube-ovn-apprelease).
+
+  </Tab>
+  <Tab label="vSphere v1.0.15 and earlier">
+
+:::warning
+This legacy flow is valid only when the target Kube-OVN chart is earlier than `v4.4`. For chart `v4.4` or later, upgrade the vSphere provider to `v1.0.16` or later first. The legacy controller hardcodes the old chart name and can overwrite an unsupported manual source change.
+:::
+
+For an earlier target chart, update the annotation only. The legacy provider reconciles the complete specification but keeps the legacy chart name.
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+  </Tab>
+</Tabs>
+
+##### Bare Metal
+
+This procedure applies to Bare Metal provider `v0.0.1` and later. There is no earlier supported release flow to select.
+
+Verify that the infrastructure cluster uses Kube-OVN, then update the target chart version on the CAPI `Cluster`:
+
+```bash
+kubectl get baremetalcluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{.spec.networkType}{"\n"}'
+# Expected output: kube-ovn
+
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+The provider selects the chart name from the target version and reconciles the complete `AppRelease` source and specification. Do not patch the `AppRelease` source manually.
+
+#### Verify the Kube-OVN AppRelease \{#verify-the-kube-ovn-apprelease}
+
+Run these commands against the cluster being upgraded:
+
+```bash
+kubectl get apprelease cni-kube-ovn -n cpaas-system \
+  -o jsonpath='Chart: {.spec.source.charts[0].name}{"\n"}Target: {.spec.source.charts[0].targetRevision}{"\n"}Installed: {.status.charts.*.installedRevision}{"\n"}Phase: {.status.charts.*.phase}{"\n"}'
+
+kubectl get apprelease cni-kube-ovn -n cpaas-system \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}){"\n"}{end}'
+```
+
+Before changing the control plane, verify all of the following:
+
+- `spec.source.charts[0].name` matches the chart-name boundary above.
+- `targetRevision` and `installedRevision` both match the OS Support Matrix row.
+- `phase` is `Success`.
+- The `Sync` and `Health` conditions are `True`.
+
+The normal phase sequence is `Upgrading → HealthChecking → Success`. Do not continue based on `installedRevision` alone: it can change during `HealthChecking`, before Kube-OVN pods have been verified Ready. If the `AppRelease` reaches `DownloadFailed`, `DeployFailed`, or `NotReady`, stop and inspect its condition messages:
+
+```bash
+kubectl describe apprelease cni-kube-ovn -n cpaas-system
+```
+
+#### Restore Kube-OVN During Stage-1 Recovery \{#restore-kube-ovn-during-stage-1-recovery}
+
+Use this recovery only when no control-plane `Machine` on the target Kubernetes minor has been created. If a target-minor control-plane machine has joined, keep the target Kube-OVN baseline and use forward recovery or the supported backup or DR restore procedure.
+
+Restore the previous chart version on the CAPI `Cluster` in the management cluster:
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<previous-kube-ovn-version> --overwrite
+```
+
+- **DCS `v1.0.22+`, HCS `v1.0.4+`, vSphere `v1.0.16+`, and Bare Metal `v0.0.1+`**: restore the previous `cpaas.io/kube-ovn-version` annotation. The provider restores the matching chart name, revision, and complete specification. Do not patch the source manually.
+- **DCS `v1.0.21` and earlier or HCS `v1.0.3` and earlier, with a target earlier than chart `v4.4`**: after restoring the annotation, patch the existing `targetRevision` back to the previous chart revision on the cluster being recovered:
+
+  ```bash
+  kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
+    -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<previous-kube-ovn-version>"}]'
+  ```
+
+- **vSphere `v1.0.15` and earlier, with a target earlier than chart `v4.4`**: restore the previous annotation only; the provider reconciles the complete legacy specification.
+
+After restoring the previous target, repeat [Verify the Kube-OVN AppRelease](#verify-the-kube-ovn-apprelease) before changing any control-plane manifests.
+
 ### Required kubelet patch for Kubernetes 1.35 \{#kubernetes-1-35-kubelet-patch}
 
 When an upgrade hop targets Kubernetes 1.35 or later, the kubelet patch file at `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json` must include the following setting:
@@ -87,7 +314,7 @@ When an upgrade hop targets Kubernetes 1.35 or later, the kubelet patch file at 
 }
 ```
 
-`imagePullCredentialsVerificationPolicy` is required only starting with Kubernetes 1.35. Setting it to `NeverVerify` prevents the kubelet from requiring registry credential verification for images that are already present in the immutable OS image.
+In Kubernetes 1.35, kubelet credential verification can apply even when an image is already present on the node. `NeverVerify` tells the kubelet not to verify pull credentials for these pre-pulled images. Add this field only to kubelet configurations that will run on Kubernetes 1.35 or later; do not add it for Kubernetes 1.34 or earlier.
 
 Apply this change only on the hop to Kubernetes 1.35 or later:
 
@@ -153,7 +380,7 @@ Select your platform for detailed upgrade instructions:
 | [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
 | [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
 | [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | ✅ Available |
-| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | ✅ Available (YAML only) |
+| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | YAML; requires provider `v0.0.1+` in the installed release |
 
 ---
 

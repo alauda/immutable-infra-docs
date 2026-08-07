@@ -19,7 +19,7 @@ For a Huawei DCS `global` cluster, review [Alauda OS and Provider Compatibility]
 Choose this upgrade path when:
 
 - The `global` cluster was originally installed on Immutable Infrastructure. See [Installing the global Cluster](./install.mdx).
-- Your infrastructure is one of the documented providers: Huawei DCS, VMware vSphere, or Huawei Cloud Stack. Bare-metal support for the `global` cluster is planned.
+- Your infrastructure is one of the documented providers: Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal when provider `v0.0.1` or later is included in the installed release.
 
 For traditional-OS `global` clusters, use <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="the standard upgrade path" /> instead.
 
@@ -48,58 +48,14 @@ Like workload clusters, the `global` cluster on Immutable Infrastructure follows
 After installation, the Cluster API controllers that manage the `global` cluster run on the `global` cluster itself. Use the `global` kubeconfig for the `kubectl` commands in this procedure.
 
 <Directive type="warning" title="Required when the target is Kubernetes 1.35">
-  `imagePullCredentialsVerificationPolicy: NeverVerify` is required only starting with Kubernetes 1.35. On the hop to Kubernetes 1.35 or later, add it to the kubelet patch used by every replacement node. Update the control-plane file in the same `KubeadmControlPlane` edit as `spec.version`. For workers, create a new `KubeadmConfigTemplate` with the updated patch and switch `MachineDeployment.spec.template.spec.bootstrap.configRef.name` in the same edit as the version. Do not add this parameter for Kubernetes 1.34 or earlier. See [Required kubelet patch for Kubernetes 1.35](../upgrade-cluster/index.mdx#kubernetes-1-35-kubelet-patch).
+  In Kubernetes 1.35, kubelet credential verification can apply to images that are already present on a node. On the hop to Kubernetes 1.35 or later, add `imagePullCredentialsVerificationPolicy: NeverVerify` to the kubelet patch used by every replacement node. Update the control-plane file in the same `KubeadmControlPlane` edit as `spec.version`. For workers, create a new `KubeadmConfigTemplate` with the updated patch and switch `MachineDeployment.spec.template.spec.bootstrap.configRef.name` in the same edit as the version. Do not add this parameter for Kubernetes 1.34 or earlier. See [Required kubelet patch for Kubernetes 1.35](../upgrade-cluster/index.mdx#kubernetes-1-35-kubelet-patch).
 </Directive>
 
 ### Step 1 — Upgrade Kube-OVN
 
-Read the **kube-ovn (chart)** value from the target OS Support Matrix row. Move Kube-OVN to that revision and wait for the `cni-kube-ovn` `AppRelease` to reach `phase=Success` before changing the control plane.
+Read the **kube-ovn (chart)** value from the target OS Support Matrix row, then follow the shared [provider-version-specific Kube-OVN procedure](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane) with `<cluster-name>` set to `global`.
 
-<Tabs>
-  <Tab label="Huawei DCS">
-
-Record the target revision on the `Cluster`, then patch the existing `AppRelease`. The DCS provider reconciles `spec.values` but does not change an existing chart revision from the annotation alone.
-
-```shell
-kubectl annotate cluster global -n cpaas-system \
-  cpaas.io/kube-ovn-version=<target-kube-ovn-chart-version> --overwrite
-kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
-  -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<target-kube-ovn-chart-version>"}]'
-```
-
-  </Tab>
-  <Tab label="VMware vSphere">
-
-Verify that `Cluster.metadata.annotations["cpaas.io/network-type"]` is `kube-ovn`, then update the version annotation. The vSphere provider reconciles the complete Kube-OVN `AppRelease` specification.
-
-```shell
-kubectl annotate cluster global -n cpaas-system \
-  cpaas.io/kube-ovn-version=<target-kube-ovn-chart-version> --overwrite
-```
-
-  </Tab>
-  <Tab label="Huawei Cloud Stack">
-
-Record the target revision on the `Cluster`, then patch the existing `AppRelease`. The HCS provider reconciles `spec.values` but does not change an existing chart revision from the annotation alone.
-
-```shell
-kubectl annotate cluster global -n cpaas-system \
-  cpaas.io/kube-ovn-version=<target-kube-ovn-chart-version> --overwrite
-kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
-  -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<target-kube-ovn-chart-version>"}]'
-```
-
-  </Tab>
-</Tabs>
-
-Verify both the installed revision and the chart phase:
-
-```shell
-kubectl get apprelease cni-kube-ovn -n cpaas-system \
-  -o jsonpath='Installed: {.status.charts.*.installedRevision}{"\n"}Phase: {.status.charts.*.phase}{"\n"}'
-```
-
-Do not start control-plane replacement until the installed revision matches the target and `phase` is `Success`.
+That procedure first checks the installed provider revision, then selects the supported new or legacy flow, handles the Kube-OVN chart-name boundary at `v4.4`, and verifies the chart name, target revision, installed revision, phase, and conditions. Use the `global` kubeconfig for both the provider and `cni-kube-ovn` `AppRelease` checks. Do not begin control-plane replacement until all shared verification criteria pass.
 
 ### Step 2 — Update the global Cluster Manifest
 
@@ -234,9 +190,54 @@ Do not treat HCS `dataVolumes[]` as preserved state during node replacement. Thi
 
   </Tab>
   <Tab label="Bare Metal">
-    <Directive type="info" title="Status: Planned">
-      Bare-metal support for the `global` cluster on Immutable Infrastructure is planned.
-    </Directive>
+
+This YAML workflow requires Bare Metal provider `v0.0.1` or later. Use it only after that provider package and the target OS Support Matrix row are available in the installed release. Before editing Cluster API resources, confirm that the provider `AppRelease` requested and installed revisions match and its chart phase is `Success`.
+
+Verify that the target Kubernetes version exists in `elemental-image-catalog`:
+
+```shell
+kubectl --kubeconfig <global-kubeconfig> -n cpaas-system \
+  get configmap elemental-image-catalog -o yaml
+```
+
+The target version must appear as a key with a reachable base-image reference. The Bare Metal provider resolves the replacement image from `Machine.spec.version`; a Kubernetes-only upgrade does not require a new `BaremetalMachineTemplate` unless the control plane or workers must move to a different `MachineInventoryPool`.
+
+Update the existing `KubeadmControlPlane` manifest with values from the same OS Support Matrix row. Preserve all fields not shown here:
+
+```yaml
+spec:
+  version: <target-kubernetes-version>
+  rolloutStrategy:
+    rollingUpdate:
+      maxSurge: 0
+  kubeadmConfigSpec:
+    clusterConfiguration:
+      dns:
+        imageTag: <target-coredns-tag>
+      etcd:
+        local:
+          imageTag: <target-etcd-tag>
+```
+
+Retain the existing `spec.kubeadmConfigSpec.files` entries. For Kubernetes 1.35 or later, update the existing `kubeletconfiguration0+strategic.json` entry in that list as documented above; do not replace the list with an empty value.
+
+For each worker `MachineDeployment`, set the target Kubernetes version and keep `maxSurge: 0`. When the target is Kubernetes 1.35 or later, first create a new immutable `KubeadmConfigTemplate` containing the required kubelet patch, then reference it in the same manifest change:
+
+```yaml
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+  template:
+    spec:
+      version: <target-kubernetes-version>
+      bootstrap:
+        configRef:
+          name: <target-kubeadm-config-template>
+```
+
+Omit the `bootstrap.configRef` change for an earlier target when no bootstrap setting changes. Apply the complete retained manifests in Step 3. The provider deletes each old machine, cleans its inventory, allocates an available inventory from the same pool, and writes a `reprovision` plan for the target image.
+
   </Tab>
 </Tabs>
 
@@ -290,23 +291,25 @@ For DCS clusters that use pool-managed persistent disks, confirm disk state befo
 
 First, check `DCSIpHostnamePool.status.persistentDiskStatus` before deleting or recreating machines. Do not delete retained DCS volumes that are listed in `DCSIpHostnamePool.spec.pool[].persistentDisk`.
 
-For stage 1, restore both the previous Kube-OVN annotation and the existing `AppRelease` chart revision. Keep `maxSurge: 0` while returning to previous machine templates in a same-minor replacement recovery. If a target-minor control-plane machine has joined, retain the target baseline and use forward recovery or backup restore.
+For stage 1, use the DCS rule in [Restore Kube-OVN During Stage-1 Recovery](../upgrade-cluster/index.mdx#restore-kube-ovn-during-stage-1-recovery); the action depends on the installed provider version. Keep `maxSurge: 0` while returning to previous machine templates in a same-minor replacement recovery. If a target-minor control-plane machine has joined, retain the target baseline and use forward recovery or backup restore.
 
   </Tab>
   <Tab label="VMware vSphere">
 
-For stage 1, restore the previous `cpaas.io/kube-ovn-version` annotation; the vSphere provider reconciles the complete `AppRelease` specification. For a same-minor template recovery, keep `maxSurge: 0`, point the control plane and worker resources to the retained previous `VSphereMachineTemplate` resources, and verify that each fixed slot reattaches its pool-managed persistent disks. If a target-minor control-plane machine has joined, retain the target Kubernetes, CoreDNS, etcd, and Kube-OVN baseline and use forward recovery or backup restore.
+For stage 1, use the vSphere rule in [Restore Kube-OVN During Stage-1 Recovery](../upgrade-cluster/index.mdx#restore-kube-ovn-during-stage-1-recovery). For a same-minor template recovery, keep `maxSurge: 0`, point the control plane and worker resources to the retained previous `VSphereMachineTemplate` resources, and verify that each fixed slot reattaches its pool-managed persistent disks. If a target-minor control-plane machine has joined, retain the target Kubernetes, CoreDNS, etcd, and Kube-OVN baseline and use forward recovery or backup restore.
 
   </Tab>
   <Tab label="Huawei Cloud Stack">
 
-Node-local data on HCS `dataVolumes[]` is not a recovery source because node replacement may delete the old VM and attached volumes. Data declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` is reattached during replacement. For stage 1, restore both the previous Kube-OVN annotation and the existing `AppRelease` chart revision. For a same-minor template recovery, keep `maxSurge: 0` and point the controlling resources to the retained previous `HCSMachineTemplate` resources. If a target-minor control-plane machine has joined, retain the target baseline and use forward recovery or backup restore.
+Node-local data on HCS `dataVolumes[]` is not a recovery source because node replacement may delete the old VM and attached volumes. Data declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` is reattached during replacement. For stage 1, use the HCS rule in [Restore Kube-OVN During Stage-1 Recovery](../upgrade-cluster/index.mdx#restore-kube-ovn-during-stage-1-recovery); the action depends on the installed provider version. For a same-minor template recovery, keep `maxSurge: 0` and point the controlling resources to the retained previous `HCSMachineTemplate` resources. If a target-minor control-plane machine has joined, retain the target baseline and use forward recovery or backup restore.
 
   </Tab>
   <Tab label="Bare Metal">
-    <Directive type="info" title="Status: Planned">
-      Bare-metal rollback guidance for the `global` cluster on Immutable Infrastructure is planned.
-    </Directive>
+
+For stage 1, use the Bare Metal rule in [Restore Kube-OVN During Stage-1 Recovery](../upgrade-cluster/index.mdx#restore-kube-ovn-during-stage-1-recovery), then restore the previous manifests only if no target-minor control-plane `Machine` has been created.
+
+Every host that completes a `reprovision` plan has already replaced its OS image and cleared Kubernetes-managed state. If a target-minor control-plane machine has joined, do not patch Kubernetes, CoreDNS, or etcd back to the previous minor. Repair forward, or recover the `global` cluster through the verified etcd backup or Global DR procedure.
+
   </Tab>
 </Tabs>
 
