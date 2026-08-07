@@ -37,6 +37,12 @@ This requirement applies when you create or upgrade cluster nodes with ACP-provi
 | v4.3.2 | **alaudaos-43.m55.202606251459-0.x86_64**<br />**alaudaos-43.k.202606260612-0.aarch64** | v1.34.5-3 | 2.2.1-5 | 1.14.2-v4.3.11 | v3.5.28-260625 | 3.10 | v4.3.11 |
 
 :::info
+**Huawei DCS provider pairing**
+
+For Huawei DCS clusters that use the Alauda OS image from ACP `v4.3.2` or a later row, including ACP `v4.4.0` and later, use DCS Provider `v1.0.21` or later. Do not pair DCS Provider `v1.0.21` or later with an Alauda OS image from a release earlier than ACP `v4.3.2`. For the complete requirement, see [Alauda OS and Provider Compatibility](./providers/huawei-dcs.mdx#alauda-os-and-provider-compatibility).
+:::
+
+:::info
 The **kube-ovn (chart)** column is the `acp/chart-cpaas-kube-ovn` Helm chart version, which tracks the ACP release line (for example, ACP v4.2.2 ships chart `v4.2.24`). It is **not** the Kube-OVN component (binary) version such as `v1.14.x` or `v1.15.x`.
 
 Use this chart version — not the component version — when you set the `cpaas.io/kube-ovn-version` annotation on the `Cluster` resource and when you patch the `cni-kube-ovn` `AppRelease` `spec.source.charts[0].targetRevision`. See the provider-specific upgrade guides for the procedure.

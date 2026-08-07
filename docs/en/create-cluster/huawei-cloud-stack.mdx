@@ -7,6 +7,7 @@ queries:
   - create hcs cluster
   - huawei cloud stack kubernetes
   - hcs cluster creation
+  - hcs availability zone cluster node pool
   - workload cluster naming cluster-name not global
 ---
 
@@ -185,12 +186,12 @@ The control plane node pool is fixed at 3 replicas for high availability.
 |-------|------|----------|-------------|
 | Control Plane Node Pool Name | text | Yes | Pool name, automatically prefixed with `<cluster-name>-`. |
 | Flavor | dropdown | Yes | HCS flavor; the list shows vCPU and memory for each option. |
-| Availability Zone | dropdown | No | Target availability zone. Zones without capacity are disabled. |
+| Availability Zone | dropdown | No | Target availability zone for every control plane node. Zones reported as unavailable are disabled. See [Availability Zone Placement](../infrastructure/huawei-cloud-stack.mdx#availability-zone-placement). |
 | Machine Configs | list | Yes | One entry per control plane node. At least 3 entries are required. See [Machine Config entry](#web-ui-machine-config) below. |
 | System Disk | number | Yes | Root disk size in GB; the type is fixed to SSD. |
 | Data Volumes | list | No | Fixed data disks mounted on every node in the pool; only the size is adjustable. The etcd data volume is included for the control plane. |
 | Replicas | readonly | - | Fixed at 3. |
-| Control Plane High Availability | toggle | No | On by default. Spreads control plane nodes across different physical hosts using a provider-managed HCS server group. |
+| Control Plane High Availability | toggle | No | On by default. Spreads control plane nodes across different physical hosts within the selected availability zone by using a provider-managed HCS server group. |
 | Placement Policy | radio | Conditional | Shown when High Availability is on. **Preferred (soft anti-affinity)** (default) spreads nodes on a best-effort basis. **Required (strict anti-affinity)** forces each node onto a different host and fails creation if there are not enough hosts. |
 | SSH Authorized Keys | list | No | Public keys for node access. |
 
@@ -210,7 +211,7 @@ Click **Add Worker Node Pool** to open the pool dialog. You can add multiple poo
 |-------|------|----------|-------------|
 | Worker Node Pool Name | text | Yes | Pool name, automatically prefixed with `<cluster-name>-`. Must be unique within the cluster. |
 | Flavor | dropdown | Yes | HCS flavor; the list shows vCPU and memory for each option. |
-| Availability Zone | dropdown | No | Target availability zone. |
+| Availability Zone | dropdown | No | Target availability zone for every node in this worker pool. Different worker pools can select different zones; zones reported as unavailable are disabled. See [Availability Zone Placement](../infrastructure/huawei-cloud-stack.mdx#availability-zone-placement). |
 | Machine Configs | list | Yes | One entry per worker node. Uses the same [Machine Config entry](#web-ui-machine-config) layout as the control plane. |
 | System Disk | number | Yes | Root disk size in GB; the type is fixed to SSD. |
 | Data Volumes | list | No | Fixed data disks mounted on every node in the pool. |
@@ -449,7 +450,7 @@ spec:
 |-----------|------|----------|-------------|
 | `.spec.template.spec.imageName` | string | Yes | HCS image name. Use the image identifier published in the current release's OS support matrix; placeholder shown as `<alaudaos-version>` in the manifest above. The exact name moves with each Alauda OS release, so do not hardcode the example value across versions. |
 | `.spec.template.spec.flavorName` | string | Yes | Provider-recognized HCS API value matched against `Flavor.Name`. Do not use the tenant UI display name |
-| `.spec.template.spec.availabilityZone` | string | No | Provider-recognized HCS API value matched against `ZoneName`. Do not use the tenant UI display name |
+| `.spec.template.spec.availabilityZone` | string | No | Provider-recognized HCS API value matched against `ZoneName`. Every machine created from this template uses the selected zone. If omitted, the Provider selects a zone reported as available by HCS. See [Availability Zone Placement](../infrastructure/huawei-cloud-stack.mdx#availability-zone-placement) |
 | `.spec.template.spec.rootVolume.type` | string | Yes | Volume type (`SSD` or `SATA`) |
 | `.spec.template.spec.rootVolume.size` | int | Yes | System disk size in GB |
 | `.spec.template.spec.configPoolRef.name` | string | Yes | Referenced HCSMachineConfigPool name |
@@ -465,7 +466,7 @@ spec:
 
 **Note:** Do not set runtime identity fields such as `providerID` or `serverId` in `HCSMachineTemplate` manifests. The provider assigns these values when it creates HCS instances.
 
-**Note:** Tenant administrators cannot retrieve the provider-recognized `flavorName` and `availabilityZone` values from the HCS UI. Get the exact values from the HCS administrator before you apply the manifest.
+**Note:** The ACP web UI loads flavors and availability zones through the selected HCS credential. When you write YAML, get the exact provider-recognized `Flavor.Name` and `ZoneName` values from the HCS administrator because the native HCS tenant console might not expose them.
 
 #### Configure KubeadmControlPlane
 

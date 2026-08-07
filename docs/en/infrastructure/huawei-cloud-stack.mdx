@@ -8,6 +8,7 @@ queries:
   - hcs secret subnet and elb planning
   - huawei cloud stack yaml prerequisites
   - hcs pool managed persistent disks
+  - hcs availability zone planning
 ---
 
 # Infrastructure Resources for Huawei Cloud Stack
@@ -39,7 +40,7 @@ Prepare the following inputs before you create or edit any cluster manifests:
 | `region` | HCS credential `Secret` | HCS administrator | Yes | Tenant administrators cannot retrieve this value from the HCS UI |
 | `imageName` | `HCSMachineTemplate` | HCS image inventory | Yes | Use the validated HCS image name for the selected Alauda OS image |
 | `flavorName` | `HCSMachineTemplate` | HCS administrator | Yes | Use the provider-recognized HCS API value matched against `Flavor.Name`, not the tenant UI display name |
-| `availabilityZone` | `HCSMachineTemplate` | HCS administrator | Yes | Use the provider-recognized HCS API value matched against `ZoneName`, not the tenant UI display name |
+| `availabilityZone` | `HCSMachineTemplate` | HCS administrator or the ACP web UI | Recommended | Select an explicit provider-recognized HCS API value for predictable placement. If omitted, the Provider selects an availability zone reported as available by HCS |
 | Root, temporary data volume, and persistent disk layout | `HCSMachineTemplate`, `HCSMachineConfigPool` | Cluster storage plan | Yes | Plan disk sizes and mount points before you write the template and pool. Put disks that can be recreated with the VM in `HCSMachineTemplate.spec.template.spec.dataVolumes[]`. Put disks that must survive VM replacement, such as `/var/cpaas`, in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` |
 | VPC name and security group name | `HCSCluster` | HCS network inventory | Yes | Confirm that the referenced VPC and security group already exist and are usable |
 | Cluster subnet inventory | `HCSCluster`, `HCSMachineConfigPool`, control plane ELB | HCS network inventory | Yes | Prepare the subnet name, subnet ID, ELB-related subnet metadata, CIDR, gateway, DNS values, and planned free IP range for every subnet that the cluster will use |
@@ -79,7 +80,27 @@ Prepare the VM image, flavor, availability zone, temporary data volume layout, a
 | Root and temporary data volumes | Plan system and temporary data disks in advance. Control plane templates typically use temporary data volumes for `/var/lib/etcd`, `/var/lib/kubelet`, and `/var/lib/containerd`. Worker templates typically use temporary data volumes for `/var/lib/kubelet` and `/var/lib/containerd`. |
 | Pool-managed persistent disks | Plan disks that must survive VM replacement in advance. Use this model for `/var/cpaas` and other node-local state that must be retained during rolling replacement. |
 
-**Note:** Tenant administrators cannot retrieve the provider-recognized `flavorName` and `availabilityZone` values from the HCS UI. Get the exact API values from the HCS administrator before you write the manifest.
+**Note:** The ACP web UI loads flavors and availability zones through the selected HCS credential. When you write YAML, get the exact provider-recognized `Flavor.Name` and `ZoneName` values from the HCS administrator because the native HCS tenant console might not expose them.
+
+### Availability Zone Placement \{#availability-zone-placement}
+
+An `HCSMachineTemplate` selects one availability zone for every machine created from that template. The ACP web UI creates one template for the control plane node pool and one template for each worker node pool. As a result:
+
+- All control plane nodes use one availability zone.
+- All replicas in one worker node pool use one availability zone.
+- Different worker node pools can select different availability zones.
+- A single node pool does not automatically spread replicas across multiple availability zones.
+
+For predictable placement, select an availability zone explicitly. If `HCSMachineTemplate.spec.template.spec.availabilityZone` is omitted, the Provider queries HCS and selects the first availability zone that HCS reports as available. The ordering of that list is controlled by HCS.
+
+When you use the ACP web UI, the Availability Zone dropdown is loaded through the selected HCS credential, uses the HCS API `ZoneName`, and disables zones that HCS reports as unavailable. When you write YAML, use the provider-recognized `ZoneName`, not a display name from the native HCS tenant console. The Provider rejects a name that is not returned by HCS. For a named zone that exists but is currently unavailable, ECS provisioning can still reach HCS and fail there, so verify that the zone is available before you apply the manifest.
+
+:::warning
+Pool-managed persistent disks and control plane high availability add placement constraints:
+
+- An existing pool-managed persistent disk locks its replacement ECS instance to the disk's availability zone. If the template explicitly selects a different zone, the replacement fails with an availability zone conflict.
+- Control Plane High Availability spreads control plane ECS instances across physical hosts by using an HCS server group. It does not spread the control plane across availability zones; all control plane nodes remain in the zone selected by the control plane `HCSMachineTemplate`.
+:::
 
 ## Version and Component Baseline
 

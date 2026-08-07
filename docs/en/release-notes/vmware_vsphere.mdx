@@ -14,6 +14,36 @@ This page tracks release notes for the Alauda Container Platform VMware vSphere 
 
 For the current full capability list and installation steps, see [VMware vSphere Provider Installation](../install/vmware-vsphere.mdx).
 
+## v1.0.15 (2026-07-09) \{#v1-0-15}
+
+### Fixed Issues
+
+- **Reliable primary node address and identity** — The vSphere cloud provider now honors the configured node IP when choosing a node address and resolves the provider ID from the VM's registered system UUID. This avoids incorrect node identity or address selection, especially for VMs with multiple NICs.
+
+- **More reliable Kube-OVN bootstrap** — The provider waits for a valid control-plane node set before reconciling Kube-OVN, avoiding CNI reconciliation while the initial control plane is incomplete.
+
+## v1.0.14 (2026-06-08) \{#v1-0-14}
+
+### Notes
+
+`v1.0.14` is a re-tag of `v1.0.13` at the same source revision. It contains no additional changes; see [v1.0.13](#v1-0-13).
+
+## v1.0.13 (2026-06-08) \{#v1-0-13}
+
+### Fixed Issues
+
+- **Safer pool-managed persistent disk replacement** — A machine-configuration pool slot is not reused while persistent disks from the previous VM are still attached. This prevents a replacement VM from racing the disk-detach operation.
+
+- **Standby Global Cluster reconciliation** — vSphere provider resources can reconcile correctly on a standby Global Cluster, supporting the documented disaster recovery procedure.
+
+## v1.0.12 (2026-05-25) \{#v1-0-12}
+
+### Fixed Issues
+
+- **vSphere CPI can start during Kube-OVN bootstrap** — The vSphere cloud provider is scheduled on control-plane nodes and tolerates their taints, allowing it to start before the cluster network is ready.
+
+- **Kube-OVN waits for the initial control plane** — The provider defers Kube-OVN reconciliation until the number of ready control-plane nodes matches the intended control-plane replica count.
+
 ## v1.0.11 (2026-05-21) \{#v1-0-11}
 
 ### Fixed Issues
