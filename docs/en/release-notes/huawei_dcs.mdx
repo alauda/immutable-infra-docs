@@ -14,6 +14,34 @@ This page tracks release notes for the Alauda Container Platform Huawei DCS Infr
 
 For the current full capability list and installation steps, see [Huawei DCS Provider Installation](../install/huawei-dcs.mdx).
 
+## v1.0.21 (2026-06-17) \{#v1-0-21}
+
+### New Features
+
+- **Control plane high availability on Huawei DCS** — Set `DCSCluster.spec.controlPlaneHA.enabled` to have the provider create and maintain a DCS DRS mutual-exclusion rule for the control-plane VMs. DCS performs the actual placement and migration; the provider updates the rule as control-plane VMs change. This option requires DRS to be enabled and sufficient host capacity. See [Cross-Host High Availability for Control Plane](../infrastructure/huawei-dcs.mdx#cross-host-ha).
+
+- **Automatic CD-ROM detach after node bootstrap** — The provider detaches the bootstrapping CD-ROM after the VM is created, removing a common constraint on later DRS migration and control-plane placement operations.
+
+### Enhancements
+
+- **More efficient DCS authentication during reconciliation** — The provider reuses valid DCS SDK authentication tokens and clients instead of repeatedly requesting new remote logins, reducing unnecessary control-plane traffic during normal operations.
+
+### Fixed Issues
+
+- **Alauda OS compatibility for ACP v4.3.2 and later** — The provider reliably applies the configured primary node address on multi-NIC nodes during bootstrap. DCS Provider `v1.0.21` is required when a DCS cluster uses the Alauda OS image for ACP `v4.3.2` or later, including ACP `v4.4.0` and later. Select the image from the OS Support Matrix row for the same ACP release. Do not pair DCS Provider `v1.0.21` or later with an Alauda OS image for an ACP release earlier than `v4.3.2`. See [Alauda OS and Provider Compatibility](../overview/providers/huawei-dcs.mdx#alauda-os-and-provider-compatibility).
+
+## v1.0.20 (2026-06-04) \{#v1-0-20}
+
+### New Features
+
+- **Thin-provisioning option for pool-managed persistent disks** — `DCSIpHostnamePool.spec.pool[].persistentDisk.isThin` lets you request the DCS thin-provisioning setting when the provider creates a new persistent volume. This field is creation-only: changing it does not convert an existing volume.
+
+## v1.0.19 (2026-05-29) \{#v1-0-19}
+
+### Enhancements
+
+- **Alauda OS template compatibility** — Node bootstrap configuration now renders the `/home` mount only for compatible Alauda OS templates. Existing manifests require no change.
+
 ## v1.0.18 (2026-05-19) \{#v1-0-18}
 
 ### New Features

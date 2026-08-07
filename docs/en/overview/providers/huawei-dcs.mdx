@@ -24,6 +24,12 @@ Pool-managed persistent disks are first supported in DCS provider `v1.0.16`.
 In `v1.0.16`, `DCSIpHostnamePool.spec.pool[].persistentDisk` is managed through YAML only; the web UI does not expose this configuration.
 :::
 
+## Alauda OS and Provider Compatibility \{#alauda-os-and-provider-compatibility}
+
+For a Huawei DCS cluster that uses Alauda OS, select the Alauda OS image from the [OS Support Matrix](../../overview/os-support-matrix.mdx) row for the ACP release installed on the cluster.
+
+For ACP `v4.3.2` or later, including ACP `v4.4.0` and later, install DCS Provider `v1.0.21` or later. Do not pair DCS Provider `v1.0.21` or later with an Alauda OS image for an ACP release earlier than `v4.3.2`.
+
 ## Key Features
 
 - **Virtual Machine Management**: Provision and manage VMs on DCS platform
