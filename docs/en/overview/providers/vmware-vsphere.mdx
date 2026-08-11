@@ -19,14 +19,20 @@ The VMware vSphere Infrastructure Provider enables Immutable Infrastructure on t
 
 VMware vSphere is the industry-leading virtualization platform from VMware. The vSphere Provider connects directly to vCenter to manage VM lifecycle, and extends CAPV with declarative node-slot allocation so that hostnames, static IP addresses, and persistent disks can be pre-defined before a cluster is provisioned.
 
+:::info
+**v1.0.16 endpoint and disk lifecycle boundary**
+
+This documentation is validated against VMware vSphere Provider `v1.0.16`. This release uses an external LoadBalancer for the Kubernetes API endpoint and does not deploy a Self-built VIP. Machine-config-pool persistent disks follow the provider-managed `InUse → Released → reuse or reclaim` lifecycle; see [Parameter Checklist](../../create-cluster/vmware-vsphere/parameter-checklist.mdx#persistent-disk-lifecycle).
+:::
+
 ## Key Features
 
 - **vCenter Integration**: Direct vCenter connectivity to clone VM templates, manage VM lifecycle, and place workloads on target datacenters, compute clusters, and datastores
-- **Machine Configuration Pools**: `VSphereMachineConfigPool` defines per-node slots with fixed hostnames, static IPs, and persistent-disk layouts, enabling predictable VM provisioning and slot-based scale-out
+- **Machine Configuration Pools**: `VSphereMachineConfigPool` defines per-node slots with fixed hostnames, static IPs, and persistent-disk layouts. Released slots can be reused by replacement Machines in the same existing pool, but slots and VMDKs are not shared across different pool objects
 - **Static IP Allocation**: Static IP, gateway, and DNS configuration per node slot for enterprise network environments where DHCP is not available
 - **Multi-NIC Support**: Primary and additional NICs per node, where the primary NIC drives the kubelet `node-ip` and additional NICs are attached in declared order for management, storage, or service networks
 - **Multiple Datacenters and Failure Domains**: Distribute control plane and worker nodes across multiple vCenter datacenters or compute clusters through `VSphereFailureDomain` and `VSphereDeploymentZone` for high availability
-- **Flexible Persistent Disks**: Declarative data disks with optional format/mount, `wipeFilesystem` control for etcd rolling updates, and raw-device mode exposed at `/dev/disk/by-capv/<name>` for application-managed disks
+- **Flexible Persistent Disks**: Declarative data disks with optional format/mount, `wipeFilesystem` control for etcd rolling updates, raw-device mode exposed at `/dev/disk/by-capv/<name>`, and delayed release so replacement Machines can reuse the slot and VMDKs before provider-managed reclaim
 - **Immutable-Template Rolling Updates**: Control plane and worker updates use new `VSphereMachineTemplate` and `KubeadmConfigTemplate` resources, enabling reproducible replacement and same-minor template recovery
 
 ## Supported Resources

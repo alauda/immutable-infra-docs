@@ -11,7 +11,7 @@ queries:
 
 # Preparing Parameters for a VMware vSphere Cluster
 
-This document helps you collect the values required to create a VMware vSphere workload cluster from the `global` cluster. Complete this checklist before you apply the manifests in [Create a Cluster in the `global` Cluster](./create-cluster-in-global.mdx).
+This document helps you collect the values required to create a VMware vSphere workload cluster from the `global` cluster. Complete this checklist before you apply the manifests in [Create a Cluster in the `global` Cluster](./create-cluster-in-global.mdx). The provider behavior and fields on this page are validated against VMware vSphere Provider `v1.0.16`.
 
 ## Scenarios
 
@@ -38,6 +38,44 @@ Use this checklist in the following order:
 3. Reuse the same value everywhere a placeholder appears in multiple manifests.
 4. If an optional feature is not enabled, remove the corresponding YAML block exactly as described in the extension document.
 5. If an optional field (such as `deviceName`) is not needed, remove the entire line from the YAML manifest.
+
+## Parameter Sources and Safe Collection
+
+Separate parameter collection into the following three sources. A value that can be discovered from vCenter is not necessarily a product-supported version, and a product-derived value is not a substitute for a network or capacity decision.
+
+| Source | Examples | Collection rule |
+|---|---|---|
+| Automatically discoverable | Datacenters, compute clusters, resource pools, networks, datastores, VM templates, and the vCenter certificate thumbprint | Query vCenter with read-only tools, then have the vSphere administrator confirm the selected objects. |
+| Product-derived | Kubernetes, Alauda OS image, Kube-OVN chart, CoreDNS, etcd, provider chart, and CPI versions | Select the exact set published for the target ACP release. Use the [OS Support Matrix](../../overview/os-support-matrix.mdx), provider release notes, and delivered package metadata; do not choose the newest Registry tag independently. |
+| Operator-decided | Cluster and resource names, endpoint, CIDRs, DNS, node count, CPU, memory, disk capacity, and credentials | Record an explicit design decision and validation owner. These values cannot be inferred safely from inventory alone. |
+
+:::warning
+The commands in this section are discovery and existence checks only. Do not generate a final manifest automatically from their output, and do not redirect vCenter passwords, Kubernetes Secret data, or other credentials into the checklist.
+:::
+
+### Optional vCenter discovery with govc
+
+If `govc` is already authenticated through your protected local environment, use read-only inventory commands such as:
+
+```bash
+govc find / -type d
+govc find / -type c
+govc find / -type p
+govc find / -type n
+govc find / -type s
+govc find / -type m
+```
+
+Interpret the results as candidates, not automatic selections:
+
+- `d`: datacenters
+- `c`: compute clusters
+- `p`: resource pools
+- `n`: networks or distributed port groups
+- `s`: datastores
+- `m`: VMs and templates; confirm the selected object is a template
+
+Use the `openssl` command in [Thumbprint](#thumbprint) to retrieve the certificate fingerprint without printing vCenter credentials.
 
 ## Terminology
 
@@ -101,7 +139,7 @@ The datastore is the vSphere storage location that stores VM disks. Both system 
 
 The VM template is the source template used to create node virtual machines. When you enable multiple datacenters, the same template must already exist in every target datacenter and must be resolvable by the same template name.
 
-### Thumbprint
+### Thumbprint \{#thumbprint}
 
 The thumbprint is the SHA-1 fingerprint of the vCenter server certificate. CAPV uses it to validate the target vCenter server.
 
@@ -158,14 +196,17 @@ The template should also meet the following requirements:
 
 ## Load Balancer Prerequisites
 
-The control plane VIP is served by an external load balancer that you provision before cluster creation. The documented vSphere flow does not deploy an in-cluster VIP component, so the load balancer, its VIP allocation, and its backend (real-server) maintenance are all prepared and owned outside the cluster.
+VMware vSphere Provider `v1.0.16` uses an external LoadBalancer. The provider does not deploy a Self-built VIP component. Provision the endpoint before cluster creation and follow [Plan the Control Plane Endpoint](../../how-to/control-plane-endpoint.mdx).
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| Control plane VIP | `<vip>` | Yes | The VIP is already allocated. | `10.10.10.10` | - |
+| Control plane VIP or FQDN | `<vip>` | Yes | The frontend address is allocated and stable. If it is an FQDN, DNS and API server certificate SAN planning are complete. | `10.10.10.10` | - |
 | API server port | `<api_server_port>` | Yes | The default port is `6443`. | `6443` | - |
-| VIP connectivity | - | Yes | The execution environment can reach `VIP:6443`. | `Yes` | - |
-| Real server maintenance ownership | - | Yes | Define who maintains the backend targets if the load balancer does not update them automatically. | `Platform team` | - |
+| Listener mode | - | Yes | Layer 4 TCP forwarding with TLS passthrough. | `TCP` | - |
+| Backends | - | Yes | Every planned control-plane node IP is registered on backend port `6443`; worker IPs are excluded. | `3 control-plane IPs` | - |
+| Health check | - | Yes | Prefer HTTPS `/healthz` with HTTP `200`. Record when the device can perform only a TCP-connect check. | `HTTPS /healthz` | - |
+| Endpoint connectivity | - | Yes | The `global` cluster and every control-plane node can reach `<vip>:6443`. | `Yes` | - |
+| Backend maintenance ownership | - | Yes | Identify who updates backends after control-plane scale, replacement, or deletion. | `Platform team` | - |
 
 ## Cluster Baseline Parameters
 
@@ -177,24 +218,35 @@ The control plane VIP is served by an external load balancer that you provision 
 | Worker replicas | `<worker_replicas>` | Yes | The baseline topology uses `1`. | `1` | - |
 | Pod CIDR | `<pod_cidr>` | Yes | Must not overlap with existing networks. | `10.244.0.0/16` | - |
 | Service CIDR | `<service_cidr>` | Yes | Must not overlap with existing networks. | `10.96.0.0/12` | - |
-| Image registry | `<image_registry>` | Yes | Private registry address. kubeadm `imageRepository` is set to `<image_registry>/tkestack`. | `registry.example.local` | - |
-| Bootstrap registry address | `<bootstrap_ip>:11443` | Yes | Used by the `cpaas.io/registry-address` annotation on the workload `Cluster` resource. Use the bootstrap node IP address because workload nodes must reach this address from outside the bootstrap node. | `10.10.10.5:11443` | - |
+| Image registry | `<image_registry>` | Yes | Registry address used by kubeadm `imageRepository`, without a URL scheme or `/v2/`. The value becomes `<image_registry>/tkestack`. | `registry.example.local:11443` | - |
+| Cluster Registry address | `<registry_address>` | Yes | Permanent Registry address reachable from workload nodes. Use `<host>:<port>` only for `cpaas.io/registry-address`; do not use the retired bootstrap Registry and do not append `/v2/`. | `registry.example.local:11443` | - |
 | `kube-ovn` version | `<kube_ovn_version>` | Yes | Must match the platform network plugin requirements. | `v4.2.26` | - |
 | `kube-ovn-join-cidr` | `<kube_ovn_join_cidr>` | Yes | Must not overlap with other networks. | `100.64.0.0/16` | - |
 | CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `1.12.4` | - |
 | etcd image tag | `<etcd_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `v3.5.0` | - |
 | Encryption provider secret | `<encryption_provider_secret>` | Yes | Base64-encoded AES key for secret encryption at rest. Generate with `head -c 32 /dev/urandom \| base64`. Do not reuse example values. | *(generated)* | - |
 
-### Bootstrap registry tag validation
+### Registry tag validation
 
-Run the following commands on the bootstrap host. In this context, `127.0.0.1:11443` is the local registry endpoint on that host.
+First read the permanent Registry address from the `global` cluster, or confirm the equivalent address with the platform administrator:
 
 ```bash
-curl -sk http://127.0.0.1:11443/v2/acp/chart-cpaas-kube-ovn/tags/list
-curl -sk http://127.0.0.1:11443/v2/tkestack/coredns/tags/list
-curl -sk http://127.0.0.1:11443/v2/tkestack/etcd/tags/list
-curl -sk http://127.0.0.1:11443/v2/tkestack/kube-apiserver/tags/list
+kubectl -n cpaas-system get cluster global \
+  -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}{"\n"}'
+kubectl -n cpaas-system get secret public-registry-credential -o name
 ```
+
+The Secret command verifies existence only and does not print credential data. Export the confirmed address, then query Registry HTTP API paths:
+
+```bash
+export REGISTRY_ADDRESS="<registry_address>"
+curl -sk "https://${REGISTRY_ADDRESS}/v2/acp/chart-cpaas-kube-ovn/tags/list"
+curl -sk "https://${REGISTRY_ADDRESS}/v2/tkestack/coredns/tags/list"
+curl -sk "https://${REGISTRY_ADDRESS}/v2/tkestack/etcd/tags/list"
+curl -sk "https://${REGISTRY_ADDRESS}/v2/tkestack/kube-apiserver/tags/list"
+```
+
+The `/v2/` segment belongs only to these Registry HTTP API URLs. Image references use `<registry>/<repository>:<tag>`, and the Cluster annotation uses `<host>:<port>`.
 
 Confirm that the responses include the values you plan to use for:
 
@@ -203,7 +255,7 @@ Confirm that the responses include the values you plan to use for:
 - `<etcd_image_tag>`
 - `<k8s_version>` or the matching kube-apiserver image tag required by the release
 
-Set `cpaas.io/registry-address` in the workload `Cluster` annotation to `<bootstrap_ip>:11443`.
+Set `cpaas.io/registry-address` in the workload `Cluster` annotation to `<registry_address>`.
 
 ## Minimum Single-Datacenter Parameters
 
@@ -228,7 +280,7 @@ Set `cpaas.io/registry-address` in the workload `Cluster` annotation to `<bootst
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| Control plane pool name | `<cluster_name>-cp-pool` | Yes | Machine config pool name for control plane nodes. Recommended convention is `<cluster_name>-cp-pool` to keep all per-cluster resources visually grouped. | `demo-cluster-cp-pool` | - |
+| Control plane pool name | `<cluster_name>-cp-pool` | Yes | Machine config pool name for control plane nodes. Keep the same existing pool reference during Machine replacement. A different pool object owns independent slots and VMDKs. | `demo-cluster-cp-pool` | - |
 | Control plane node 1 hostname | `<cp_node_name_1>` | Yes | Node name and kubelet serving cert SAN for the first control plane node. Must be a valid DNS-1123 subdomain. | `cp-01` | - |
 | Control plane node 1 datacenter | `<master_01_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
 | Control plane node 1 IP address | `<master_01_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.11` | - |
@@ -243,14 +295,14 @@ Set `cpaas.io/registry-address` in the workload `Cluster` annotation to `<bootst
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| Worker pool name | `<cluster_name>-worker-pool` | Yes | Machine config pool name for worker nodes. Recommended convention is `<cluster_name>-worker-pool` to keep all per-cluster resources visually grouped. | `demo-cluster-worker-pool` | - |
+| Worker pool name | `<cluster_name>-worker-pool` | Yes | Machine config pool name for worker nodes. Keep the same existing pool reference during Machine replacement. A different pool object owns independent slots and VMDKs. | `demo-cluster-worker-pool` | - |
 | Worker node 1 hostname | `<worker_node_name_1>` | Yes | Node name and kubelet serving cert SAN for the first worker node. Must be a valid DNS-1123 subdomain. | `worker-01` | - |
 | Worker node 1 datacenter | `<worker_01_datacenter>` | Yes | Usually the same as the default datacenter. | `dc-a` | - |
 | Worker node 1 IP address | `<worker_01_nic1_ip>` | Yes | IPv4 address only, without the prefix length. | `10.10.10.21` | - |
 | Worker node 2 hostname | `<worker_node_name_2>` | No | Used when you scale out the worker pool. | `worker-02` | - |
 | Worker node 2 datacenter | `<worker_02_datacenter>` | No | Used when you scale out the worker pool. | `dc-b` | - |
 | Worker node 2 IP address | `<worker_02_nic1_ip>` | No | Used when you scale out the worker pool. | `10.10.10.22` | - |
-| `releaseDelayHours` | `<release_delay_hours>` | Yes | Delay before CAPV reuses a released slot. | `24` | - |
+| `releaseDelayHours` | `<release_delay_hours>` | Yes | Delay before the provider reclaims persistent VMDKs from an unused `Released` slot. The default is `24`. A replacement Machine that references the same existing pool can reuse a `Released` slot immediately; it does not wait for this delay to expire. | `24` | - |
 
 ### Compute sizing
 
@@ -290,6 +342,52 @@ Each node role requires a set of dedicated data disks. The disks listed below ar
 | `fsFormat` | No | `ext4` (when `mountPath` is set) | Filesystem format. Ignored when `mountPath` is empty. |
 | `wipeFilesystem` | No | `false` | When `true`, disk content is wiped on the first boot of a new VM. Reboots and manual service restarts are not affected. Use for etcd disks to prevent stale data from blocking `kubeadm join` during rolling updates. |
 | `datastore` | No | (pool default) | Override the datastore for this disk. |
+
+#### Persistent disk lifecycle \{#persistent-disk-lifecycle}
+
+Persistent disks are owned by a slot in one specific `VSphereMachineConfigPool`, not by the short-lived VM. A slot in another pool is a different allocation even when it declares the same hostname, IP address, or disk names. For vSphere Provider `v1.0.16`, the expected replacement lifecycle is:
+
+1. While a Machine uses the slot, `status.configStatuses[].state` is `InUse` and the VMDKs are attached to its VM.
+2. When the Machine and VM are deleted, the slot becomes `Released`. The VMDKs remain available for replacement and are not permanent orphaned disks.
+3. A replacement Machine that references the same existing pool can reuse the `Released` slot immediately. The provider selects a released slot before an unused slot and reattaches the declared persistent VMDKs to the replacement VM. `releaseDelayHours` is not a wait time for reuse.
+4. If the slot remains unused until `releaseDelayHours` expires, the controller can make it generally available and reclaim persistent VMDKs only after it confirms they are no longer attached. Asynchronous progress appears in `status.configStatuses[].reclaimStatus`.
+
+`wipeFilesystem` controls data handling after a persistent disk is attached to a new VM; it does not control slot selection or datastore reclamation. `false` preserves the existing filesystem contents. `true` deletes the mounted contents during the new VM's first boot; it does not make VMDK reclamation faster and must not be treated as a datastore-capacity setting.
+
+##### Redeployment and teardown capacity
+
+Creating a new `VSphereMachineConfigPool` with a different `metadata.name` creates a separate set of slots. Those slots do not reuse VMDKs owned by an earlier pool. Repeated teardown and redeployment with different pool names can therefore temporarily consume multiple complete sets of persistent disks until every earlier pool finishes provider-managed reclaim.
+
+Use these rules when retrying or tearing down a deployment:
+
+- For Machine replacement or rolling updates within the same cluster, keep each `VSphereMachineTemplate.spec.template.spec.machineConfigPoolRef.name` pointed at the same existing pool. Changing `KubeadmControlPlane.spec.machineNamingStrategy` does not transfer disks between pools and is not a datastore cleanup control.
+- If a new deployment intentionally uses a new pool name, include the new pool's complete persistent-disk allocation in datastore capacity planning. Do not assume matching hostnames or disk names enable reuse across pools.
+- Before starting another deployment against a capacity-constrained datastore, verify that earlier pool objects have completed deletion and that their VMDKs have been reclaimed. Pool deletion is asynchronous because the finalizer waits for Machines to be removed and for persistent-disk reclaim to finish.
+- Do not remove the pool finalizer or manually delete backing VMDKs to accelerate teardown. If reclaim does not progress, collect the pool status, Events, provider-controller logs, and vCenter attachment state before treating the condition as a provider defect.
+
+Use the following fields when you investigate a released slot or a datastore capacity alert:
+
+| Status field | Meaning |
+|---|---|
+| `state` | Slot allocation state: `Available`, `InUse`, or `Released`. |
+| `lastReleasedTime` | When the slot entered `Released`. Compare this with `releaseDelayHours`. |
+| `reclaimStatus.state` | Reclaim task state: `Running`, `Failed`, or `Completed`. |
+| `reclaimStatus.volumePath` | VMDK currently being reclaimed. |
+| `reclaimStatus.lastError` | Latest reclaim failure. |
+| `reclaimStatus.retryAfter` | Earliest time the controller will retry after a failure. |
+
+Inspect the pool and related Events without reading credentials:
+
+```bash
+kubectl -n <namespace> get vspheremachineconfigpool <pool-name> -o yaml
+kubectl -n <namespace> describe vspheremachineconfigpool <pool-name>
+kubectl -n <namespace> get events \
+  --field-selector involvedObject.kind=VSphereMachineConfigPool,involvedObject.name=<pool-name>
+```
+
+:::warning
+Do not manually delete a VMDK while its slot is `Released` or while `reclaimStatus` is `Running` or `Failed`. A replacement Machine may still reuse it, or the provider may be retrying a verified reclaim operation. Confirm the pool state, retention window, attachment state, and controller status before performing any manual datastore cleanup.
+:::
 
 #### Control plane nodes (3 disks per node)
 
@@ -368,19 +466,20 @@ Each node role requires a set of dedicated data disks. The disks listed below ar
 Before you start the deployment, confirm all of the following items:
 
 1. The `global` cluster is reachable.
-2. Ensure that the two cluster plugins are installed: Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider.
+2. The two cluster plugins are installed: Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider.
 3. `ClusterResourceSet=true` is enabled.
 4. The vCenter server, username, password, and thumbprint are collected.
-5. The control plane VIP, load balancer, and port `6443` are ready.
+5. The external LoadBalancer satisfies the Layer 4 listener, backend, health-check, ownership, and reachability contract.
 6. The Pod CIDR, Service CIDR, and `kube-ovn-join-cidr` do not overlap with existing networks.
 7. The VM template is available in every required datacenter.
 8. The required datastores and vCenter resource pool paths are confirmed.
-9. The bootstrap registry tag validation commands include the required `kube-ovn`, CoreDNS, etcd, and kube-apiserver tags.
-10. The `cpaas.io/registry-address` value is planned as `<bootstrap_ip>:11443`.
+9. The permanent platform Registry contains the required Kube-OVN, CoreDNS, etcd, and kube-apiserver tags.
+10. The `cpaas.io/registry-address` value is planned as `<registry_address>` without a scheme or `/v2/` path.
 11. The control plane and worker bootstrap manifests both write `/etc/resolv.conf` through kubeadm `files`.
 12. The machine config pool values for the minimum single-datacenter topology are complete.
 13. The baseline system disk and data disk sizing is confirmed, and persistent disk sizes are not added into `diskGiB`.
-14. Every required parameter has a real value.
+14. `releaseDelayHours`, same-pool persistent-disk reuse, new-pool capacity allocation, and provider-managed teardown reclaim are understood before datastore capacity is allocated.
+15. Every required parameter has a real value.
 
 ## Next Steps
 
