@@ -209,15 +209,29 @@ Every host that completed a `reprovision` plan has already replaced its OS image
 After the rollout completes:
 
 ```bash
-kubectl -n cpaas-system get baremetalmachines.infrastructure.cluster.x-k8s.io
-kubectl -n cpaas-system get machines.cluster.x-k8s.io
+kubectl -n cpaas-system get baremetalmachines.infrastructure.cluster.x-k8s.io \
+  -l cluster.x-k8s.io/cluster-name=<cluster-name> \
+  -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,INVENTORY:.status.machineInventoryRef.name,PLAN_SECRET:.status.planSecretRef.name'
+kubectl -n cpaas-system get machines.cluster.x-k8s.io \
+  -l cluster.x-k8s.io/cluster-name=<cluster-name>
 kubectl -n cpaas-system get apprelease cni-kube-ovn
 kubectl get nodes -o wide
 ```
 
-The `cni-kube-ovn` `AppRelease` should report the target installed revision with `phase=Success`. All `BaremetalMachine` objects should be `Running`. Every CAPI `Machine` should report the new `spec.version`. Every workload `Node` should be `Ready` with the new `kubelet` version, and every `MachineInventory` plan secret should carry `baremetal.alauda.io/plan.type=reprovision` (the most recent plan applied).
+The `cni-kube-ovn` `AppRelease` should report the target installed revision with `phase=Success`. For the target cluster, every current `BaremetalMachine` should be `Running`, every CAPI `Machine` should report the new `spec.version`, and every workload `Node` should be `Ready` with the new `kubelet` version.
 
-`MachineInventoryPool.status` should satisfy `available + allocated + preparing + reprovisioning + unavailable = total` with `preparing = reprovisioning = 0`.
+For each current `BaremetalMachine`, use the `INVENTORY` and `PLAN_SECRET` columns to verify the inventory and plan that back the running node:
+
+```bash
+kubectl -n cpaas-system get machineinventories.elemental.cattle.io <inventory-name> \
+  -o jsonpath='{.status.plan.state}{"\n"}'
+kubectl -n cpaas-system get secret <plan-secret-name> \
+  -o jsonpath='{.metadata.annotations.baremetal\.alauda\.io/plan\.type}{"\n"}'
+```
+
+Each referenced `MachineInventory` should report `Applied`, and each referenced plan Secret should report `reprovision`. Apply this check only to inventories referenced by the current `BaremetalMachine` objects. A spare inventory that did not participate in the rollout may have no `reprovision` plan. An inventory that completed a `clean` plan but was not selected for a replacement Machine may still report `clean`; neither case means that the rollout is incomplete.
+
+`MachineInventoryPool.status` should satisfy `available + allocated + preparing + reprovisioning + unavailable = total` with `preparing = reprovisioning = 0`. `available` may remain greater than zero when the pool contains spare inventories; those inventories are outside the plan verification above.
 
 ## Troubleshooting
 
