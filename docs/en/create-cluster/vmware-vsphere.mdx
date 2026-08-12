@@ -1,18 +1,20 @@
 ---
 weight: 20
-title: Creating a VMware vSphere Cluster in the global Cluster
+title: Creating Clusters on VMware vSphere
 author: dev@alauda.io
 category: howto
 queries:
   - create vmware cluster in global cluster
   - deploy capv cluster from global cluster
   - create vsphere workload cluster
+  - add second nic or failure domain to vsphere cluster
+  - add vsphere data disks
   - workload cluster naming cluster-name not global
 ---
 
-# Creating a VMware vSphere Cluster in the global Cluster
+# Creating Clusters on VMware vSphere
 
-This document explains how to create a VMware vSphere workload cluster from the `global` cluster by using the standard CAPV mode that connects directly to vCenter. The procedure covers a minimum supported topology with one datacenter, one NIC per node, and static IP allocation through `VSphereMachineConfigPool`. The provider behavior and fields on this page are validated against VMware vSphere Provider `v1.0.16`.
+This document explains how to create a VMware vSphere workload cluster by applying Cluster API manifests to the ACP `global` management cluster. The procedure does not create the `global` cluster itself. It covers a minimum supported topology with one datacenter, one NIC per node, and static IP allocation through `VSphereMachineConfigPool`. The provider behavior and fields on this page are validated against VMware vSphere Provider `v1.0.16`.
 
 ## Scenarios
 
@@ -41,10 +43,10 @@ This document is written for the current platform environment. The `kube-ovn` de
 
 Before you begin, ensure the following conditions are met:
 
-1. You completed the values collection in [Preparing Parameters for a VMware vSphere Cluster](./parameter-checklist.mdx).
+1. You completed [VMware vSphere Infrastructure Preparation](../infrastructure/vmware-vsphere.mdx).
 2. The `global` cluster can reach vCenter.
 3. The target template, networks, datastores, and vCenter resource pool are available.
-4. The external control plane LoadBalancer satisfies [the endpoint contract](../../how-to/control-plane-endpoint.mdx). VMware vSphere Provider `v1.0.16` does not deploy a Self-built VIP.
+4. The external control plane LoadBalancer satisfies [the endpoint contract](../how-to/control-plane-endpoint.mdx). VMware vSphere Provider `v1.0.16` does not deploy a Self-built VIP.
 5. All required static IP addresses are allocated and not in use.
 6. `ClusterResourceSet=true` is enabled.
 7. The platform already has a valid `public-registry-credential`, and the permanent Registry address is reachable from workload nodes.
@@ -119,7 +121,7 @@ Static IP configuration, hostname injection, and other initialization settings d
 ## Local File Layout
 
 <Directive type="warning" title="Workload Cluster Naming">
-The workload `cluster_name` **must not** be `global`. That name is reserved for the `global` cluster, and reusing it causes the workload cluster's resources to collide with `global` cluster resources in `cpaas-system`. The `global-` prefix is reserved for resources owned by the `global` cluster's DR workflow; see [Common Prerequisites](../../global/install.mdx#common-prerequisites). Do not use `global-` for workload-cluster resources, because failover operations can select those resources as if they belonged to the `global` cluster.
+The workload `cluster_name` **must not** be `global`. That name is reserved for the `global` cluster, and reusing it causes the workload cluster's resources to collide with `global` cluster resources in `cpaas-system`. The `global-` prefix is reserved for resources owned by the `global` cluster's DR workflow; see [Common Prerequisites](../global/install.mdx#common-prerequisites). Do not use `global-` for workload-cluster resources, because failover operations can select those resources as if they belonged to the `global` cluster.
 
 As a convention, keep the CAPI `Cluster` and provider cluster resource (`VSphereCluster`) named exactly `<cluster_name>`, and prefix non-root CAPI and provider resources (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`, `VSphereMachineTemplate`, `VSphereMachineConfigPool`, etc.) with `<cluster_name>-` — for example, the example manifests use `<cluster_name>-kcp` and `<cluster_name>-md-0`. This is a recommendation rather than a controller-enforced rule, but it prevents same-namespace collisions when multiple workload clusters live in `cpaas-system` and makes resource ownership obvious during operations.
 </Directive>
@@ -191,7 +193,7 @@ Before you continue, also verify the following items:
 - The template is resolvable in the target datacenter.
 - If the VM is cloned as a `fullClone`, the template system disk is not larger than the `diskGiB` value used later in the manifests. If CAPV completes a `linkedClone`, the system disk size stays at the template's size and `diskGiB` is ignored.
 - VMware Tools or `open-vm-tools` is installed in the template.
-- The external LoadBalancer follows the Layer 4 listener, backend, health-check, reachability, and ownership requirements in [Plan the Control Plane Endpoint](../../how-to/control-plane-endpoint.mdx).
+- The external LoadBalancer follows the Layer 4 listener, backend, health-check, reachability, and ownership requirements in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
 
 ### Create the namespace and vCenter credential secret
 
@@ -294,7 +296,7 @@ kubectl apply -f 10-cluster.yaml
 Create a `ClusterResourceSet` so the workload cluster receives the vSphere CPI configuration and manifests automatically after the workload API server becomes reachable.
 
 <Directive type="info">
-In the baseline workflow `VSphereCluster.spec.failureDomainSelector` is intentionally not set and the CPI `vsphere.conf` does not include a `[Labels]` block. Both are required only after you enable failure domains; configure them together as described in [Extension Scenarios](./extension-scenarios.mdx). Adding `[Labels]` to `vsphere.conf` without matching `VSphereFailureDomain` objects causes the CPI to look up zone and region tags that do not exist.
+In the baseline workflow `VSphereCluster.spec.failureDomainSelector` is intentionally not set and the CPI `vsphere.conf` does not include a `[Labels]` block. Both are required only after you enable failure domains; configure them together as described in [Multiple datacenters and failure domains](#multiple-datacenters-and-failure-domains). Adding `[Labels]` to `vsphere.conf` without matching `VSphereFailureDomain` objects causes the CPI to look up zone and region tags that do not exist.
 </Directive>
 
 <Directive type="info">
@@ -704,7 +706,7 @@ kubectl -n <namespace> get vspheremachineconfigpool <cluster_name>-worker-pool -
 
 The pool is also the authority for persistent-disk replacement state. When a VM is replaced, its slot changes from `InUse` to `Released`; a replacement Machine that references the same existing pool can reuse that slot and its VMDKs immediately. `releaseDelayHours` controls reclaim when the slot remains unused; it is not a reuse delay.
 
-Do not create a new pool name as a routine retry for Machine replacement. A different `VSphereMachineConfigPool.metadata.name` creates independent slots and VMDKs, so repeated teardown and redeployment can temporarily consume multiple complete disk sets. Before another deployment on a capacity-constrained datastore, wait for earlier pools and their VMDKs to finish provider-managed deletion. See [Persistent disk lifecycle](./parameter-checklist.mdx#persistent-disk-lifecycle) for the teardown checks and `status.configStatuses[].reclaimStatus` fields.
+Do not create a new pool name as a routine retry for Machine replacement. A different `VSphereMachineConfigPool.metadata.name` creates independent slots and VMDKs, so repeated teardown and redeployment can temporarily consume multiple complete disk sets. Before another deployment on a capacity-constrained datastore, wait for earlier pools and their VMDKs to finish provider-managed deletion. See [Persistent disk lifecycle](../infrastructure/vmware-vsphere.mdx#persistent-disk-lifecycle) for the teardown checks and `status.configStatuses[].reclaimStatus` fields.
 
 ### Create the control plane objects
 
@@ -1224,7 +1226,7 @@ kubectl apply -f 30-workers-md-0.yaml
 
 In the baseline workflow, note the following worker-specific rules:
 
-- `failureDomain` is not set by default in the main worker manifest because the baseline workflow assumes a single datacenter. If you need a worker `MachineDeployment` to land in a specific `VSphereDeploymentZone`, add `failureDomain` as described in [Extension Scenarios](./extension-scenarios.mdx).
+- `failureDomain` is not set by default in the main worker manifest because the baseline workflow assumes a single datacenter. If you need a worker `MachineDeployment` to land in a specific `VSphereDeploymentZone`, add `failureDomain` as described in [Multiple datacenters and failure domains](#multiple-datacenters-and-failure-domains).
 - Some environments add extra runtime-image replacement commands or service-restart commands to `KubeadmConfigTemplate`. Those commands are intentionally not included in the baseline sample. Add them only when the platform requirements in your environment explicitly require them.
 
 ### Wait for the cluster to become ready
@@ -1308,6 +1310,326 @@ When you review controller logs, use the following rules:
 - Do not use the workload-cluster kubeconfig to inspect `capi-controller-manager` logs.
 - If platform controllers process the cluster network annotations, also inspect the platform network-controller logs and the platform cluster-lifecycle-controller logs.
 
+## Creation-Time Topology Variants \{#creation-time-topology-variants}
+
+The baseline manifest intentionally starts with one datacenter and one NIC. Before you create the cluster, use the following variants when the initial topology requires additional NICs, multiple datacenters, failure domains, or extra data disks. Apply one variant at a time and validate the complete manifest set before combining them.
+
+### Add a second NIC
+
+When nodes require an additional management, storage, or service network, extend the manifests in the following resources:
+
+- `02-vspheremachineconfigpool-control-plane.yaml`
+- `03-vspheremachineconfigpool-worker.yaml`
+- `20-control-plane.yaml`
+- `30-workers-md-0.yaml`
+- `04-failure-domains.yaml` if failure domains are enabled
+
+Each node slot declares its NIC layout under `network.primary` and `network.additional`. The primary NIC is used to derive the kubelet `node-ip` and remains the node's primary identity; additional NICs are merged after it in the order listed.
+
+Add the second NIC to each control plane node slot in the machine config pools:
+
+```yaml
+network:
+  primary:
+    networkName: "<nic1_network_name>"
+    deviceName: "<nic1_device_name>"
+    ip: "<master_01_nic1_ip>/<nic1_prefix>"
+    gateway: "<nic1_gateway>"
+    dns:
+    - "<nic1_dns_1>"
+  additional:
+  - networkName: "<nic2_network_name>"
+    deviceName: "<nic2_device_name>"
+    ip: "<master_01_nic2_ip>/<nic2_prefix>"
+    gateway: "<nic2_gateway>"
+    dns:
+    - "<nic2_dns_1>"
+```
+
+Apply the same pattern to the worker node slots:
+
+```yaml
+network:
+  primary:
+    networkName: "<nic1_network_name>"
+    deviceName: "<nic1_device_name>"
+    ip: "<worker_01_nic1_ip>/<nic1_prefix>"
+    gateway: "<nic1_gateway>"
+    dns:
+    - "<nic1_dns_1>"
+  additional:
+  - networkName: "<nic2_network_name>"
+    deviceName: "<nic2_device_name>"
+    ip: "<worker_01_nic2_ip>/<nic2_prefix>"
+    gateway: "<nic2_gateway>"
+    dns:
+    - "<nic2_dns_1>"
+```
+
+Add the second NIC to the machine templates:
+
+```yaml
+network:
+  devices:
+  - networkName: "<nic1_network_name>"
+  - networkName: "<nic2_network_name>"
+```
+
+If the DNS server used by the node changes when you add the second NIC, update the `/etc/resolv.conf` file entries in both `20-control-plane.yaml` and `30-workers-md-0.yaml`. The `dns` values in the machine config pool network blocks do not replace the explicit `/etc/resolv.conf` bootstrap file entries.
+
+If failure domains are enabled, update the network list in `VSphereFailureDomain.spec.topology.networks`:
+
+```yaml
+topology:
+  networks:
+  - <nic1_network_name>
+  - <nic2_network_name>
+```
+
+When you define the second NIC values, prepare the following placeholders in the infrastructure checklist and manifests:
+
+- `<master_01_nic2_ip>`
+- `<master_02_nic2_ip>`
+- `<master_03_nic2_ip>`
+- `<worker_01_nic2_ip>`
+- `<worker_02_nic2_ip>` when you also expand the worker pool
+
+When you move between one NIC and two NICs, apply the following rules:
+
+#### Expand from one NIC to two NICs
+
+Update all of the following fields together:
+
+1. `VSphereMachineConfigPool.spec.configs[].network.additional` (append the second NIC entry; keep `network.primary` unchanged)
+2. `VSphereMachineTemplate.spec.template.spec.network.devices`
+3. `VSphereFailureDomain.spec.topology.networks` when failure domains are enabled
+
+#### Revert from two NICs to one NIC
+
+Remove the second NIC block from all of the following fields:
+
+1. The second NIC entry in `VSphereMachineConfigPool.spec.configs[].network.additional` (leave the list empty or remove the `additional` key entirely)
+2. The second device entry in `VSphereMachineTemplate.spec.template.spec.network.devices`
+3. The second network name in `VSphereFailureDomain.spec.topology.networks`
+
+### Multiple datacenters and failure domains \{#multiple-datacenters-and-failure-domains}
+
+Use multiple datacenters and failure domains when you need node placement across different vCenter datacenters or compute clusters.
+
+The following principles apply:
+
+- One cluster can define multiple `VSphereFailureDomain` objects.
+- Each `VSphereDeploymentZone` references one `VSphereFailureDomain`.
+- The control plane uses `VSphereCluster.spec.failureDomainSelector`.
+- A worker `MachineDeployment` uses `spec.template.spec.failureDomain` when it must target a specific deployment zone.
+
+Prepare the following placeholders for the first datacenter:
+
+- `<compute_cluster_1>`
+- `<default_datastore_1>`
+- `<resource_pool_path_1>`
+- `<fd_name_1>`
+- `<dz_name_1>`
+
+Prepare the following placeholders for the second datacenter:
+
+- `<dc_name_2>`
+- `<fd_name_2>`
+- `<dz_name_2>`
+- `<compute_cluster_2>`
+- `<default_datastore_2>`
+- `<resource_pool_path_2>`
+
+If you add a third datacenter, continue with the same placeholder pattern:
+
+- `<dc_name_3>`
+- `<fd_name_3>`
+- `<dz_name_3>`
+- `<compute_cluster_3>`
+- `<default_datastore_3>`
+- `<resource_pool_path_3>`
+
+Create the failure-domain objects in `04-failure-domains.yaml`. The first datacenter also needs a `VSphereFailureDomain` and `VSphereDeploymentZone` when failure domains are enabled:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereFailureDomain
+metadata:
+  name: <fd_name_1>
+spec:
+  region:
+    name: region-a
+    type: Datacenter
+    tagCategory: k8s-region
+    autoConfigure: true
+  zone:
+    name: zone-1
+    type: ComputeCluster
+    tagCategory: k8s-zone
+    autoConfigure: true
+  topology:
+    datacenter: <default_datacenter>
+    computeCluster: <compute_cluster_1>
+    datastore: <default_datastore_1>
+    networks:
+    - <nic1_network_name>
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereDeploymentZone
+metadata:
+  name: <dz_name_1>
+spec:
+  server: <vsphere_server>
+  failureDomain: <fd_name_1>
+  controlPlane: true
+  placementConstraint:
+    resourcePool: <resource_pool_path_1>
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereFailureDomain
+metadata:
+  name: <fd_name_2>
+spec:
+  region:
+    name: region-a
+    type: Datacenter
+    tagCategory: k8s-region
+    autoConfigure: true
+  zone:
+    name: zone-2
+    type: ComputeCluster
+    tagCategory: k8s-zone
+    autoConfigure: true
+  topology:
+    datacenter: <dc_name_2>
+    computeCluster: <compute_cluster_2>
+    datastore: <default_datastore_2>
+    networks:
+    - <nic1_network_name>
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereDeploymentZone
+metadata:
+  name: <dz_name_2>
+spec:
+  server: <vsphere_server>
+  failureDomain: <fd_name_2>
+  controlPlane: true
+  placementConstraint:
+    resourcePool: <resource_pool_path_2>
+```
+
+Enable control plane selection across the available failure domains by adding `failureDomainSelector` to the `VSphereCluster` spec in `10-cluster.yaml`:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: VSphereCluster
+metadata:
+  name: <cluster_name>
+  namespace: <namespace>
+spec:
+  controlPlaneEndpoint:
+    host: "<vip>"
+    port: <api_server_port>
+  identityRef:
+    kind: Secret
+    name: <credentials_secret_name>
+  server: "<vsphere_server>"
+  thumbprint: "<thumbprint>"
+  failureDomainSelector: {}
+```
+
+An empty selector `{}` matches every `VSphereDeploymentZone` that has `controlPlane: true`. Use match labels to restrict the control plane to a subset of zones.
+
+Also add the `[Labels]` block to the CPI `ConfigMap` so the vSphere CPI publishes the matching zone and region labels on workload nodes. The keys must match the `tagCategory` values used in `VSphereFailureDomain.spec.zone.tagCategory` and `VSphereFailureDomain.spec.region.tagCategory`. Update the `vsphere.conf` data in `15-vsphere-cpi-clusterresourceset.yaml`:
+
+```yaml
+      vsphere.conf: |
+        [Global]
+        secret-name = "vsphere-cloud-secret"
+        secret-namespace = "kube-system"
+        service-account = "cloud-controller-manager"
+        port = "443"
+        insecure-flag = "1"
+        datacenters = "<cpi_datacenters>"
+
+        [Labels]
+        zone = "k8s-zone"
+        region = "k8s-region"
+
+        [VirtualCenter "<vsphere_server>"]
+```
+
+`failureDomainSelector` and the CPI `[Labels]` block must be enabled together. Adding either one alone leaves the cluster in an inconsistent state: nodes get unresolved zone or region labels, or the control plane cannot select a deployment target.
+
+Set a worker deployment zone when a worker `MachineDeployment` must be pinned to one deployment target. Add `failureDomain` to `spec.template.spec` in `30-workers-md-0.yaml`:
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: <cluster_name>-md-0
+  namespace: <namespace>
+spec:
+  clusterName: <cluster_name>
+  replicas: <worker_replicas>
+  template:
+    spec:
+      clusterName: <cluster_name>
+      failureDomain: <worker_failure_domain>
+      version: "<k8s_version>"
+      # ... rest of spec
+```
+
+Use a `VSphereDeploymentZone` name for `<worker_failure_domain>`, not a `VSphereFailureDomain` name.
+
+Before you enable multiple datacenters, confirm all of the following prerequisites:
+
+1. The template is already synchronized to every target datacenter.
+2. The network names are resolvable in every target datacenter.
+3. The datastore names are resolvable in every target datacenter.
+4. The vSphere CPI datacenter list covers every target datacenter.
+
+### Add data disks
+
+The baseline deployment includes the following required data disks:
+
+- **Control plane nodes**: `var-cpaas`, `var-lib-containerd`, and `var-lib-etcd` (3 disks per node). Do not remove any of these disks. The `var-lib-etcd` disk must set `wipeFilesystem: true` to allow `kubeadm join` during rolling updates.
+- **Worker nodes**: `var-cpaas` and `var-lib-containerd` (2 disks per node). Do not remove any of these disks.
+
+`VSphereMachineTemplate.spec.template.spec.diskGiB` is the system disk size, not the total disk capacity of the VM. Keep additional persistent or data disks under `VSphereMachineConfigPool.spec.configs[].persistentDisks[]`. Do not add the persistent-disk sizes to `diskGiB` unless you intentionally want a larger system disk.
+
+If a node needs additional data disks beyond the required set, append more entries to the same `persistentDisks` list in the corresponding `VSphereMachineConfigPool` node slot. The following optional fields are especially relevant here:
+
+- **`mountPath`**: If set, the disk is formatted and mounted at the specified path. If omitted, the disk is attached as a raw device with a symlink at `/dev/disk/by-capv/<name>`, allowing an external process to manage it at runtime.
+- **`wipeFilesystem`**: When `true`, disk content is wiped on the first boot of a new VM. Normal reboots and manual service restarts are not affected. Defaults to `false`.
+
+To attach a raw disk without formatting or mounting, omit `mountPath` and `fsFormat`:
+
+```yaml
+persistentDisks:
+# ...required disks...
+- name: app-data
+  sizeGiB: 50
+```
+
+The disk is accessible inside the guest OS at `/dev/disk/by-capv/app-data`. On rolling updates, the same VMDK is re-attached to the new VM and the symlink is recreated. The disk is never formatted or mounted automatically; the application is responsible for managing it at runtime.
+
+### Verify creation-time variants
+
+After you apply a topology variant, validate the cluster state with the following commands:
+
+```bash
+kubectl -n <namespace> get cluster,vspherecluster,kubeadmcontrolplane,machinedeployment,machine,vspheremachine,vspherevm
+kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get nodes -o wide
+```
+
+Confirm the following results:
+
+- The placement, NIC, or disk definitions are reflected in the target resources.
+- New nodes reach the `Ready` state.
+- Existing nodes remain healthy after the change.
+
 ## Next Steps
 
-After the baseline topology is running, continue with [Extension Scenarios](./extension-scenarios.mdx) if you need a second NIC, multiple datacenters, failure domains, extra data disks, or more worker replicas.
+For worker scale-out and later template or runtime-topology changes, see [Managing Nodes on VMware vSphere](../manage-nodes/vmware-vsphere.mdx). Apply one change at a time and validate the result before you combine multiple changes in the same cluster.

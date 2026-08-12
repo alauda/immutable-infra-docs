@@ -22,7 +22,7 @@ VMware vSphere is the industry-leading virtualization platform from VMware. The 
 :::info
 **v1.0.16 endpoint and disk lifecycle boundary**
 
-This documentation is validated against VMware vSphere Provider `v1.0.16`. This release uses an external LoadBalancer for the Kubernetes API endpoint and does not deploy a Self-built VIP. Machine-config-pool persistent disks follow the provider-managed `InUse → Released → reuse or reclaim` lifecycle; see [Parameter Checklist](../../create-cluster/vmware-vsphere/parameter-checklist.mdx#persistent-disk-lifecycle).
+This documentation is validated against VMware vSphere Provider `v1.0.16`. This release uses an external LoadBalancer for the Kubernetes API endpoint and does not deploy a Self-built VIP. Machine-config-pool persistent disks follow the provider-managed `InUse → Released → reuse or reclaim` lifecycle; see [VMware vSphere Infrastructure Preparation](../../infrastructure/vmware-vsphere.mdx#persistent-disk-lifecycle).
 :::
 
 ## Key Features
@@ -51,7 +51,8 @@ The table below lists the primary user-facing resources used by the workflows in
 ## Documentation
 
 - [Installation Guide](../../install/vmware-vsphere.mdx)
-- [Creating Clusters](../../create-cluster/vmware-vsphere/)
+- [Infrastructure Preparation](../../infrastructure/vmware-vsphere.mdx)
+- [Creating Clusters](../../create-cluster/vmware-vsphere.mdx)
 - [Managing Nodes](../../manage-nodes/vmware-vsphere.mdx)
 - [Upgrading Clusters](../../upgrade-cluster/vmware-vsphere.mdx)
 - [Provider APIs](../../apis/providers/vmware-vsphere/)
