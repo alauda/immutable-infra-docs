@@ -3,7 +3,7 @@
   "generator_version": 3,
   "project_name": "Immutable Infrastructure Documentation",
   "summary": "Immutable Infrastructure product documentation covering Cluster API-based Kubernetes cluster lifecycle management, provider support, installation, upgrades, node operations, machine configuration, and Kubernetes API references.",
-  "generated_at": "2026-05-16T06:24:44Z",
+  "generated_at": "2026-08-12T13:52:29Z",
   "include_patterns": [
     "docs/en/*.md",
     "docs/en/*.mdx",
@@ -524,39 +524,18 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/create-cluster/index.mdx": {
-      "sha256": "e22256ba29501e369bc97b97524c633c193e20bd14ad964eeb849e4eecab78e8",
-      "size": 1448,
-      "description": "Landing page for the Creating Clusters section, summarizing prerequisites (infrastructure resources, x86-64-v2 ISA baseline for x86_64 nodes running ACP MicroOS images) and routing to provider-specific guides for Huawei DCS, Huawei Cloud Stack, VMware vSphere (all Available), and Bare Metal (Planned).",
+      "sha256": "4a4fe829a89520ed3f99d13d9cac7c58502fe72481f5e286ed300a9e3a806e02",
+      "size": 1363,
+      "description": "Landing page for the Creating Clusters section. Summarizes common prerequisites—provider infrastructure preparation, the provider/version-specific control-plane endpoint contract, and the x86-64-v2 CPU baseline for ACP-provided Alauda OS images—and links directly to the Huawei DCS, Huawei Cloud Stack, VMware vSphere, and Bare Metal creation guides.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-12T13:52:29Z"
     },
-    "docs/en/create-cluster/vmware-vsphere/create-cluster-in-global.mdx": {
-      "sha256": "e7af0ab4a2cb58ffe3dcb6f1d6560fdb4334c9ba30a699ffea562100d5b1f404",
-      "size": 44145,
-      "description": "Step-by-step baseline workflow for creating a CAPV-managed VMware vSphere workload cluster from the `global` cluster using standard CAPV mode (direct vCenter connection, one datacenter, one NIC per node, static IP via `VSphereMachineConfigPool`). Details the eight numbered manifests in a `capv-cluster/` directory (namespace, vCenter `Secret`, control-plane and worker `VSphereMachineConfigPool` with `var-cpaas`/`var-lib-containerd`/`var-lib-etcd` persistent disks, `Cluster`+`VSphereCluster`, `ClusterResourceSet` delivering the vSphere CPI ConfigMap/Secret/manifests with `vsphere-cloud-controller-manager` DaemonSet, `VSphereMachineTemplate`+`KubeadmControlPlane`, and `VSphereMachineTemplate`+`KubeadmConfigTemplate`+`MachineDeployment` for workers), the `capv-load-local-images.sh` script that imports `/root/images/*.tar` into containerd including the matching `sandbox_image`, validation of `ClusterResourceSet=true` and the `public-registry-credential` Secret, plus extensive troubleshooting for CPI delivery, slot binding, IP allocation, and `linkedClone` vs `fullClone` system-disk sizing.",
+    "docs/en/create-cluster/vmware-vsphere.mdx": {
+      "sha256": "779cea7049e51d28e644fa3b9d5fb3e89f225b2a2b81ba97dc75a74ebef922bd",
+      "size": 66483,
+      "description": "End-to-end guide for creating a VMware vSphere workload cluster by applying Cluster API manifests to the ACP `global` management cluster, validated against VMware vSphere Provider `v1.0.16`. Covers vCenter identity, `Cluster`/`VSphereCluster`, CPI delivery through `ClusterResourceSet`, static node slots and persistent disks in `VSphereMachineConfigPool`, control-plane and worker templates, kubeadm resources, external LoadBalancer and Registry boundaries, verification, troubleshooting, and creation-time variants for second NICs, multiple datacenters and failure domains, and extra or raw disks. Explicitly distinguishes workload-cluster creation from installing the `global` cluster and routes Day-2 changes to the node-management guide.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
-    },
-    "docs/en/create-cluster/vmware-vsphere/extension-scenarios.mdx": {
-      "sha256": "2cbc57a147fa1def8475d48550ecb39c560c010be771a2be5ad78f98801247a5",
-      "size": 12187,
-      "description": "How-to for extending a running baseline CAPV vSphere cluster with optional features: adding a second NIC via `network.additional` in `VSphereMachineConfigPool` and a second device in `VSphereMachineTemplate` (plus `VSphereFailureDomain.spec.topology.networks` when failure domains are on), enabling multiple datacenters by creating per-DC `VSphereFailureDomain` and `VSphereDeploymentZone` objects and setting `VSphereCluster.spec.failureDomainSelector: {}` for control planes plus `MachineDeployment.spec.template.spec.failureDomain` (using the deployment-zone name) for workers, appending extra data disks (including raw `/dev/disk/by-capv/<name>` symlinks when `mountPath` is omitted), and scaling out workers by first adding `VSphereMachineConfigPool` node slots before raising `MachineDeployment.spec.replicas`.",
-      "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
-    },
-    "docs/en/create-cluster/vmware-vsphere/index.mdx": {
-      "sha256": "8a617d030eb30ef97780312032c5f8acca7ffd3c28bacf8815dcc825e4aedb64",
-      "size": 1427,
-      "description": "Index for the VMware vSphere cluster creation section, prescribing the reading order: Parameter Checklist, the baseline create-in-global workflow, and Extension Scenarios. States the baseline scope (one datacenter, one NIC per node, three control plane nodes, one worker, static IP via `VSphereMachineConfigPool`) and directs operators to extension scenarios for larger topologies.",
-      "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
-    },
-    "docs/en/create-cluster/vmware-vsphere/parameter-checklist.mdx": {
-      "sha256": "48101f61980312cf8a92ef9750caf7dd0418cdd65983f00da2e0f478cd10cd52",
-      "size": 25898,
-      "description": "Pre-deployment checklist that enumerates every placeholder needed by the CAPV baseline manifests and extension scenarios, with example values, validation commands, and a blank `Actual Value` column. Covers management-cluster prerequisites (`cluster-api-provider-vsphere`/`cluster-api-provider-kubeadm` plugins, `ClusterResourceSet=true`), vCenter connection details, VM template requirements (cloud-init, open-vm-tools, containerd, pre-loaded `/root/images/*.tar` matching the configured `sandbox_image`), `<clone_mode>` and `<power_off_mode>` semantics, control-plane VIP/port 6443 readiness, cluster baseline parameters (Pod/Service CIDRs, kube-ovn join CIDR, image registry, CoreDNS/etcd image tags, AES encryption-provider secret), the openssl command to obtain the vCenter thumbprint, single-datacenter NIC and node-slot values, required persistent disks per role (`var-cpaas`, `var-lib-containerd`, and `var-lib-etcd` with `wipeFilesystem: true`), vSphere CPI parameters, and optional extension parameters for multi-datacenter failure domains and second-NIC topology.",
-      "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-12T13:52:29Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
       "sha256": "c7b83e02f640b486c8f804096ab78d28bd902221c2d03f30905dafc8fe162137",
@@ -648,6 +627,13 @@
       "description": "Index page for the Infrastructure Resources section that enumerates the per-provider preparation pages (Huawei DCS, Huawei Cloud Stack) and the four resource categories — cloud credentials, IP pools, machine templates, and network/load-balancer plans — that must be configured before creating clusters. Links downstream to cluster creation, node management, and upgrade sections.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-05-16T06:24:44Z"
+    },
+    "docs/en/infrastructure/vmware-vsphere.mdx": {
+      "sha256": "663d2dbb1a930b621d4771e5e9e318741b688a9e781f4524085bccc9b1f4ea8c",
+      "size": 37891,
+      "description": "Preparation and parameter checklist for VMware vSphere workload clusters, validated against VMware vSphere Provider `v1.0.16`. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template and image requirements, external control-plane LoadBalancer and permanent Registry readiness, CIDRs, node-slot networking, machine sizing, CPI inputs, and mandatory or optional persistent disks. Explains the `VSphereMachineConfigPool` disk lifecycle, same-pool reuse versus provider-managed reclaim, datastore-capacity checks, and the placeholders consumed by the canonical creation guide.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-08-12T13:52:29Z"
     },
     "docs/en/install/bare-metal.mdx": {
       "sha256": "12ea618bec2c7c326c95fc7c339da6b2403ee4ed4933cb8036525e06d6725df3",
@@ -741,11 +727,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/manage-nodes/vmware-vsphere.mdx": {
-      "sha256": "74dbd836f22c71e453bc3622e90d04b19d988e635bfb69576fa6656a63d266c8",
-      "size": 7173,
-      "description": "Day-2 procedures for vSphere worker nodes managed via `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment`. Documents scale-out by extending pool slots in `03-vspheremachineconfigpool-worker.yaml` before bumping `30-workers-md-0.yaml` `replicas`, the immutable-template rollout pattern (export, rename to `<cluster>-worker-v2`, strip server-generated fields, apply, then patch `MachineDeployment.spec.template.spec.infrastructureRef.name`) for changing `numCPUs`/`memoryMiB`/`diskGiB`/`dataDisks`, the analogous bootstrap-template swap, monitoring commands (`get machinedeployment,machine,vspheremachine,vspherevm`), and troubleshooting via `MachineConfigPoolReady` reasons such as `PoolBoundToOtherConsumer` and `NoAvailableSlots`.",
+      "sha256": "8c645b095dfe81b8b5c2bbdd6b03019bc718a4eac7fc86e359e6c53e36bb983f",
+      "size": 11691,
+      "description": "Day-2 guide for VMware vSphere worker nodes managed through `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment`. Covers scale-out by adding slots before replicas, immutable infrastructure-template and bootstrap-template replacement, rollout monitoring and rollback, and runtime topology changes for NICs, failure domains, and persistent disks. Preserves the existing pool identity when slots or VMDKs must be reused, explains that differently named pools do not share disks and that `releaseDelayHours` is an unused-slot reclaim grace period rather than a replacement wait, and provides checks for pool readiness, Machines, `VSphereMachine`, `VSphereVM`, and Nodes.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-12T13:52:29Z"
     },
     "docs/en/overview/architecture.mdx": {
       "sha256": "be3dace31f1830bb79de4afd63206f29d3edd82d560e8b47e6596454bd0e3c28",
