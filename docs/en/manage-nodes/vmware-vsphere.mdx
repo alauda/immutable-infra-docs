@@ -99,7 +99,10 @@ Typical changes include:
 
 - VM template name (`spec.template.spec.template`)
 - CPU or memory sizing (`numCPUs`, `memoryMiB`)
-- System disk or data disk layout (`diskGiB`, `dataDisks`)
+- System disk sizing (`diskGiB`)
+- VM network devices (`network.devices`)
+
+Persistent disks are owned by `VSphereMachineConfigPool` slots rather than `VSphereMachineTemplate`. Update the pool slots first when a replacement needs a changed persistent-disk layout.
 
 1. **Export the existing template**
 
@@ -218,19 +221,7 @@ Confirm the following results:
 **Upgrading Kubernetes version?** See [Upgrading Clusters on VMware vSphere](../upgrade-cluster/vmware-vsphere.mdx) for the full control plane and worker upgrade workflow.
 :::
 
-## Troubleshooting
-
-Use the following checks first when worker node management fails:
-
-- Check `VSphereMachine` conditions for `MachineConfigPoolReady`. If `False`, the reason indicates why slot allocation failed:
-  - `PoolBoundToOtherConsumer`: the pool is already bound to a different `KubeadmControlPlane` or `MachineDeployment`.
-  - `NoAvailableSlots`: no slots match the required datacenter or failure domain.
-- Verify that the worker machine config pool still has free slots.
-- Verify that the worker IP addresses, gateway, and DNS settings are correct.
-- Verify that the worker VM template still matches the required Kubernetes version and guest-tools requirements.
-- Check `VSphereVM.status.addresses` when a node is waiting for IP allocation.
-
-## Runtime Topology Changes
+## Runtime Topology Changes \{#runtime-topology-changes}
 
 Networking, placement, and disk topology are part of the machine templates and machine config pool. Treat a change to these fields as an immutable rollout, not as an in-place VM edit:
 
@@ -246,6 +237,26 @@ For the exact second-NIC, failure-domain, and persistent-disk fields, use the cr
 - Configure `VSphereCluster.spec.failureDomainSelector` and the CPI `[Labels]` block together when enabling failure domains.
 - Do not remove required `var-cpaas`, `var-lib-containerd`, or control-plane `var-lib-etcd` disks.
 - Do not treat `machineNamingStrategy`, `wipeFilesystem`, or `releaseDelayHours` as a switch that moves disks between pools or accelerates datastore cleanup.
+
+When you expand from one NIC to two NICs, update all of the following fields together:
+
+1. Append the second NIC entry to `VSphereMachineConfigPool.spec.configs[].network.additional`; keep `network.primary` unchanged.
+2. Add the second device to `VSphereMachineTemplate.spec.template.spec.network.devices` in the new immutable template.
+3. Add the second network to `VSphereFailureDomain.spec.topology.networks` when failure domains are enabled.
+
+When you revert from two NICs to one NIC, remove the corresponding second entry from all three fields. Leave `network.additional` empty or remove the key entirely, and roll out a new `VSphereMachineTemplate`; do not edit existing VMs directly.
+
+## Troubleshooting
+
+Use the following checks first when worker node management fails:
+
+- Check `VSphereMachine` conditions for `MachineConfigPoolReady`. If `False`, the reason indicates why slot allocation failed:
+  - `PoolBoundToOtherConsumer`: the pool is already bound to a different `KubeadmControlPlane` or `MachineDeployment`.
+  - `NoAvailableSlots`: no slots match the required datacenter or failure domain.
+- Verify that the worker machine config pool still has free slots.
+- Verify that the worker IP addresses, gateway, and DNS settings are correct.
+- Verify that the worker VM template still matches the required Kubernetes version and guest-tools requirements.
+- Check `VSphereVM.status.addresses` when a node is waiting for IP allocation.
 
 ## Next Steps
 

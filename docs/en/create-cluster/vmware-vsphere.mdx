@@ -35,9 +35,18 @@ This document does not apply to the following scenarios:
 
 - A deployment that depends on vSphere Supervisor or `vm-operator`.
 - A deployment that does not use `VSphereMachineConfigPool`.
-- A first-time deployment that enables multiple datacenters, multiple NICs, and complex disk extensions at the same time.
 
 This document is written for the current platform environment. The `kube-ovn` delivery path depends on platform controllers that consume annotations on the `Cluster` resource, so this workflow is not intended to be a generic standalone CAPV deployment guide outside the platform context.
+
+## How to Use This Page
+
+1. Complete the infrastructure and parameter checklist.
+2. Prepare the baseline manifest files in the procedure below.
+3. Before applying them, add only the required [creation-time topology variants](#creation-time-topology-variants).
+4. Apply the complete manifest set and finish the verification checks.
+5. After the cluster is running, use [Managing Nodes on VMware vSphere](../manage-nodes/vmware-vsphere.mdx) for scale-out, immutable template replacement, and runtime topology changes.
+
+The baseline is the validation reference. If the target cluster needs several optional topology features, introduce and validate one manifest change at a time before combining them.
 
 ## Prerequisites
 
@@ -98,11 +107,6 @@ Also distinguish the following value formats:
 
 - A node IP address is used together with a prefix length, for example `10.10.10.11/24`.
 - The gateway field contains only the gateway IP address, for example `10.10.10.1`.
-
-In the baseline workflow:
-
-- One `VSphereMachineConfigPool` is used for control plane nodes.
-- One `VSphereMachineConfigPool` is used for worker nodes.
 
 ### VM template requirements
 
@@ -1394,23 +1398,7 @@ When you define the second NIC values, prepare the following placeholders in the
 - `<worker_01_nic2_ip>`
 - `<worker_02_nic2_ip>` when you also expand the worker pool
 
-When you move between one NIC and two NICs, apply the following rules:
-
-#### Expand from one NIC to two NICs
-
-Update all of the following fields together:
-
-1. `VSphereMachineConfigPool.spec.configs[].network.additional` (append the second NIC entry; keep `network.primary` unchanged)
-2. `VSphereMachineTemplate.spec.template.spec.network.devices`
-3. `VSphereFailureDomain.spec.topology.networks` when failure domains are enabled
-
-#### Revert from two NICs to one NIC
-
-Remove the second NIC block from all of the following fields:
-
-1. The second NIC entry in `VSphereMachineConfigPool.spec.configs[].network.additional` (leave the list empty or remove the `additional` key entirely)
-2. The second device entry in `VSphereMachineTemplate.spec.template.spec.network.devices`
-3. The second network name in `VSphereFailureDomain.spec.topology.networks`
+For a running cluster, change all three network definitions together during immutable replacement. See [Runtime Topology Changes](../manage-nodes/vmware-vsphere.mdx#runtime-topology-changes).
 
 ### Multiple datacenters and failure domains \{#multiple-datacenters-and-failure-domains}
 
