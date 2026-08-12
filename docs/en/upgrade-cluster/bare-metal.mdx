@@ -68,12 +68,17 @@ Before you start, ensure all of the following prerequisites are met:
 - The installed Bare Metal provider is `v0.0.1` or later and its `AppRelease` reports the same requested and installed revision with `phase=Success`.
 - The control plane is reachable through the existing `<control-plane-vip>:<control-plane-port>`.
 - All current nodes are healthy and `Ready`.
+- Before changing Kube-OVN or reprovisioning any node, use <ExternalSiteLink name="acp" href="/configure/backup/etcd.html" children="ACP Cluster Enhancer" /> to create a current on-demand etcd backup. Verify that the newest `status.records` entry reports `result: Success`, record its `backupTimestamp` and `fileName`, and confirm that the corresponding backup archive exists and will remain retrievable if any control-plane node is reprovisioned or becomes unavailable.
 - The target Kubernetes version is a key in `elemental-image-catalog`. If it is not, add it before starting (see [Update the Image Catalog](#update-the-image-catalog)).
 - The target **kube-ovn (chart)** version has been read from the matching ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
 - `BaremetalCluster.spec.networkType` is `kube-ovn`; the provider skips Kube-OVN reconciliation for any other value.
 - The platform registry is reachable from every host in the cluster.
 - Both `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0` are set — bare-metal does not over-provision physical hosts.
 - The relevant pools have enough capacity to replace one node at a time without falling below the desired replica count.
+
+:::info
+The default local archive under `/var/cpaas/backup` can be used for recovery; S3-compatible storage is not required. However, bare-metal replacement can make the original node-local copy unavailable, and the replacement `Machine` is not guaranteed to use the same `MachineInventory`. If your recovery design cannot guarantee access to the local archive after node replacement or failure, keep an off-node copy in S3-compatible storage or another secure location outside the node before starting Phase 2.
+:::
 
 ## Update the Image Catalog \{#update-the-image-catalog}
 
@@ -200,7 +205,9 @@ The version values always come from the OS Support Matrix; they are not fixed ex
 Do not treat a Kubernetes minor downgrade as an ordinary rollback:
 
 1. If no target-version control-plane `Machine` has been created, restore Kube-OVN by using [Restore Kube-OVN During Stage-1 Recovery](./index.mdx#restore-kube-ovn-during-stage-1-recovery), then restore the previous `KubeadmControlPlane` and `MachineDeployment` manifest values.
-2. If a target-minor control-plane machine has joined, stop further rollout and repair forward on the target minor, or restore the cluster from the verified pre-upgrade backup by using the supported ACP recovery procedure. Do not patch Kubernetes, CoreDNS, or etcd back to the previous minor.
+2. If a target-minor control-plane machine has joined, stop further rollout and repair forward on the target minor. If forward repair cannot restore cluster health, restore the cluster from the verified pre-upgrade backup by following the <ExternalSiteLink name="acp" href="/configure/backup/etcd.html#etcd-restore" children="ACP etcd restore procedure" />. Do not patch Kubernetes, CoreDNS, or etcd back to the previous minor.
+
+Restoring etcd is a disaster-recovery action, not a pre-upgrade validation step. Do not run the restore procedure on a healthy cluster merely to verify the backup.
 
 Every host that completed a `reprovision` plan has already replaced its OS image and cleared Kubernetes-managed state. Changing version fields does not reconstruct that earlier node state.
 
