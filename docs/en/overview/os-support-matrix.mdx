@@ -43,9 +43,9 @@ For Huawei DCS clusters that use the Alauda OS image from ACP `v4.3.2` or a late
 :::
 
 :::info
-The **kube-ovn (chart)** column is the `acp/chart-cpaas-kube-ovn` Helm chart version, which tracks the ACP release line (for example, ACP v4.2.2 ships chart `v4.2.24`). It is **not** the Kube-OVN component (binary) version such as `v1.14.x` or `v1.15.x`.
+The **kube-ovn (chart)** column contains the Helm chart version that tracks the ACP release line (for example, ACP v4.2.2 ships chart `v4.2.24`). It is **not** the Kube-OVN component (binary) version such as `v1.14.x` or `v1.15.x`.
 
-Use this chart version — not the component version — when you set the `cpaas.io/kube-ovn-version` annotation on the `Cluster` resource and when you patch the `cni-kube-ovn` `AppRelease` `spec.source.charts[0].targetRevision`. See the provider-specific upgrade guides for the procedure.
+Chart versions earlier than `v4.4` use `acp/chart-cpaas-kube-ovn`; chart `v4.4` and later use `acp/chart-kube-ovn`. Use the matrix value with the [provider-version-specific Kube-OVN upgrade procedure](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane). Do not assume that every provider version supports both chart sources.
 :::
 
 ## Image Format by Provider
@@ -56,7 +56,7 @@ A single Alauda OS image build (one row in the matrix above) is delivered in dif
 | :--- | :--- |
 | Huawei DCS | `qcow2` |
 | Huawei Cloud Stack (HCS) | `qcow2` |
-| VMware vSphere | `vmdk` |
+| VMware vSphere | `ova` |
 | Bare metal | `iso` |
 
 The format does not change the OS content — it only changes the packaging for the target platform. The version identifier in the matrix above is format-independent; append the provider's format when you reference the downloaded file.
