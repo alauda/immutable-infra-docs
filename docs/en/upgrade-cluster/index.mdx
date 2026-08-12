@@ -19,84 +19,290 @@ This section provides instructions for upgrading Kubernetes clusters managed by 
 
 Cluster upgrades on Immutable Infrastructure follow a two-phase approach:
 
-1. **Phase 1**: Upgrade Distribution Version (Aligned Extensions)
-2. **Phase 2**: Upgrade Kubernetes Version
+1. **Phase 1**: Upgrade ACP Core and the cluster Distribution Version through CVO.
+2. **Phase 2**: Upgrade Kubernetes and replace nodes with the matching Alauda OS image.
 
 :::info
-This two-phase upgrade ensures that all cluster extensions and plugins are compatible with the new platform version before upgrading the underlying Kubernetes components.
+The ACP product documentation owns Phase 1 prerequisites, supported ACP upgrade paths, artifact preparation, and CVO procedures. This site owns the Immutable Infrastructure Kubernetes and OS replacement procedures in Phase 2.
 :::
 
 ### Distribution Version vs Kubernetes Version
 
-| Component | Description | Managed By |
+| Component | Description | Managed by |
 |-----------|-------------|------------|
-| Distribution Version | ACP platform version (e.g., ACP 4.3.0) | Aligned Extensions upgrade |
-| Kubernetes Version | Kubernetes component version | Node Pool upgrade |
+| Distribution Version | The ACP Core release installed on the cluster. | CVO workflow documented in the ACP product documentation. |
+| Kubernetes and OS baseline | A validated Kubernetes minor, component set, and Alauda OS image for the installed ACP release. | Cluster API and the provider-specific Phase 2 procedure. |
 
-Each Distribution Version corresponds to a specific Kubernetes version. Upgrading the Distribution Version updates cluster extensions and may enable new Kubernetes versions.
+An ACP minor release line can offer more than one validated Kubernetes target over its patch lifecycle. Use [OS Support Matrix](../overview/os-support-matrix.mdx) for the exact patch-specific Kubernetes, component, and Alauda OS image values offered for Phase 2.
 
 ### Prerequisites
 
-- Control Plane is reachable and healthy
-- All nodes are in Ready state
-- Sufficient IP Pool capacity for rolling updates
+- Complete <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />, including validation that the source ACP release can upgrade to the target Distribution Version.
+- Complete the ACP Core and Distribution Version upgrade before starting Phase 2.
+- Verify that the control plane is reachable and healthy.
+- Verify that all nodes are in the `Ready` state.
+- Take and verify the backups required by the provider-specific procedure.
+- Confirm sufficient IP or machine-slot capacity for rolling replacement.
 
 ---
 
-## Phase 1: Upgrading Distribution Version (Aligned Extensions)
+## Phase 1: Upgrade ACP Core and Distribution Version
 
-Upgrading the Distribution Version updates the cluster's Aligned Extensions (L3 and L4 plugins).
+Use the ACP product documentation as the single procedure owner for this phase:
 
-### Using the Web UI
+- <ExternalSiteLink name="acp" href="/upgrade/overview.html" children="Upgrade Overview" />
+- <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />
+- <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />
+- <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html" children="Upgrade workload clusters" />
 
-**Navigation**: Clusters → Clusters → Select cluster → Aligned Extensions Tab → Click **Upgrade**
+Follow that sequence to prepare artifacts and plugin packages, upgrade the `global` tier, and then move each workload cluster to the target Distribution Version through CVO. Do not use intermediate Kubernetes hops in Phase 2 to bypass an unsupported ACP Core upgrade path.
 
-#### Step 1: Review Modifications
-
-:::warning
-⚠️ All modifications must be reviewed with technical support to confirm whether they should be preserved or deleted. Unconfirmed modifications may cause the upgrade to fail.
+:::info
+Fleet Essentials 1.0.4 and later can use the ACP 4.3-and-later CVO workflow to request a Distribution Version upgrade. That capability covers Phase 1 only. Fleet Essentials does not replace immutable nodes or perform the Kubernetes and Alauda OS rollout in Phase 2; use the provider-specific YAML procedure on this site.
 :::
-
-Review any detected modifications that may affect the upgrade.
-
-**Operations**:
-- **Acknowledge**: Confirm review and proceed to Step 2
-- **Cancel**: Abort the upgrade process
-
-#### Step 2: Upgrade Aligned Extensions
-
-**Version Information**:
-- **Current Version**: The cluster's current Distribution Version
-- **Target Version**: The global cluster's Distribution Version
-
-**Plugin Impact Assessment**:
-
-| Plugin | Current Version | Target Version | Impact |
-|--------|----------------|----------------|--------|
-| [Plugin List] | ... | ... | Low/Medium/High |
-
-For Medium and High impact plugins, check **Acknowledge** to confirm you understand the risks.
-
-**Operations**:
-- **Back**: Return to Step 1 to re-review modifications
-- **Start Upgrade**: Begin the upgrade (only available after acknowledging Medium/High impacts)
-- **Cancel**: Abort the upgrade process
 
 ### Post-Upgrade Verification
 
 After the Distribution Version upgrade completes:
-- Cluster's Distribution Version is updated
-- Node Pools' Kubernetes versions are now lower than the new Distribution Version supports
-- Proceed to Phase 2 to upgrade Kubernetes
+
+- Verify that the cluster reports the target Distribution Version and CVO is no longer progressing or blocked.
+- Confirm that the target row and all required intermediate rows exist in the OS Support Matrix.
+- Proceed to Phase 2 only after the management-side Cluster API providers are healthy.
 
 ---
 
 ## Phase 2: Upgrading Kubernetes Version
 
-After upgrading Distribution Version, upgrade Kubernetes on each Node Pool.
-Provider-specific guides contain the Phase 2 procedures for each platform.
+After upgrading the Distribution Version, upgrade Kubernetes and the Alauda OS image through the provider-specific Cluster API procedure.
 
 For Huawei DCS, Huawei Cloud Stack, VMware vSphere, and bare-metal clusters, upgrade the Kube-OVN chart for the current upgrade hop **before** changing `KubeadmControlPlane`. Wait until the workload cluster's `cni-kube-ovn` `AppRelease` reports the target installed revision and `phase=Success`, then upgrade the control plane, followed by worker nodes. Repeat this Kube-OVN-first ordering for every intermediate Kubernetes minor in a cross-version upgrade.
+
+### Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
+
+Use this section as the authoritative Kube-OVN procedure for workload and `global` clusters. For every Kubernetes and OS hop, read the **kube-ovn (chart)** version from the matching [OS Support Matrix](../overview/os-support-matrix.mdx) row, complete the provider-version-specific procedure below, and verify the resulting `AppRelease` before changing `KubeadmControlPlane`.
+
+Run provider-version checks and `Cluster` or infrastructure-cluster commands against the management cluster. Run `cni-kube-ovn` `AppRelease` commands against the cluster being upgraded. When upgrading the `global` cluster, both resources are on the `global` cluster, so use the `global` kubeconfig for all commands.
+
+#### Identify the Installed Provider Version
+
+Do not infer the provider version from the ACP Distribution Version. Inspect the provider `AppRelease` on the management cluster. The resource name can vary, so the following command finds the provider by chart name and prints the requested and installed revisions:
+
+```bash
+kubectl -n cpaas-system get apprelease \
+  -o custom-columns='APPRELEASE:.metadata.name,CHART:.spec.source.charts[*].name,REQUESTED:.spec.source.charts[*].targetRevision,INSTALLED:.status.charts[*].installedRevision,PHASE:.status.charts[*].phase'
+```
+
+Find the row whose chart name ends with `chart-cluster-api-provider-dcs`, `chart-cluster-api-provider-hcs`, `chart-cluster-api-provider-vsphere`, or `chart-cluster-api-provider-baremetal`, as appropriate. Use the **installed revision** to select a tab. If the requested and installed revisions differ, or the provider chart is not in `Success`, finish or repair the provider upgrade before starting the cluster upgrade.
+
+| Provider | Full-source reconciliation | Legacy behavior retained in this guide |
+|---|---|---|
+| Huawei DCS | `v1.0.22` and later | `v1.0.21` and earlier |
+| Huawei Cloud Stack | `v1.0.4` and later | `v1.0.3` and earlier |
+| VMware vSphere | `v1.0.16` and later | `v1.0.15` and earlier |
+| Bare Metal | `v0.0.1` and later | None; `v0.0.1` is the first supported release for this procedure. |
+
+The Kube-OVN chart source also changes at chart version `v4.4`:
+
+| Target Kube-OVN chart version | Expected `spec.source.charts[0].name` |
+|---|---|
+| Earlier than `v4.4` | `acp/chart-cpaas-kube-ovn` |
+| `v4.4` and later | `acp/chart-kube-ovn` |
+
+If the target OS Support Matrix row uses Kube-OVN chart `v4.4` or later, upgrade the infrastructure provider to the full-source reconciliation version in the table before continuing. A manual Kube-OVN source patch is not a substitute for that provider upgrade because the same provider releases also reconcile the required CoreDNS and kube-proxy repository changes.
+
+#### Apply the Provider-Version-Specific Procedure
+
+##### Huawei DCS
+
+Verify that the DCS infrastructure cluster uses Kube-OVN:
+
+```bash
+kubectl get dcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{.spec.networkType}{"\n"}'
+# Expected output: kube-ovn
+```
+
+<Tabs>
+  <Tab label="DCS v1.0.22+">
+
+Update the target chart version on the CAPI `Cluster`. The provider selects the chart name from the target version and reconciles the complete `AppRelease` source and specification.
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+Do not patch the `AppRelease` source manually. Continue with [Verify the Kube-OVN AppRelease](#verify-the-kube-ovn-apprelease).
+
+  </Tab>
+  <Tab label="DCS v1.0.21 and earlier">
+
+:::warning
+This legacy flow is valid only when the target Kube-OVN chart is earlier than `v4.4`. For chart `v4.4` or later, upgrade the DCS provider to `v1.0.22` or later first.
+:::
+
+The legacy provider updates `spec.values` but preserves the existing source. Record the target on the `Cluster`, then patch only the existing legacy chart revision on the cluster being upgraded:
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+
+kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
+  -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<kube-ovn-version-from-matrix>"}]'
+```
+
+Keep the legacy chart name `acp/chart-cpaas-kube-ovn`. Do not use this patch to move an old provider to chart `v4.4` or later.
+
+  </Tab>
+</Tabs>
+
+##### Huawei Cloud Stack
+
+Verify that the HCS infrastructure cluster uses Kube-OVN:
+
+```bash
+kubectl get hcscluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{.spec.networkType}{"\n"}'
+# Expected output: kube-ovn
+```
+
+<Tabs>
+  <Tab label="HCS v1.0.4+">
+
+Update the target chart version on the CAPI `Cluster`. The provider selects the chart name from the target version and reconciles the complete `AppRelease` source and specification.
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+Do not patch the `AppRelease` source manually. Continue with [Verify the Kube-OVN AppRelease](#verify-the-kube-ovn-apprelease).
+
+  </Tab>
+  <Tab label="HCS v1.0.3 and earlier">
+
+:::warning
+This legacy flow is valid only when the target Kube-OVN chart is earlier than `v4.4`. For chart `v4.4` or later, upgrade the HCS provider to `v1.0.4` or later first.
+:::
+
+The legacy provider updates `spec.values` but preserves the existing source. Record the target on the `Cluster`, then patch only the existing legacy chart revision on the cluster being upgraded:
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+
+kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
+  -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<kube-ovn-version-from-matrix>"}]'
+```
+
+Keep the legacy chart name `acp/chart-cpaas-kube-ovn`. Do not use this patch to move an old provider to chart `v4.4` or later.
+
+  </Tab>
+</Tabs>
+
+##### VMware vSphere
+
+Verify that the CAPI `Cluster` enables Kube-OVN reconciliation:
+
+```bash
+kubectl get cluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{.metadata.annotations.cpaas\.io/network-type}{"\n"}'
+# Expected output: kube-ovn
+```
+
+<Tabs>
+  <Tab label="vSphere v1.0.16+">
+
+Update the target chart version on the CAPI `Cluster`. The provider selects the chart name from the target version and reconciles the complete `AppRelease` source and specification.
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+Do not patch the `AppRelease` source manually. Continue with [Verify the Kube-OVN AppRelease](#verify-the-kube-ovn-apprelease).
+
+  </Tab>
+  <Tab label="vSphere v1.0.15 and earlier">
+
+:::warning
+This legacy flow is valid only when the target Kube-OVN chart is earlier than `v4.4`. For chart `v4.4` or later, upgrade the vSphere provider to `v1.0.16` or later first. The legacy controller hardcodes the old chart name and can overwrite an unsupported manual source change.
+:::
+
+For an earlier target chart, update the annotation only. The legacy provider reconciles the complete specification but keeps the legacy chart name.
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+  </Tab>
+</Tabs>
+
+##### Bare Metal
+
+This procedure applies to Bare Metal provider `v0.0.1` and later. There is no earlier supported release flow to select.
+
+Verify that the infrastructure cluster uses Kube-OVN, then update the target chart version on the CAPI `Cluster`:
+
+```bash
+kubectl get baremetalcluster <cluster-name> -n cpaas-system \
+  -o jsonpath='{.spec.networkType}{"\n"}'
+# Expected output: kube-ovn
+
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<kube-ovn-version-from-matrix> --overwrite
+```
+
+The provider selects the chart name from the target version and reconciles the complete `AppRelease` source and specification. Do not patch the `AppRelease` source manually.
+
+#### Verify the Kube-OVN AppRelease \{#verify-the-kube-ovn-apprelease}
+
+Run these commands against the cluster being upgraded:
+
+```bash
+kubectl get apprelease cni-kube-ovn -n cpaas-system \
+  -o jsonpath='Chart: {.spec.source.charts[0].name}{"\n"}Target: {.spec.source.charts[0].targetRevision}{"\n"}Installed: {.status.charts.*.installedRevision}{"\n"}Phase: {.status.charts.*.phase}{"\n"}'
+
+kubectl get apprelease cni-kube-ovn -n cpaas-system \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}){"\n"}{end}'
+```
+
+Before changing the control plane, verify all of the following:
+
+- `spec.source.charts[0].name` matches the chart-name boundary above.
+- `targetRevision` and `installedRevision` both match the OS Support Matrix row.
+- `phase` is `Success`.
+- The `Sync` and `Health` conditions are `True`.
+
+The normal phase sequence is `Upgrading → HealthChecking → Success`. Do not continue based on `installedRevision` alone: it can change during `HealthChecking`, before Kube-OVN pods have been verified Ready. If the `AppRelease` reaches `DownloadFailed`, `DeployFailed`, or `NotReady`, stop and inspect its condition messages:
+
+```bash
+kubectl describe apprelease cni-kube-ovn -n cpaas-system
+```
+
+#### Restore Kube-OVN During Stage-1 Recovery \{#restore-kube-ovn-during-stage-1-recovery}
+
+Use this recovery only when no control-plane `Machine` on the target Kubernetes minor has been created. If a target-minor control-plane machine has joined, keep the target Kube-OVN baseline and use forward recovery or the supported backup or DR restore procedure.
+
+Restore the previous chart version on the CAPI `Cluster` in the management cluster:
+
+```bash
+kubectl annotate cluster <cluster-name> -n cpaas-system \
+  cpaas.io/kube-ovn-version=<previous-kube-ovn-version> --overwrite
+```
+
+- **DCS `v1.0.22+`, HCS `v1.0.4+`, vSphere `v1.0.16+`, and Bare Metal `v0.0.1+`**: restore the previous `cpaas.io/kube-ovn-version` annotation. The provider restores the matching chart name, revision, and complete specification. Do not patch the source manually.
+- **DCS `v1.0.21` and earlier or HCS `v1.0.3` and earlier, with a target earlier than chart `v4.4`**: after restoring the annotation, patch the existing `targetRevision` back to the previous chart revision on the cluster being recovered:
+
+  ```bash
+  kubectl patch apprelease cni-kube-ovn -n cpaas-system --type='json' \
+    -p='[{"op":"replace","path":"/spec/source/charts/0/targetRevision","value":"<previous-kube-ovn-version>"}]'
+  ```
+
+- **vSphere `v1.0.15` and earlier, with a target earlier than chart `v4.4`**: restore the previous annotation only; the provider reconciles the complete legacy specification.
+
+After restoring the previous target, repeat [Verify the Kube-OVN AppRelease](#verify-the-kube-ovn-apprelease) before changing any control-plane manifests.
 
 ### Required kubelet patch for Kubernetes 1.35 \{#kubernetes-1-35-kubelet-patch}
 
@@ -108,7 +314,7 @@ When an upgrade hop targets Kubernetes 1.35 or later, the kubelet patch file at 
 }
 ```
 
-`imagePullCredentialsVerificationPolicy` is required only starting with Kubernetes 1.35. Setting it to `NeverVerify` prevents the kubelet from requiring registry credential verification for images that are already present in the immutable OS image.
+In Kubernetes 1.35, kubelet credential verification can apply even when an image is already present on the node. `NeverVerify` tells the kubelet not to verify pull credentials for these pre-pulled images. Add this field only to kubelet configurations that will run on Kubernetes 1.35 or later; do not add it for Kubernetes 1.34 or earlier.
 
 Apply this change only on the hop to Kubernetes 1.35 or later:
 
@@ -130,13 +336,15 @@ See platform-specific guides:
 
 When the target ACP Distribution Version is more than one Kubernetes minor above the cluster's current version, additional preparation is required before starting Phase 2. Single-minor upgrades skip this section.
 
-On Immutable Infrastructure, each Kubernetes minor is baked into a matching OS image, and each Kubernetes minor maps to a specific ACP version row in [OS Support Matrix](../overview/os-support-matrix.mdx). The Kubernetes version therefore moves forward one minor at a time, stepping through the OS image of each intermediate ACP row. The ACP Core (Distribution Version) itself is still upgraded directly to the target version through the Cluster Version Operator — only the Kubernetes version steps through the intermediate minors.
+On Immutable Infrastructure, each Kubernetes minor is baked into a matching OS image, and each Kubernetes minor maps to a specific ACP version row in [OS Support Matrix](../overview/os-support-matrix.mdx). The Kubernetes version therefore moves forward one minor at a time through the required intermediate OS images. Keep these Kubernetes and OS hops separate from the ACP Core upgrade path: the Distribution Version must follow every source-to-target hop offered by CVO, while Phase 2 can require additional intermediate rows only to advance Kubernetes and the OS image.
 
-Identify every ACP minor between the current and target versions, use the latest patch in each row, and complete the following pre-staging for each intermediate version before starting Phase 2.
+Before starting Phase 2, identify every intermediate Kubernetes minor and its matching OS Support Matrix row. Confirm separately that Phase 1 completed every required Distribution Version hop according to <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />.
 
-### Step 1 — Pre-sync intermediate Core images to the registry
+### Step 1 — Confirm Core hops and pre-sync intermediate images
 
-For each intermediate ACP version, download its Core package and synchronize only its images into the registry. Do not request a Core upgrade to the intermediate version.
+If CVO offers an intermediate Distribution Version as part of the supported Core path, perform the full ACP artifact preparation and Core/CVO upgrade for that hop during Phase 1. This is required for paths such as ACP 4.0.x to 4.4, and `--only-sync-image` does not replace it. Verify `availableUpdates` and `VersionUpgradePath` at every Core hop.
+
+After all required Core hops are complete, some intermediate OS Support Matrix rows may still be needed only for the sequential Kubernetes and OS rollout in Phase 2. For each of these Kubernetes/OS-only rows, download the corresponding Core package and synchronize only its images into the registry. Do not request an additional Core upgrade solely because a row is used as a Kubernetes or OS stepping stone.
 
 ```bash
 bash upgrade.sh --only-sync-image
@@ -146,20 +354,20 @@ See <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html#sync
 
 This places the intermediate-version CoreDNS, etcd, and Kube-OVN chart images in the registry so the staged Kubernetes rollout can pull them when `KubeadmControlPlane` is patched to the matching OS Support Matrix row. In an air-gapped environment, missing intermediate images prevent the new control plane components from starting.
 
-Aligned plugins do not need an extra `violet push` for the intermediate versions; they move directly to the target version with the Core upgrade, and the Kube-OVN chart used by each intermediate Kubernetes hop is already covered by the Core image sync above.
+For a required Core hop, prepare and upgrade Aligned plugins as directed by the ACP Phase 1 procedure. For a Kubernetes/OS-only intermediate row, Aligned plugins do not need an extra `violet push`; the Kube-OVN chart used by that intermediate Kubernetes hop is covered by the Core image sync above.
 
 ### Step 2 — Stage intermediate OS images for the provisioning mechanism
 
-For each intermediate ACP version, make the matching OS image (the **Alauda OS Image Version** value from the OS Support Matrix row) available to the node provisioning mechanism so the Kubernetes step can replace nodes from each image in turn:
+For each intermediate Kubernetes/OS row, make the matching OS image (the **Alauda OS Image Version** value from the OS Support Matrix row) available to the node provisioning mechanism so the Kubernetes step can replace nodes from each image in turn:
 
 - **IaaS providers (Huawei DCS, VMware vSphere, Huawei Cloud Stack)**: upload the OS image and register it as a VM template (or VM image, depending on the platform) under the exact name listed in the OS Support Matrix row.
 - **Bare metal**: make the OS image available to the node re-provisioning flow used by your cluster.
 
 The control plane and worker rollouts then step through the intermediate OS images one at a time, matched to the staged Kubernetes minor, until the cluster reaches the target ACP version row.
 
-### Step 3 — Apply the platform-specific procedure for each intermediate version
+### Step 3 — Apply the platform-specific procedure for each intermediate Kubernetes/OS row
 
-Repeat the platform-specific Phase 2 procedure for each intermediate ACP version in turn, using that version's row in [OS Support Matrix](../overview/os-support-matrix.mdx) for Kube-OVN, `KubeadmControlPlane`, and `MachineDeployment` values. For each hop, upgrade Kube-OVN first and wait for `phase=Success`, then upgrade the control plane, followed by workers. On the hop to Kubernetes 1.35, also apply the [required kubelet patch](#kubernetes-1-35-kubelet-patch) to the control-plane and worker bootstrap configurations. Complete the whole hop before starting the next one. After all intermediate hops succeed, apply the same procedure once more for the target ACP version.
+Repeat the platform-specific Phase 2 procedure for each intermediate Kubernetes/OS row in turn, using that row in [OS Support Matrix](../overview/os-support-matrix.mdx) for Kube-OVN, `KubeadmControlPlane`, and `MachineDeployment` values. For each hop, upgrade Kube-OVN first and wait for `phase=Success`, then upgrade the control plane, followed by workers. On the hop to Kubernetes 1.35, also apply the [required kubelet patch](#kubernetes-1-35-kubelet-patch) to the control-plane and worker bootstrap configurations. Complete the whole hop before starting the next one. After all intermediate hops succeed, apply the same procedure once more for the target row.
 
 ---
 
@@ -172,7 +380,7 @@ Select your platform for detailed upgrade instructions:
 | [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
 | [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
 | [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | ✅ Available |
-| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | ✅ Available (YAML only) |
+| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | YAML; requires provider `v0.0.1+` in the installed release |
 
 ---
 
