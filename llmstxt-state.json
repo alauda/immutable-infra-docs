@@ -740,13 +740,6 @@
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-05-16T06:24:44Z"
     },
-    "docs/en/overview/feature.mdx": {
-      "sha256": "dae0a7109d741875e5fc8c156d499e63eea6f0557bcdf5c54ac0fe0d7203548e",
-      "size": 5989,
-      "description": "Catalogs Immutable Infrastructure capabilities: full cluster lifecycle (immutable-OS creation, deletion with provider resource release, horizontal scaling, Kubernetes upgrades), the pluggable infrastructure-provider model (DCS and VMware vSphere shipped, more on roadmap), and VM compute lifecycle/instance flavor/storage/network configuration options. Walks through four use cases — 3-node HA control plane with automatic failover, `MachineDeployment.replicas` based horizontal scaling, zero-downtime rolling upgrades governed by `maxSurge`/`maxUnavailable`, and multi-node-pool layouts (general-purpose, compute-optimized, memory-optimized) using separate `MachineDeployment`s, labels, and taints.",
-      "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
-    },
     "docs/en/overview/index.mdx": {
       "sha256": "f2173503b518976d2ce0b364648e0aec87c10f0ae2f33957a7f310f0521283fd",
       "size": 44,
