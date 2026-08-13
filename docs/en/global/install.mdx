@@ -1204,6 +1204,8 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
 
 The following fragment shows the `global`-specific Cluster API wiring. Fill the inventory names, registration configuration, image references, and optional worker resources by using the Bare Metal create-cluster reference.
 
+Set `<control-plane-load-balancer-type>` to `Internal` for provider-managed Alive or `External` for a user-provisioned LoadBalancer. When you use `External`, remove `vrid`. See [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx) for the requirements of each mode.
+
 ```yaml
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster

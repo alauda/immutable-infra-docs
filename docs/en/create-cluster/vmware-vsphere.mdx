@@ -189,7 +189,7 @@ Confirm the following results:
 - The controller arguments include `ClusterResourceSet=true`.
 - The `public-registry-credential` Secret exists; its contents are not printed by this procedure.
 - The permanent platform Registry contains the required Kube-OVN, CoreDNS, and vSphere CPI tags.
-- The VM template contains the required locally preloaded etcd and kube-apiserver image references. Their static-Pod deployment does not remove the image requirement.
+- The VM template passed [the executable local-image validation](../infrastructure/vmware-vsphere.mdx#validate-the-locally-preloaded-images), including exact etcd, kube-apiserver, and sandbox image references. Their static-Pod deployment does not remove the image requirement.
 
 Before you continue, also verify the following items:
 

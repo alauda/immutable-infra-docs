@@ -257,6 +257,34 @@ Confirm that the responses include the values you plan to use for:
 
 The Registry does not need to serve the etcd or kube-apiserver images when the VM template contains their exact image references and `capv-load-local-images.sh` imports them before kubeadm runs. Static-Pod deployment alone is not sufficient: verify the local images whenever the OS template, Kubernetes version, `imageRepository`, or component tags change.
 
+### Validate the locally preloaded images \{#validate-the-locally-preloaded-images}
+
+Create and boot a disposable VM from the exact candidate template. Run the following commands inside that VM to exercise the same import path used before kubeadm and list the image references that are actually available to containerd:
+
+```bash
+sudo bash -euo pipefail <<'EOF'
+shopt -s nullglob
+image_files=(/root/images/*.tar)
+if (( ${#image_files[@]} == 0 )); then
+  echo "ERROR: no tar files found in /root/images" >&2
+  exit 1
+fi
+
+systemctl restart containerd
+for image_file in "${image_files[@]}"; do
+  ctr -n k8s.io images import "${image_file}"
+done
+ctr -n k8s.io images list -q | sort -u
+EOF
+
+sudo grep -nE '^[[:space:]]*(sandbox_image|sandbox)[[:space:]]*=' \
+  /etc/containerd/config.toml
+```
+
+Compare the first command's output with the complete references required by the selected Kubernetes version and manifest values. Confirm that every required kubeadm image is present, including the exact etcd and kube-apiserver references generated from `<image_registry>/tkestack`, `<k8s_version>`, and the component tags. Compare the second command's sandbox reference with the imported pause-image reference; they must be identical.
+
+Perform this validation again whenever the template, Kubernetes version, `imageRepository`, etcd tag, or containerd sandbox setting changes. Discard the validation VM afterward; do not convert it back into the source template.
+
 Set `cpaas.io/registry-address` in the workload `Cluster` annotation to `<registry_address>`.
 
 ## Minimum Single-Datacenter Parameters
@@ -381,10 +409,10 @@ Use the following fields when you investigate a released slot or a datastore cap
 Inspect the pool and related Events without reading credentials:
 
 ```bash
-kubectl -n <namespace> get vspheremachineconfigpool <pool-name> -o yaml
-kubectl -n <namespace> describe vspheremachineconfigpool <pool-name>
+kubectl -n <namespace> get vspheremachineconfigpool <pool_name> -o yaml
+kubectl -n <namespace> describe vspheremachineconfigpool <pool_name>
 kubectl -n <namespace> get events \
-  --field-selector involvedObject.kind=VSphereMachineConfigPool,involvedObject.name=<pool-name>
+  --field-selector involvedObject.kind=VSphereMachineConfigPool,involvedObject.name=<pool_name>
 ```
 
 :::warning

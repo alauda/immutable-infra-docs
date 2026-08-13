@@ -25,6 +25,8 @@ Endpoint capabilities are provider-version specific. An ACP minor version alone 
 
 Do not configure an internal or Self-built VIP mode for DCS or vSphere until the provider release notes and this documentation name the exact provider version that supports it.
 
+The DCS `v1.0.22 and later` boundary in [Upgrade Kube-OVN Before the Control Plane](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane) describes full-source Kube-OVN reconciliation only, and applies only when such a provider version is installed. It does not state that `v1.0.22` is available as a formal provider package or that the release supports Self-built VIP. For endpoint planning, `v1.0.21` remains the last verified DCS release and External LoadBalancer remains the documented mode until the provider release notes and package define a new endpoint-capability boundary.
+
 ## External LoadBalancer Contract \{#external-loadbalancer-contract}
 
 Provision and validate the load balancer before you apply the Cluster API resources.
