@@ -836,7 +836,7 @@ Use the provider creation guides as the detailed resource reference:
 
 Apply the [naming convention from Common Prerequisites](#common-prerequisites) to every resource in the manifest you author below.
 
-Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format` to the value that the target provider accepts. The provider controllers enforce this:
+Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format` to the value that the target provider accepts. This is an API field: enter `cloud-config`, not `cloud-init`. For the providers below, `cloud-init` is the guest operating-system software that receives and applies the generated `cloud-config` data. The provider controllers enforce the field value:
 
 | Provider | Bootstrap userdata format |
 |----------|---------------------------|
