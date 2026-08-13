@@ -58,8 +58,8 @@ Before you begin, ensure the following conditions are met:
 4. The external control plane LoadBalancer satisfies [the endpoint contract](../how-to/control-plane-endpoint.mdx). VMware vSphere Provider `v1.0.16` does not deploy a Self-built VIP.
 5. All required static IP addresses are allocated and not in use.
 6. `ClusterResourceSet=true` is enabled.
-7. The platform already has a valid `public-registry-credential`, and the permanent Registry address is reachable from workload nodes.
-8. The permanent platform Registry contains the required Kube-OVN, CoreDNS, etcd, and kube-apiserver tags.
+7. The platform already has a valid `public-registry-credential` Secret, and the permanent Registry address is reachable from workload nodes.
+8. The permanent platform Registry contains the required Kube-OVN, CoreDNS, and vSphere CPI tags.
 9. The platform can process the cluster annotations required to install the network plugin.
 
 ## Key Objects
@@ -118,7 +118,8 @@ The VM template used by this workflow should meet the following minimum requirem
 4. It includes `containerd`.
 5. It includes the baseline components required by kubeadm bootstrap.
 6. It includes pre-exported container image tar files under `/root/images/`. These files are imported into containerd by `capv-load-local-images.sh` before kubeadm runs, so that node bootstrap does not depend on pulling images from a remote registry.
-7. The `/root/images/*.tar` files **must** include the sandbox (pause) image whose reference exactly matches the `sandbox_image` value (containerd v1) or `sandbox` value (containerd v2) configured in `/etc/containerd/config.toml`. For example, if containerd is configured with `sandbox_image = "registry.example.com/tkestack/pause:3.10"`, one of the tar files must contain that exact image reference. A mismatch causes containerd to pull the sandbox image from the network, which defeats the purpose of local preloading and fails in air-gapped environments.
+7. The tar files include the kubeadm control-plane images supplied with the OS template, including etcd and kube-apiserver, under the exact image references generated from `clusterConfiguration.imageRepository`, the Kubernetes version, and the component image tags. Although etcd and kube-apiserver run as static Pods, they still require container images. A missing or mismatched local reference causes the runtime to try the configured Registry instead.
+8. The `/root/images/*.tar` files **must** include the sandbox (pause) image whose reference exactly matches the `sandbox_image` value (containerd v1) or `sandbox` value (containerd v2) configured in `/etc/containerd/config.toml`. For example, if containerd is configured with `sandbox_image = "registry.example.com/tkestack/pause:3.10"`, one of the tar files must contain that exact image reference. A mismatch causes containerd to pull the sandbox image from the network, which defeats the purpose of local preloading and fails in air-gapped environments.
 
 Static IP configuration, hostname injection, and other initialization settings depend on `cloud-init`. Node IP reporting depends on guest tools.
 
@@ -169,14 +170,14 @@ kubectl -n cpaas-system get cluster global \
   -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}{"\n"}'
 ```
 
-Export the permanent platform Registry address returned by the `Cluster` annotation, then verify the required tags through Registry HTTP API paths:
+Export the permanent platform Registry address returned by the `Cluster` annotation and the image Registry used by the CPI and kubeadm manifests. If both placeholders identify the same Registry, use the same value for both variables.
 
 ```bash
-export REGISTRY_ADDRESS="<registry_address>"
-curl -sk "https://${REGISTRY_ADDRESS}/v2/acp/chart-cpaas-kube-ovn/tags/list"
-curl -sk "https://${REGISTRY_ADDRESS}/v2/tkestack/coredns/tags/list"
-curl -sk "https://${REGISTRY_ADDRESS}/v2/tkestack/etcd/tags/list"
-curl -sk "https://${REGISTRY_ADDRESS}/v2/tkestack/kube-apiserver/tags/list"
+export CLUSTER_REGISTRY_ADDRESS="<registry_address>"
+export IMAGE_REGISTRY_ADDRESS="<image_registry>"
+curl -sk "https://${CLUSTER_REGISTRY_ADDRESS}/v2/acp/chart-cpaas-kube-ovn/tags/list"
+curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/tkestack/coredns/tags/list"
+curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/ait/cloud-provider-vsphere/tags/list"
 ```
 
 The `/v2/` segment is part of the Registry HTTP API URL only. In the workload `Cluster` manifest, set the Registry annotation to `<registry_address>` without a scheme or path.
@@ -187,7 +188,8 @@ Confirm the following results:
 - Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider are running.
 - The controller arguments include `ClusterResourceSet=true`.
 - The `public-registry-credential` Secret exists; its contents are not printed by this procedure.
-- The permanent platform Registry contains the required Kube-OVN, CoreDNS, etcd, and kube-apiserver tags.
+- The permanent platform Registry contains the required Kube-OVN, CoreDNS, and vSphere CPI tags.
+- The VM template contains the required locally preloaded etcd and kube-apiserver image references. Their static-Pod deployment does not remove the image requirement.
 
 Before you continue, also verify the following items:
 

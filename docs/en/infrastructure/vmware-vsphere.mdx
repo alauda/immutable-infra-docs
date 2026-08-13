@@ -192,6 +192,7 @@ The template should also meet the following requirements:
 - It includes `containerd`.
 - It includes the baseline components required by kubeadm bootstrap.
 - It includes pre-exported container image tar files under `/root/images/`. These files are imported into containerd by `capv-load-local-images.sh` before kubeadm runs, so that node bootstrap does not depend on pulling images from a remote registry.
+- The tar files include the kubeadm control-plane images supplied with the OS template, including etcd and kube-apiserver, under the exact image references generated from `clusterConfiguration.imageRepository`, the Kubernetes version, and the component image tags. Although etcd and kube-apiserver run as static Pods, they still require container images. A missing or mismatched local reference causes the runtime to try the configured Registry instead.
 - The `/root/images/*.tar` files **must** include the sandbox (pause) image whose reference exactly matches the `sandbox_image` value (containerd v1) or `sandbox` value (containerd v2) configured in `/etc/containerd/config.toml`. For example, if containerd is configured with `sandbox_image = "registry.example.com/tkestack/pause:3.10"`, one of the tar files must contain that exact image reference. A mismatch causes containerd to pull the sandbox image from the network, which defeats the purpose of local preloading and fails in air-gapped environments.
 
 ## Load Balancer Prerequisites
@@ -236,14 +237,14 @@ kubectl -n cpaas-system get cluster global \
 kubectl -n cpaas-system get secret public-registry-credential -o name
 ```
 
-The Secret command verifies existence only and does not print credential data. Export the confirmed address, then query Registry HTTP API paths:
+The Secret command verifies existence only and does not print credential data. Export the confirmed Cluster Registry address and the image Registry used by the CPI and kubeadm manifests. If both placeholders identify the same Registry, use the same value for both variables.
 
 ```bash
-export REGISTRY_ADDRESS="<registry_address>"
-curl -sk "https://${REGISTRY_ADDRESS}/v2/acp/chart-cpaas-kube-ovn/tags/list"
-curl -sk "https://${REGISTRY_ADDRESS}/v2/tkestack/coredns/tags/list"
-curl -sk "https://${REGISTRY_ADDRESS}/v2/tkestack/etcd/tags/list"
-curl -sk "https://${REGISTRY_ADDRESS}/v2/tkestack/kube-apiserver/tags/list"
+export CLUSTER_REGISTRY_ADDRESS="<registry_address>"
+export IMAGE_REGISTRY_ADDRESS="<image_registry>"
+curl -sk "https://${CLUSTER_REGISTRY_ADDRESS}/v2/acp/chart-cpaas-kube-ovn/tags/list"
+curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/tkestack/coredns/tags/list"
+curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/ait/cloud-provider-vsphere/tags/list"
 ```
 
 The `/v2/` segment belongs only to these Registry HTTP API URLs. Image references use `<registry>/<repository>:<tag>`, and the Cluster annotation uses `<host>:<port>`.
@@ -252,8 +253,9 @@ Confirm that the responses include the values you plan to use for:
 
 - `<kube_ovn_version>`
 - `<dns_image_tag>`
-- `<etcd_image_tag>`
-- `<k8s_version>` or the matching kube-apiserver image tag required by the release
+- `<cpi_image_tag>`
+
+The Registry does not need to serve the etcd or kube-apiserver images when the VM template contains their exact image references and `capv-load-local-images.sh` imports them before kubeadm runs. Static-Pod deployment alone is not sufficient: verify the local images whenever the OS template, Kubernetes version, `imageRepository`, or component tags change.
 
 Set `cpaas.io/registry-address` in the workload `Cluster` annotation to `<registry_address>`.
 
@@ -473,13 +475,14 @@ Before you start the deployment, confirm all of the following items:
 6. The Pod CIDR, Service CIDR, and `kube-ovn-join-cidr` do not overlap with existing networks.
 7. The VM template is available in every required datacenter.
 8. The required datastores and vCenter resource pool paths are confirmed.
-9. The permanent platform Registry contains the required Kube-OVN, CoreDNS, etcd, and kube-apiserver tags.
-10. The `cpaas.io/registry-address` value is planned as `<registry_address>` without a scheme or `/v2/` path.
-11. The control plane and worker bootstrap manifests both write `/etc/resolv.conf` through kubeadm `files`.
-12. The machine config pool values for the minimum single-datacenter topology are complete.
-13. The baseline system disk and data disk sizing is confirmed, and persistent disk sizes are not added into `diskGiB`.
-14. `releaseDelayHours`, same-pool persistent-disk reuse, new-pool capacity allocation, and provider-managed teardown reclaim are understood before datastore capacity is allocated.
-15. Every required parameter has a real value.
+9. The permanent platform Registry contains the required Kube-OVN, CoreDNS, and vSphere CPI tags.
+10. The VM template contains the exact locally preloaded etcd and kube-apiserver image references required by the selected Kubernetes and component versions.
+11. The `cpaas.io/registry-address` value is planned as `<registry_address>` without a scheme or `/v2/` path.
+12. The control plane and worker bootstrap manifests both write `/etc/resolv.conf` through kubeadm `files`.
+13. The machine config pool values for the minimum single-datacenter topology are complete.
+14. The baseline system disk and data disk sizing is confirmed, and persistent disk sizes are not added into `diskGiB`.
+15. `releaseDelayHours`, same-pool persistent-disk reuse, new-pool capacity allocation, and provider-managed teardown reclaim are understood before datastore capacity is allocated.
+16. Every required parameter has a real value.
 
 ## Next Steps
 

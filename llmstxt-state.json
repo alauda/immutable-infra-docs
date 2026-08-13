@@ -3,7 +3,7 @@
   "generator_version": 3,
   "project_name": "Immutable Infrastructure Documentation",
   "summary": "Immutable Infrastructure product documentation covering Cluster API-based Kubernetes cluster lifecycle management, provider support, installation, upgrades, node operations, machine configuration, and Kubernetes API references.",
-  "generated_at": "2026-08-13T07:33:12Z",
+  "generated_at": "2026-08-13T09:03:05Z",
   "include_patterns": [
     "docs/en/*.md",
     "docs/en/*.mdx",
@@ -531,11 +531,11 @@
       "updated_at": "2026-08-12T13:52:29Z"
     },
     "docs/en/create-cluster/vmware-vsphere.mdx": {
-      "sha256": "05c6779eb411622d753c8dec34b5dc4ad20c91de30d1ca4a982221532d6e00f6",
-      "size": 67657,
-      "description": "End-to-end guide for creating a VMware vSphere workload cluster by applying Cluster API manifests to the ACP `global` management cluster, validated against VMware vSphere Provider `v1.0.16`. Covers vCenter identity, ordered manifest application, CPI delivery through `ClusterResourceSet`, static node slots and persistent disks in `VSphereMachineConfigPool`, control-plane and worker templates, external LoadBalancer and Registry boundaries, verification, and troubleshooting. Keeps failure-domain objects conditional, separates the Kubernetes 1.35 kubelet variant from the earlier-version baseline, and includes creation-time variants for second NICs, multiple datacenters, and extra or raw disks.",
+      "sha256": "31a3dd87d3a211227d339125243dbd45d54836cc425fc14c5468ed78120ff311",
+      "size": 68368,
+      "description": "End-to-end guide for creating a VMware vSphere workload cluster by applying Cluster API manifests to the ACP `global` management cluster, validated against VMware vSphere Provider `v1.0.16`. Covers vCenter identity, ordered manifest application, CPI delivery through `ClusterResourceSet`, static node slots and persistent disks in `VSphereMachineConfigPool`, control-plane and worker templates, external LoadBalancer and Registry boundaries, verification, and troubleshooting. Distinguishes Registry-served Kube-OVN, CoreDNS, and vSphere CPI artifacts from the exact etcd and kube-apiserver image references preloaded by the OS template. Keeps failure-domain objects conditional, separates the Kubernetes 1.35 kubelet variant from the earlier-version baseline, and includes creation-time variants for second NICs, multiple datacenters, and extra or raw disks.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-13T07:33:12Z"
+      "updated_at": "2026-08-13T09:03:05Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
       "sha256": "c7b83e02f640b486c8f804096ab78d28bd902221c2d03f30905dafc8fe162137",
@@ -636,11 +636,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/infrastructure/vmware-vsphere.mdx": {
-      "sha256": "a153619ba85db76c3f9549244dc2636844622782be2c559900d565ac8f05c259",
-      "size": 38287,
-      "description": "Preparation and parameter checklist for VMware vSphere workload clusters, validated against VMware vSphere Provider `v1.0.16`. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template and image requirements, external control-plane LoadBalancer and permanent Registry readiness, CIDRs, node-slot networking, machine sizing, CPI inputs, and persistent disks. Links optional parameters to the canonical creation-time topology variants, records the Kubernetes 1.35 kubelet-patch rule, and explains same-pool disk reuse, provider-managed reclaim, and datastore-capacity checks.",
+      "sha256": "2cbcf4630ed35597f4a143582ed12e01b6f385c7557c8c0e40e38f327b986cd8",
+      "size": 39308,
+      "description": "Preparation and parameter checklist for VMware vSphere workload clusters, validated against VMware vSphere Provider `v1.0.16`. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template and locally preloaded kubeadm image requirements, external control-plane LoadBalancer and permanent Registry readiness for Kube-OVN, CoreDNS, and vSphere CPI, CIDRs, node-slot networking, machine sizing, CPI inputs, and persistent disks. Links optional parameters to the canonical creation-time topology variants, records the Kubernetes 1.35 kubelet-patch rule, and explains same-pool disk reuse, provider-managed reclaim, and datastore-capacity checks.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-13T07:33:12Z"
+      "updated_at": "2026-08-13T09:03:05Z"
     },
     "docs/en/install/bare-metal.mdx": {
       "sha256": "12ea618bec2c7c326c95fc7c339da6b2403ee4ed4933cb8036525e06d6725df3",
