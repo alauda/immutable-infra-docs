@@ -1,5 +1,5 @@
 ---
-weight: 20
+weight: 30
 title: Creating Clusters on VMware vSphere
 author: dev@alauda.io
 category: howto
@@ -136,10 +136,11 @@ Create a local working directory and store the manifests with the following layo
 capv-cluster/
 ├── 00-namespace.yaml
 ├── 01-vsphere-credentials-secret.yaml
-├── 02-vspheremachineconfigpool-control-plane.yaml
-├── 03-vspheremachineconfigpool-worker.yaml
 ├── 10-cluster.yaml
 ├── 15-vsphere-cpi-clusterresourceset.yaml
+├── 16-vspheremachineconfigpool-control-plane.yaml
+├── 17-vspheremachineconfigpool-worker.yaml
+├── 18-failure-domains.yaml  # only when failure domains are enabled
 ├── 20-control-plane.yaml
 └── 30-workers-md-0.yaml
 ```
@@ -568,7 +569,7 @@ Each node slot declares its NIC layout under `network.primary` (required) and `n
 The `dns` entries in `VSphereMachineConfigPool` are kept in the static network configuration, but they might not update the guest operating system's `/etc/resolv.conf` reliably in affected VMware deployments. The control plane and worker bootstrap manifests below therefore also write `/etc/resolv.conf` explicitly through kubeadm `files`.
 </Directive>
 
-```yaml title="02-vspheremachineconfigpool-control-plane.yaml"
+```yaml title="16-vspheremachineconfigpool-control-plane.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: VSphereMachineConfigPool
 metadata:
@@ -658,7 +659,7 @@ spec:
 
 Create the worker machine config pool.
 
-```yaml title="03-vspheremachineconfigpool-worker.yaml"
+```yaml title="17-vspheremachineconfigpool-worker.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: VSphereMachineConfigPool
 metadata:
@@ -696,8 +697,8 @@ spec:
 Apply both manifests:
 
 ```bash
-kubectl apply -f 02-vspheremachineconfigpool-control-plane.yaml
-kubectl apply -f 03-vspheremachineconfigpool-worker.yaml
+kubectl apply -f 16-vspheremachineconfigpool-control-plane.yaml
+kubectl apply -f 17-vspheremachineconfigpool-worker.yaml
 ```
 
 Verify the pool binding and slot state before you create Machines:
@@ -712,12 +713,37 @@ The pool is also the authority for persistent-disk replacement state. When a VM 
 
 Do not create a new pool name as a routine retry for Machine replacement. A different `VSphereMachineConfigPool.metadata.name` creates independent slots and VMDKs, so repeated teardown and redeployment can temporarily consume multiple complete disk sets. Before another deployment on a capacity-constrained datastore, wait for earlier pools and their VMDKs to finish provider-managed deletion. See [Persistent disk lifecycle](../infrastructure/vmware-vsphere.mdx#persistent-disk-lifecycle) for the teardown checks and `status.configStatuses[].reclaimStatus` fields.
 
+### Apply the optional failure-domain objects
+
+Skip this step for the baseline single-datacenter topology.
+
+If failure domains are enabled, complete [Multiple datacenters and failure domains](#multiple-datacenters-and-failure-domains), then apply the failure-domain objects before creating the control plane:
+
+```bash
+kubectl apply -f 18-failure-domains.yaml
+kubectl get vspherefailuredomain,vspheredeploymentzone
+```
+
+Verify that every `VSphereFailureDomain` and `VSphereDeploymentZone` referenced by the cluster exists. Do not proceed until the deployment zones are available. Treat the following as one configuration set:
+
+- The `VSphereFailureDomain` and `VSphereDeploymentZone` objects in `18-failure-domains.yaml`
+- `VSphereCluster.spec.failureDomainSelector` in `10-cluster.yaml`
+- The CPI `[Labels]` block in `15-vsphere-cpi-clusterresourceset.yaml`
+
+Do not add `failureDomainSelector` or the CPI `[Labels]` block to the baseline manifests when failure domains are not enabled.
+
 ### Create the control plane objects
 
 Create the `VSphereMachineTemplate` and `KubeadmControlPlane` objects. Replace the placeholders in the following full template with the values collected in the checklist document.
 
 <Directive type="warning" title="Kubernetes 1.35 kubelet settings">
-  `imagePullCredentialsVerificationPolicy: NeverVerify` is required only starting with Kubernetes 1.35. Omit this parameter when creating a cluster with Kubernetes 1.34 or earlier.
+The baseline control-plane and worker manifests omit `imagePullCredentialsVerificationPolicy` and are valid for Kubernetes 1.34 or earlier.
+
+For Kubernetes 1.35 or later, add the following field to the `KubeletConfiguration` JSON in both `20-control-plane.yaml` and `30-workers-md-0.yaml` before applying either manifest:
+
+```json
+"imagePullCredentialsVerificationPolicy": "NeverVerify",
+```
 </Directive>
 
 `cloneMode` and `diskGiB` both remain present in the template because CAPV accepts both fields. In practice, `diskGiB` only affects the system disk when the actual clone operation is `fullClone`. If `cloneMode` is `linkedClone` and the template has a usable snapshot, CAPV completes a linked clone and the system disk size remains equal to the source template. If no usable snapshot exists, CAPV falls back to `fullClone`, and `diskGiB` applies again.
@@ -824,7 +850,6 @@ spec:
         {
           "apiVersion": "kubelet.config.k8s.io/v1beta1",
           "kind": "KubeletConfiguration",
-          "imagePullCredentialsVerificationPolicy": "NeverVerify",
           "protectKernelDefaults": true,
           "streamingConnectionIdleTimeout": "5m",
           "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
@@ -1071,7 +1096,7 @@ kubectl apply -f 20-control-plane.yaml
 
 Create the worker machine template, bootstrap template, and `MachineDeployment`.
 
-The worker kubelet patch follows the same version rule as the control plane: `imagePullCredentialsVerificationPolicy: NeverVerify` is required only starting with Kubernetes 1.35 and must be omitted for Kubernetes 1.34 or earlier.
+The baseline worker kubelet patch omits the Kubernetes 1.35-only field. If the selected version is Kubernetes 1.35 or later, add `imagePullCredentialsVerificationPolicy: NeverVerify` here as well as in `20-control-plane.yaml`, as described in the control-plane step.
 
 ```yaml title="30-workers-md-0.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -1123,7 +1148,6 @@ spec:
           {
             "apiVersion": "kubelet.config.k8s.io/v1beta1",
             "kind": "KubeletConfiguration",
-            "imagePullCredentialsVerificationPolicy": "NeverVerify",
             "protectKernelDefaults": true,
             "staticPodPath": null,
             "streamingConnectionIdleTimeout": "5m",
@@ -1322,11 +1346,11 @@ The baseline manifest intentionally starts with one datacenter and one NIC. Befo
 
 When nodes require an additional management, storage, or service network, extend the manifests in the following resources:
 
-- `02-vspheremachineconfigpool-control-plane.yaml`
-- `03-vspheremachineconfigpool-worker.yaml`
+- `16-vspheremachineconfigpool-control-plane.yaml`
+- `17-vspheremachineconfigpool-worker.yaml`
 - `20-control-plane.yaml`
 - `30-workers-md-0.yaml`
-- `04-failure-domains.yaml` if failure domains are enabled
+- `18-failure-domains.yaml` if failure domains are enabled
 
 Each node slot declares its NIC layout under `network.primary` and `network.additional`. The primary NIC is used to derive the kubelet `node-ip` and remains the node's primary identity; additional NICs are merged after it in the order listed.
 
@@ -1437,7 +1461,7 @@ If you add a third datacenter, continue with the same placeholder pattern:
 - `<default_datastore_3>`
 - `<resource_pool_path_3>`
 
-Create the failure-domain objects in `04-failure-domains.yaml`. The first datacenter also needs a `VSphereFailureDomain` and `VSphereDeploymentZone` when failure domains are enabled:
+Create the failure-domain objects in `18-failure-domains.yaml`. The first datacenter also needs a `VSphereFailureDomain` and `VSphereDeploymentZone` when failure domains are enabled:
 
 ```yaml
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1

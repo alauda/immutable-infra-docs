@@ -1,5 +1,5 @@
 ---
-weight: 10
+weight: 30
 title: VMware vSphere Infrastructure Preparation
 author: dev@alauda.io
 category: howto
@@ -19,7 +19,7 @@ Use this checklist in the following scenarios:
 
 - You are preparing a new VMware vSphere cluster deployment.
 - You want to validate external dependencies before you start the deployment.
-- You plan to enable extension scenarios such as multiple datacenters, multiple NICs, or extra worker nodes.
+- You plan to enable optional creation-time topology variants such as multiple datacenters, multiple NICs, or extra worker nodes.
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ Use this checklist in the following order:
 1. Collect the deployment parameters listed in this document.
 2. Replace every placeholder in the manifest templates with the actual values collected here.
 3. Reuse the same value everywhere a placeholder appears in multiple manifests.
-4. If an optional feature is not enabled, remove the corresponding YAML block exactly as described in the extension document.
+4. If an optional feature is not enabled, omit the corresponding YAML block exactly as described in [Creation-Time Topology Variants](../create-cluster/vmware-vsphere.mdx#creation-time-topology-variants).
 5. If an optional field (such as `deviceName`) is not needed, remove the entire line from the YAML manifest.
 
 ## Parameter Sources and Safe Collection
@@ -125,7 +125,7 @@ A vCenter resource pool is the native vCenter inventory object, for example:
 /Datacenter1/host/cluster1/Resources
 ```
 
-In the extension scenarios, this path is used by `VSphereDeploymentZone.spec.placementConstraint.resourcePool`.
+When the failure-domain creation variant is enabled, this path is used by `VSphereDeploymentZone.spec.placementConstraint.resourcePool`.
 
 ### Compute cluster
 
@@ -213,7 +213,7 @@ VMware vSphere Provider `v1.0.16` uses an external LoadBalancer. The provider do
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
 | Cluster name | `<cluster_name>` | Yes | Use the same value in all manifests. | `demo-cluster` | - |
-| Kubernetes version | `<k8s_version>` | Yes | Use the version required by the target platform release. | `v1.33.7-2` | - |
+| Kubernetes version | `<k8s_version>` | Yes | Use the version required by the target platform release. The baseline manifests omit `imagePullCredentialsVerificationPolicy` for Kubernetes 1.34 or earlier. For Kubernetes 1.35 or later, add `imagePullCredentialsVerificationPolicy: NeverVerify` to the kubelet patch in both the control-plane and worker manifests. | `v1.33.7-2` | - |
 | Control plane replicas | `<cp_replicas>` | Yes | The baseline topology uses `3`. | `3` | - |
 | Worker replicas | `<worker_replicas>` | Yes | The baseline topology uses `1`. | `1` | - |
 | Pod CIDR | `<pod_cidr>` | Yes | Must not overlap with existing networks. | `10.244.0.0/16` | - |
@@ -421,7 +421,7 @@ Do not manually delete a VMDK while its slot is `Released` or while `reclaimStat
 | CPI datacenter list | `<cpi_datacenters>` | Yes | Include every target datacenter when multiple datacenters are enabled. | `dc-a,dc-b` | - |
 | CPI image tag | `<cpi_image_tag>` | Yes | Tag for the vSphere CPI component. The full reference is `<image_registry>/ait/cloud-provider-vsphere:<cpi_image_tag>`. | `v1.33.1-alauda.1` | - |
 
-## Optional Extension Parameters
+## Optional Creation-Time Topology Parameters
 
 ### Multiple datacenters and multiple failure domains
 

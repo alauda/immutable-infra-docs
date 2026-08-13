@@ -32,7 +32,7 @@ When you add more worker nodes, update the worker machine config pool before you
 
 Worker scale-out depends on the relationship between `MachineDeployment.spec.replicas` and the available node slots in `VSphereMachineConfigPool.spec.configs[]`. The number of slots can be greater than `replicas`, and idle slots do not affect a running cluster. If `replicas` exceeds the number of available slots, CAPV cannot assign the new workers correctly.
 
-1. Add one or more new node slots to `03-vspheremachineconfigpool-worker.yaml`.
+1. Add one or more new node slots to `17-vspheremachineconfigpool-worker.yaml`.
 2. Update `replicas` in `30-workers-md-0.yaml`.
 3. Apply the updated manifests.
 
@@ -79,7 +79,7 @@ replicas: <worker_replicas>
 Use the following order:
 
 ```bash
-kubectl apply -f 03-vspheremachineconfigpool-worker.yaml
+kubectl apply -f 17-vspheremachineconfigpool-worker.yaml
 kubectl apply -f 30-workers-md-0.yaml
 ```
 

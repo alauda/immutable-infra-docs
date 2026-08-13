@@ -3,7 +3,7 @@
   "generator_version": 3,
   "project_name": "Immutable Infrastructure Documentation",
   "summary": "Immutable Infrastructure product documentation covering Cluster API-based Kubernetes cluster lifecycle management, provider support, installation, upgrades, node operations, machine configuration, and Kubernetes API references.",
-  "generated_at": "2026-08-12T13:52:29Z",
+  "generated_at": "2026-08-13T07:33:12Z",
   "include_patterns": [
     "docs/en/*.md",
     "docs/en/*.mdx",
@@ -531,11 +531,11 @@
       "updated_at": "2026-08-12T13:52:29Z"
     },
     "docs/en/create-cluster/vmware-vsphere.mdx": {
-      "sha256": "779cea7049e51d28e644fa3b9d5fb3e89f225b2a2b81ba97dc75a74ebef922bd",
-      "size": 66483,
-      "description": "End-to-end guide for creating a VMware vSphere workload cluster by applying Cluster API manifests to the ACP `global` management cluster, validated against VMware vSphere Provider `v1.0.16`. Covers vCenter identity, `Cluster`/`VSphereCluster`, CPI delivery through `ClusterResourceSet`, static node slots and persistent disks in `VSphereMachineConfigPool`, control-plane and worker templates, kubeadm resources, external LoadBalancer and Registry boundaries, verification, troubleshooting, and creation-time variants for second NICs, multiple datacenters and failure domains, and extra or raw disks. Explicitly distinguishes workload-cluster creation from installing the `global` cluster and routes Day-2 changes to the node-management guide.",
+      "sha256": "05c6779eb411622d753c8dec34b5dc4ad20c91de30d1ca4a982221532d6e00f6",
+      "size": 67657,
+      "description": "End-to-end guide for creating a VMware vSphere workload cluster by applying Cluster API manifests to the ACP `global` management cluster, validated against VMware vSphere Provider `v1.0.16`. Covers vCenter identity, ordered manifest application, CPI delivery through `ClusterResourceSet`, static node slots and persistent disks in `VSphereMachineConfigPool`, control-plane and worker templates, external LoadBalancer and Registry boundaries, verification, and troubleshooting. Keeps failure-domain objects conditional, separates the Kubernetes 1.35 kubelet variant from the earlier-version baseline, and includes creation-time variants for second NICs, multiple datacenters, and extra or raw disks.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-12T13:52:29Z"
+      "updated_at": "2026-08-13T07:33:12Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
       "sha256": "c7b83e02f640b486c8f804096ab78d28bd902221c2d03f30905dafc8fe162137",
@@ -564,6 +564,13 @@
       "description": "Procedure for the Kubernetes/OS-image phase (Phase 2) of upgrading a `global` cluster on Immutable Infrastructure: create new `DCSMachineTemplate` or `HCSMachineTemplate` resources with the target MicroOS `vmTemplateName`/`imageName`, retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment` to the new templates, keep `rollingUpdate.maxSurge: 0` so fixed IPs and pool-managed persistent disks (`/var/cpaas` declared in `DCSIpHostnamePool.spec.pool[].persistentDisk`) can be reused, then monitor rolling node replacement via `kubectl get machines`/`kubeadmcontrolplane`. Includes rollback notes (etcd backup restore, manifest revert) and warns that single-control-plane HCS clusters are not supported by this workflow.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-05-16T06:24:44Z"
+    },
+    "docs/en/how-to/control-plane-endpoint.mdx": {
+      "sha256": "1b9c7a08a000cdf67fdb81cbbd10938752ed9f3db88548b9b669334161830317",
+      "size": 5317,
+      "description": "Provider-version-aware contract for planning the Kubernetes API control-plane endpoint. Defines the external LoadBalancer listener, frontend, backend, health-check, reachability, ownership, DNS, and certificate requirements; gives validation commands and endpoint-change cautions; and gates Self-built VIP guidance by released provider capability. Documents DCS `v1.0.21` and vSphere `v1.0.16` as External-only, Bare Metal's first published Internal/External model, and HCS's provider-managed ELB path without promising unreleased provider versions.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-08-13T07:33:12Z"
     },
     "docs/en/how-to/dcs_persistent_disk_upgrade.mdx": {
       "sha256": "fd1de8ba44c36c8eb8d7bcb8b52474a01cae63ed0162d9f2dd87be2b2bc0626e",
@@ -629,11 +636,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/infrastructure/vmware-vsphere.mdx": {
-      "sha256": "663d2dbb1a930b621d4771e5e9e318741b688a9e781f4524085bccc9b1f4ea8c",
-      "size": 37891,
-      "description": "Preparation and parameter checklist for VMware vSphere workload clusters, validated against VMware vSphere Provider `v1.0.16`. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template and image requirements, external control-plane LoadBalancer and permanent Registry readiness, CIDRs, node-slot networking, machine sizing, CPI inputs, and mandatory or optional persistent disks. Explains the `VSphereMachineConfigPool` disk lifecycle, same-pool reuse versus provider-managed reclaim, datastore-capacity checks, and the placeholders consumed by the canonical creation guide.",
+      "sha256": "a153619ba85db76c3f9549244dc2636844622782be2c559900d565ac8f05c259",
+      "size": 38287,
+      "description": "Preparation and parameter checklist for VMware vSphere workload clusters, validated against VMware vSphere Provider `v1.0.16`. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template and image requirements, external control-plane LoadBalancer and permanent Registry readiness, CIDRs, node-slot networking, machine sizing, CPI inputs, and persistent disks. Links optional parameters to the canonical creation-time topology variants, records the Kubernetes 1.35 kubelet-patch rule, and explains same-pool disk reuse, provider-managed reclaim, and datastore-capacity checks.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-12T13:52:29Z"
+      "updated_at": "2026-08-13T07:33:12Z"
     },
     "docs/en/install/bare-metal.mdx": {
       "sha256": "12ea618bec2c7c326c95fc7c339da6b2403ee4ed4933cb8036525e06d6725df3",
@@ -727,11 +734,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/manage-nodes/vmware-vsphere.mdx": {
-      "sha256": "8c645b095dfe81b8b5c2bbdd6b03019bc718a4eac7fc86e359e6c53e36bb983f",
+      "sha256": "a1848b8f4ef8ab8a47169d8adc82f186effeda905ac07ef45bc192335f0ec706",
       "size": 11691,
       "description": "Day-2 guide for VMware vSphere worker nodes managed through `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment`. Covers scale-out by adding slots before replicas, immutable infrastructure-template and bootstrap-template replacement, rollout monitoring and rollback, and runtime topology changes for NICs, failure domains, and persistent disks. Preserves the existing pool identity when slots or VMDKs must be reused, explains that differently named pools do not share disks and that `releaseDelayHours` is an unused-slot reclaim grace period rather than a replacement wait, and provides checks for pool readiness, Machines, `VSphereMachine`, `VSphereVM`, and Nodes.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-12T13:52:29Z"
+      "updated_at": "2026-08-13T07:33:12Z"
     },
     "docs/en/overview/architecture.mdx": {
       "sha256": "be3dace31f1830bb79de4afd63206f29d3edd82d560e8b47e6596454bd0e3c28",
