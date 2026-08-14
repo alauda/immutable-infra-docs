@@ -30,6 +30,12 @@ For a Huawei DCS cluster that uses Alauda OS, select the Alauda OS image from th
 
 For ACP `v4.3.2` or later, including ACP `v4.4.0` and later, install DCS Provider `v1.0.21` or later. Do not pair DCS Provider `v1.0.21` or later with an Alauda OS image for an ACP release earlier than `v4.3.2`.
 
+:::info
+**Control plane endpoint boundary for v1.0.21**
+
+DCS Provider `v1.0.21` supports an external LoadBalancer for highly available control plane endpoints. It does not support `DCSCluster.spec.controlPlaneLoadBalancer.type: internal`. Plan the listener, backends, health check, and reachability in [Plan the Control Plane Endpoint](../../how-to/control-plane-endpoint.mdx).
+:::
+
 ## Key Features
 
 - **Virtual Machine Management**: Provision and manage VMs on DCS platform

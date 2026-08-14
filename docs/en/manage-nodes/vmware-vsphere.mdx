@@ -7,6 +7,7 @@ queries:
   - manage vmware vsphere worker nodes
   - scale worker nodes on vsphere cluster
   - update worker node pool on vsphere
+  - change vsphere worker network or disks
 ---
 
 # Managing Nodes on VMware vSphere
@@ -17,7 +18,7 @@ This document explains how to manage worker nodes on VMware vSphere after the ba
 
 Before you begin, ensure the following conditions are met:
 
-- The workload cluster was created successfully. See [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere/).
+- The workload cluster was created successfully. See [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere.mdx).
 - The worker machine config pool has enough available slots.
 - The control plane is healthy and reachable.
 - You know which manifest files currently define the worker nodes.
@@ -29,18 +30,60 @@ Before you begin, ensure the following conditions are met:
 
 When you add more worker nodes, update the worker machine config pool before you increase the replica count.
 
-1. Add one or more new node slots to `03-vspheremachineconfigpool-worker.yaml`.
+Worker scale-out depends on the relationship between `MachineDeployment.spec.replicas` and the available node slots in `VSphereMachineConfigPool.spec.configs[]`. The number of slots can be greater than `replicas`, and idle slots do not affect a running cluster. If `replicas` exceeds the number of available slots, CAPV cannot assign the new workers correctly.
+
+1. Add one or more new node slots to `17-vspheremachineconfigpool-worker.yaml`.
 2. Update `replicas` in `30-workers-md-0.yaml`.
 3. Apply the updated manifests.
+
+The following example adds a worker slot with the required data disks:
+
+```yaml
+- hostname: "<worker_node_name_2>"
+  datacenter: "<worker_02_datacenter>"
+  network:
+    primary:
+      networkName: "<nic1_network_name>"
+      ip: "<worker_02_nic1_ip>/<nic1_prefix>"
+      gateway: "<nic1_gateway>"
+      dns:
+      - "<nic1_dns_1>"
+  persistentDisks:
+  - name: var-cpaas
+    sizeGiB: <worker_var_cpaas_size_gib>
+    mountPath: /var/cpaas
+    fsFormat: ext4
+  - name: var-lib-containerd
+    sizeGiB: <worker_var_lib_containerd_size_gib>
+    mountPath: /var/lib/containerd
+    fsFormat: ext4
+```
+
+To attach an additional raw disk without formatting or mounting, omit `mountPath` and `fsFormat`:
+
+```yaml
+  persistentDisks:
+  # ...required disks...
+  - name: app-data
+    sizeGiB: 50
+```
+
+The raw disk is available inside the guest OS at `/dev/disk/by-capv/app-data`. On rolling updates, the same VMDK is re-attached to the replacement VM and the symlink is recreated. The application remains responsible for the disk contents and runtime mount.
+
+Then increase the worker replicas:
+
+```yaml
+replicas: <worker_replicas>
+```
 
 Use the following order:
 
 ```bash
-kubectl apply -f 03-vspheremachineconfigpool-worker.yaml
+kubectl apply -f 17-vspheremachineconfigpool-worker.yaml
 kubectl apply -f 30-workers-md-0.yaml
 ```
 
-**Note:** If `MachineDeployment.spec.replicas` is greater than the number of available slots in `VSphereMachineConfigPool.spec.configs[]`, the new worker nodes cannot be assigned correctly.
+**Note:** Keep the same existing `VSphereMachineConfigPool.metadata.name` when scale-out or replacement must preserve the logical pool. Slots and VMDKs are not reused across differently named pool objects. `releaseDelayHours` is the reclaim grace period for an unused `Released` slot, not a delay before same-pool reuse.
 
 ### Roll out updated worker node configuration \{#roll-out-updated-worker-node-configuration}
 
@@ -56,7 +99,10 @@ Typical changes include:
 
 - VM template name (`spec.template.spec.template`)
 - CPU or memory sizing (`numCPUs`, `memoryMiB`)
-- System disk or data disk layout (`diskGiB`, `dataDisks`)
+- System disk sizing (`diskGiB`)
+- VM network devices (`network.devices`)
+
+Persistent disks are owned by `VSphereMachineConfigPool` slots rather than `VSphereMachineTemplate`. Update the pool slots first when a replacement needs a changed persistent-disk layout.
 
 1. **Export the existing template**
 
@@ -175,6 +221,31 @@ Confirm the following results:
 **Upgrading Kubernetes version?** See [Upgrading Clusters on VMware vSphere](../upgrade-cluster/vmware-vsphere.mdx) for the full control plane and worker upgrade workflow.
 :::
 
+## Runtime Topology Changes \{#runtime-topology-changes}
+
+Networking, placement, and disk topology are part of the machine templates and machine config pool. Treat a change to these fields as an immutable rollout, not as an in-place VM edit:
+
+1. Add or update the required slot definitions in the existing `VSphereMachineConfigPool` before increasing replicas or starting replacement.
+2. Create a new `VSphereMachineTemplate` when its immutable VM, network, placement, or system-disk fields change.
+3. Create a new `KubeadmConfigTemplate` when bootstrap files or node configuration change.
+4. Update the `MachineDeployment` references only after the new pool capacity and templates exist.
+5. Monitor replacement Machines and confirm that every node becomes `Ready` before removing old templates.
+
+For the exact second-NIC, failure-domain, and persistent-disk fields, use the creation-time variants in [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere.mdx#creation-time-topology-variants). Preserve the same cross-resource relationships during Day-2 changes:
+
+- Keep `VSphereMachineConfigPool.spec.configs[].network.additional`, `VSphereMachineTemplate.spec.template.spec.network.devices`, and `VSphereFailureDomain.spec.topology.networks` consistent when NIC topology changes.
+- Configure `VSphereCluster.spec.failureDomainSelector` and the CPI `[Labels]` block together when enabling failure domains.
+- Do not remove required `var-cpaas`, `var-lib-containerd`, or control-plane `var-lib-etcd` disks.
+- Do not treat `machineNamingStrategy`, `wipeFilesystem`, or `releaseDelayHours` as a switch that moves disks between pools or accelerates datastore cleanup.
+
+When you expand from one NIC to two NICs, update all of the following fields together:
+
+1. Append the second NIC entry to `VSphereMachineConfigPool.spec.configs[].network.additional`; keep `network.primary` unchanged.
+2. Add the second device to `VSphereMachineTemplate.spec.template.spec.network.devices` in the new immutable template.
+3. Add the second network to `VSphereFailureDomain.spec.topology.networks` when failure domains are enabled.
+
+When you revert from two NICs to one NIC, remove the corresponding second entry from all three fields. Leave `network.additional` empty or remove the key entirely, and roll out a new `VSphereMachineTemplate`; do not edit existing VMs directly.
+
 ## Troubleshooting
 
 Use the following checks first when worker node management fails:
@@ -189,4 +260,4 @@ Use the following checks first when worker node management fails:
 
 ## Next Steps
 
-If you need to change worker networking, placement, or disk topology, continue with [Extending a VMware vSphere Cluster Deployment](../create-cluster/vmware-vsphere/extension-scenarios.mdx).
+For infrastructure preparation and persistent-disk diagnostics, see [VMware vSphere Infrastructure Preparation](../infrastructure/vmware-vsphere.mdx). For cluster creation manifest fields, see [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere.mdx).
