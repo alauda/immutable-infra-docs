@@ -1,0 +1,82 @@
+---
+weight: 15
+title: Plan the Control Plane Endpoint
+queries:
+  - control plane endpoint load balancer
+  - kubernetes api external load balancer
+  - immutable infrastructure vip
+  - self-built vip requirements
+---
+
+# Plan the Control Plane Endpoint
+
+Every cluster needs a stable endpoint for the Kubernetes API. Select the endpoint mode before you create the cluster, and keep the address stable after kubeadm initializes the control plane.
+
+## Provider and Version Boundary
+
+Endpoint capabilities are provider-version specific. An ACP minor version alone does not enable a provider feature.
+
+| Provider | Last verified provider release | Documented endpoint modes |
+|---|---|---|
+| Huawei DCS | `v1.0.21` | External LoadBalancer. A single control-plane node can use its own IP only for development or PoC. `type: internal` is not supported by this release. |
+| VMware vSphere | `v1.0.16` | External LoadBalancer. The provider does not deploy a Self-built VIP component. |
+| Bare Metal | Pre-GA provider API | `Internal` Self-built VIP and `External` LoadBalancer. Because there is no earlier GA release to preserve, the Bare Metal guide documents both modes without a legacy-version workflow. |
+| Huawei Cloud Stack | Provider-managed HCS ELB | Use the endpoint fields and ELB workflow in [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx). |
+
+Do not configure an internal or Self-built VIP mode for DCS or vSphere until the provider release notes and this documentation name the exact provider version that supports it.
+
+The DCS `v1.0.22 and later` boundary in [Upgrade Kube-OVN Before the Control Plane](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane) describes full-source Kube-OVN reconciliation only, and applies only when such a provider version is installed. It does not state that `v1.0.22` is available as a formal provider package or that the release supports Self-built VIP. For endpoint planning, `v1.0.21` remains the last verified DCS release and External LoadBalancer remains the documented mode until the provider release notes and package define a new endpoint-capability boundary.
+
+## External LoadBalancer Contract \{#external-loadbalancer-contract}
+
+Provision and validate the load balancer before you apply the Cluster API resources.
+
+| Requirement | Contract |
+|---|---|
+| Listener | Use Layer 4 TCP forwarding with TLS passthrough. The Kubernetes API server, not the load balancer, terminates TLS. |
+| Frontend | Use one stable VIP or FQDN and TCP port `6443`. Reserve the address before cluster creation. |
+| Backends | Add every control-plane node IP on TCP port `6443`. Do not add worker nodes. |
+| Health check | Prefer an HTTPS check to `https://<control-plane-node-ip>:6443/healthz` and require HTTP `200`. If the device supports only TCP checks, document that the check proves port reachability but not API-server health. |
+| Backend ownership | The load balancer owner must update backend membership when control-plane nodes are added, replaced, or removed. The DCS and vSphere providers do not manage external load balancer backends. |
+| Bootstrap reachability | The bootstrap host or current management cluster must reach the frontend endpoint while Cluster API creates the control plane. |
+| Node reachability | All control-plane nodes must reach the endpoint. Workload-cluster endpoints must also be reachable from the `global` cluster. |
+| Name and certificate | If the frontend is an FQDN, create DNS before cluster creation and include the FQDN in the API server certificate SANs. |
+
+For ACP port requirements, use the authoritative pages instead of copying the complete port matrix into this documentation:
+
+- For a `global` cluster, see <ExternalSiteLink name="acp" href="/install/prepare/prerequisites.html#port-forward" children="LoadBalancer Forwarding Rules" />.
+- For a workload cluster, see <ExternalSiteLink name="acp" href="/configure/clusters/on-premises.html#connecting-global-cluster-and-workload-cluster" children="Connecting global Cluster and Workload Cluster" />.
+
+:::warning
+Do not change the control plane endpoint after the cluster is initialized as a routine load-balancer edit. The endpoint is embedded in API server certificates, kubeconfigs, and management-cluster connections. Changing it requires a planned certificate and connectivity migration.
+:::
+
+### Validate an External LoadBalancer
+
+Before cluster creation, confirm that the listener exists and that the bootstrap or management environment can open the frontend port:
+
+```bash
+nc -vz <control-plane-endpoint> 6443
+```
+
+After at least one API server is running, verify the preferred health check from a network location that represents the load balancer:
+
+```bash
+curl -kfsS https://<control-plane-node-ip>:6443/healthz
+```
+
+The expected response is `ok` with HTTP status `200`.
+
+## Self-built VIP Contract
+
+Use this contract only when the exact provider release supports a Self-built VIP mode. In the current documented set, this applies to the pre-GA Bare Metal provider API.
+
+- Reserve an unused IPv4 address in the same Layer-2 network as the control-plane interface that will hold the VIP.
+- Use a VRID that is unique in that Layer-2 domain.
+- Allow VRRP traffic and gratuitous ARP updates between the control-plane nodes and the surrounding network.
+- Use at least three control-plane nodes for high availability.
+- Ensure the node image exposes the Linux IPVS subsystem and allows Alive to set `net.ipv4.conf.all.arp_accept=1` and `net.ipv4.vs.conntrack=1`.
+- Use an IP address, not a domain name, for the Self-built VIP.
+- Let the provider and Alive reconcile the VIP and backend membership when control-plane nodes are replaced. Do not maintain a second manual backend list for the same VIP.
+
+For Bare Metal manifests and verification, see [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx#step-3-control-plane).

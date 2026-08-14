@@ -3,7 +3,7 @@
   "generator_version": 3,
   "project_name": "Immutable Infrastructure Documentation",
   "summary": "Immutable Infrastructure product documentation covering Cluster API-based Kubernetes cluster lifecycle management, provider support, installation, upgrades, node operations, machine configuration, and Kubernetes API references.",
-  "generated_at": "2026-05-16T06:24:44Z",
+  "generated_at": "2026-08-13T09:03:05Z",
   "include_patterns": [
     "docs/en/*.md",
     "docs/en/*.mdx",
@@ -524,39 +524,18 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/create-cluster/index.mdx": {
-      "sha256": "e22256ba29501e369bc97b97524c633c193e20bd14ad964eeb849e4eecab78e8",
-      "size": 1448,
-      "description": "Landing page for the Creating Clusters section, summarizing prerequisites (infrastructure resources, x86-64-v2 ISA baseline for x86_64 nodes running ACP MicroOS images) and routing to provider-specific guides for Huawei DCS, Huawei Cloud Stack, VMware vSphere (all Available), and Bare Metal (Planned).",
+      "sha256": "4a4fe829a89520ed3f99d13d9cac7c58502fe72481f5e286ed300a9e3a806e02",
+      "size": 1363,
+      "description": "Landing page for the Creating Clusters section. Summarizes common prerequisites—provider infrastructure preparation, the provider/version-specific control-plane endpoint contract, and the x86-64-v2 CPU baseline for ACP-provided Alauda OS images—and links directly to the Huawei DCS, Huawei Cloud Stack, VMware vSphere, and Bare Metal creation guides.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-12T13:52:29Z"
     },
-    "docs/en/create-cluster/vmware-vsphere/create-cluster-in-global.mdx": {
-      "sha256": "e7af0ab4a2cb58ffe3dcb6f1d6560fdb4334c9ba30a699ffea562100d5b1f404",
-      "size": 44145,
-      "description": "Step-by-step baseline workflow for creating a CAPV-managed VMware vSphere workload cluster from the `global` cluster using standard CAPV mode (direct vCenter connection, one datacenter, one NIC per node, static IP via `VSphereMachineConfigPool`). Details the eight numbered manifests in a `capv-cluster/` directory (namespace, vCenter `Secret`, control-plane and worker `VSphereMachineConfigPool` with `var-cpaas`/`var-lib-containerd`/`var-lib-etcd` persistent disks, `Cluster`+`VSphereCluster`, `ClusterResourceSet` delivering the vSphere CPI ConfigMap/Secret/manifests with `vsphere-cloud-controller-manager` DaemonSet, `VSphereMachineTemplate`+`KubeadmControlPlane`, and `VSphereMachineTemplate`+`KubeadmConfigTemplate`+`MachineDeployment` for workers), the `capv-load-local-images.sh` script that imports `/root/images/*.tar` into containerd including the matching `sandbox_image`, validation of `ClusterResourceSet=true` and the `public-registry-credential` Secret, plus extensive troubleshooting for CPI delivery, slot binding, IP allocation, and `linkedClone` vs `fullClone` system-disk sizing.",
+    "docs/en/create-cluster/vmware-vsphere.mdx": {
+      "sha256": "27edf4a1b7655b8ce205a81224928f82bfcd498a1bf4d228d46ea70ef70ed3b1",
+      "size": 68478,
+      "description": "End-to-end guide for creating a VMware vSphere workload cluster by applying Cluster API manifests to the ACP `global` management cluster, validated against VMware vSphere Provider `v1.0.16`. Covers vCenter identity, ordered manifest application, CPI delivery through `ClusterResourceSet`, static node slots and persistent disks in `VSphereMachineConfigPool`, control-plane and worker templates, external LoadBalancer and Registry boundaries, verification, and troubleshooting. Distinguishes Registry-served Kube-OVN, CoreDNS, and vSphere CPI artifacts from the exact etcd, kube-apiserver, and sandbox image references preloaded by the OS template, and links the executable template-validation procedure. Keeps failure-domain objects conditional, separates the Kubernetes 1.35 kubelet variant from the earlier-version baseline, and includes creation-time variants for second NICs, multiple datacenters, and extra or raw disks.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
-    },
-    "docs/en/create-cluster/vmware-vsphere/extension-scenarios.mdx": {
-      "sha256": "2cbc57a147fa1def8475d48550ecb39c560c010be771a2be5ad78f98801247a5",
-      "size": 12187,
-      "description": "How-to for extending a running baseline CAPV vSphere cluster with optional features: adding a second NIC via `network.additional` in `VSphereMachineConfigPool` and a second device in `VSphereMachineTemplate` (plus `VSphereFailureDomain.spec.topology.networks` when failure domains are on), enabling multiple datacenters by creating per-DC `VSphereFailureDomain` and `VSphereDeploymentZone` objects and setting `VSphereCluster.spec.failureDomainSelector: {}` for control planes plus `MachineDeployment.spec.template.spec.failureDomain` (using the deployment-zone name) for workers, appending extra data disks (including raw `/dev/disk/by-capv/<name>` symlinks when `mountPath` is omitted), and scaling out workers by first adding `VSphereMachineConfigPool` node slots before raising `MachineDeployment.spec.replicas`.",
-      "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
-    },
-    "docs/en/create-cluster/vmware-vsphere/index.mdx": {
-      "sha256": "8a617d030eb30ef97780312032c5f8acca7ffd3c28bacf8815dcc825e4aedb64",
-      "size": 1427,
-      "description": "Index for the VMware vSphere cluster creation section, prescribing the reading order: Parameter Checklist, the baseline create-in-global workflow, and Extension Scenarios. States the baseline scope (one datacenter, one NIC per node, three control plane nodes, one worker, static IP via `VSphereMachineConfigPool`) and directs operators to extension scenarios for larger topologies.",
-      "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
-    },
-    "docs/en/create-cluster/vmware-vsphere/parameter-checklist.mdx": {
-      "sha256": "48101f61980312cf8a92ef9750caf7dd0418cdd65983f00da2e0f478cd10cd52",
-      "size": 25898,
-      "description": "Pre-deployment checklist that enumerates every placeholder needed by the CAPV baseline manifests and extension scenarios, with example values, validation commands, and a blank `Actual Value` column. Covers management-cluster prerequisites (`cluster-api-provider-vsphere`/`cluster-api-provider-kubeadm` plugins, `ClusterResourceSet=true`), vCenter connection details, VM template requirements (cloud-init, open-vm-tools, containerd, pre-loaded `/root/images/*.tar` matching the configured `sandbox_image`), `<clone_mode>` and `<power_off_mode>` semantics, control-plane VIP/port 6443 readiness, cluster baseline parameters (Pod/Service CIDRs, kube-ovn join CIDR, image registry, CoreDNS/etcd image tags, AES encryption-provider secret), the openssl command to obtain the vCenter thumbprint, single-datacenter NIC and node-slot values, required persistent disks per role (`var-cpaas`, `var-lib-containerd`, and `var-lib-etcd` with `wipeFilesystem: true`), vSphere CPI parameters, and optional extension parameters for multi-datacenter failure domains and second-NIC topology.",
-      "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-13T13:09:02Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
       "sha256": "c7b83e02f640b486c8f804096ab78d28bd902221c2d03f30905dafc8fe162137",
@@ -573,11 +552,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "f62dcaf6ecad4f3a46427fbabbc9d6401dee64ccdf9bbd99437c92daa693b724",
-      "size": 39431,
-      "description": "End-to-end procedure for installing the `global` control-plane cluster onto MicroOS via Cluster API on Huawei DCS or Huawei Cloud Stack, including KIND bootstrap (`minialauda`), uploading the Core Package, applying `AppRelease` manifests for `cluster-api-provider-kubeadm` plus `cluster-api-provider-dcs`/`cluster-api-provider-hcs`, authoring the provider-specific `Cluster`/`KubeadmControlPlane`/`DCSCluster`/`HCSCluster` manifest with `is-global: true` labels and `format: ignition`, posting the installer JSON to `/cpaas-installer/api/config/dcs`, and optional DR additions (shared encryption Secret, DR VIP in `serverCertSANs`, `dcs-import-extra-resources` ConfigMap, and `global-etcd-sync` ModuleInfo on the standby).",
+      "sha256": "f731bc45b2fa3bf56106fe60de43be8eea2b45dceed47ad510e90784ebb9f22e",
+      "size": 118555,
+      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers provider-package delivery, Registry address formats and optional authentication, provider-specific Cluster API manifests, External versus Bare Metal Internal endpoint selection, installer requests, verification, provider-resource handoff, optional DR inputs, and the final gates required before decommissioning the bootstrap cluster.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-13T13:09:02Z"
     },
     "docs/en/global/upgrade.mdx": {
       "sha256": "2486f49d01bf7b068fb773f4f3084aedc4638904aa27b8d96cc94e2ee797ae93",
@@ -585,6 +564,13 @@
       "description": "Procedure for the Kubernetes/OS-image phase (Phase 2) of upgrading a `global` cluster on Immutable Infrastructure: create new `DCSMachineTemplate` or `HCSMachineTemplate` resources with the target MicroOS `vmTemplateName`/`imageName`, retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment` to the new templates, keep `rollingUpdate.maxSurge: 0` so fixed IPs and pool-managed persistent disks (`/var/cpaas` declared in `DCSIpHostnamePool.spec.pool[].persistentDisk`) can be reused, then monitor rolling node replacement via `kubectl get machines`/`kubeadmcontrolplane`. Includes rollback notes (etcd backup restore, manifest revert) and warns that single-control-plane HCS clusters are not supported by this workflow.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-05-16T06:24:44Z"
+    },
+    "docs/en/how-to/control-plane-endpoint.mdx": {
+      "sha256": "7b818019c3eb34eaf0bec09efcc2c6d807a0691c50247efb1f872f206921a0b8",
+      "size": 5919,
+      "description": "Provider-version-aware contract for planning the Kubernetes API control-plane endpoint. Defines the external LoadBalancer listener, frontend, backend, health-check, reachability, ownership, DNS, and certificate requirements; gives validation commands and endpoint-change cautions; and gates Self-built VIP guidance by released provider capability. Documents DCS `v1.0.21` and vSphere `v1.0.16` as External-only, Bare Metal's first published Internal/External model, and HCS's provider-managed ELB path. Clarifies that the DCS `v1.0.22+` upgrade boundary describes Kube-OVN reconciliation when that provider is installed, not formal package availability or Self-built VIP support.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-08-13T13:09:02Z"
     },
     "docs/en/how-to/dcs_persistent_disk_upgrade.mdx": {
       "sha256": "fd1de8ba44c36c8eb8d7bcb8b52474a01cae63ed0162d9f2dd87be2b2bc0626e",
@@ -643,11 +629,18 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/infrastructure/index.mdx": {
-      "sha256": "ca94e1e8ceeddb373fa5c2c95a77b2ed329335c12107aadb03ac45419aa95408",
-      "size": 1414,
-      "description": "Index page for the Infrastructure Resources section that enumerates the per-provider preparation pages (Huawei DCS, Huawei Cloud Stack) and the four resource categories — cloud credentials, IP pools, machine templates, and network/load-balancer plans — that must be configured before creating clusters. Links downstream to cluster creation, node management, and upgrade sections.",
+      "sha256": "0948c1dd59261c56876ecd4bdc84d005120b7b0b260e9f33194a1502fb4de5ea",
+      "size": 1560,
+      "description": "Index page for the Infrastructure Resources section that enumerates the per-provider preparation pages for Huawei DCS, Huawei Cloud Stack, and VMware vSphere, and the four resource categories — cloud credentials, IP pools, machine templates, and network/load-balancer plans — that must be configured before creating clusters. Links downstream to cluster creation, node management, and upgrade sections.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-13T13:09:02Z"
+    },
+    "docs/en/infrastructure/vmware-vsphere.mdx": {
+      "sha256": "bda3a58a6ffb78a0355bb77c60d52c7c605b2339fda1e2559330ed2fc6ae95aa",
+      "size": 40760,
+      "description": "Preparation and parameter checklist for VMware vSphere workload clusters, validated against VMware vSphere Provider `v1.0.16`. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template requirements, an executable disposable-VM check for locally preloaded kubeadm and sandbox image references, external control-plane LoadBalancer and permanent Registry readiness for Kube-OVN, CoreDNS, and vSphere CPI, CIDRs, node-slot networking, machine sizing, CPI inputs, and persistent disks. Links optional parameters to the canonical creation-time topology variants, records the Kubernetes 1.35 kubelet-patch rule, and explains same-pool disk reuse, provider-managed reclaim, and datastore-capacity checks.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-08-13T13:16:03Z"
     },
     "docs/en/install/bare-metal.mdx": {
       "sha256": "12ea618bec2c7c326c95fc7c339da6b2403ee4ed4933cb8036525e06d6725df3",
@@ -678,11 +671,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/install/vmware-vsphere.mdx": {
-      "sha256": "3fb8e98b7f1174cde00f08a239a0bfb5db506043178e5b84de631eca5e3f1acb",
-      "size": 2365,
-      "description": "How-to for installing the Alauda Container Platform VMware vSphere Infrastructure Provider (CAPV) alongside the Kubeadm Provider on the `global` cluster. Covers downloading both plugin packages from Customer Portal, uploading them, installing them as cluster plugins, and verifying with `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere`, the matching kubeadm-provider module, and the presence of `vsphere*.infrastructure.cluster.x-k8s.io` CRDs.",
+      "sha256": "d79577ced270f94e444fd0b6bd54bd40497fd704c8ff0004040c457d203738ae",
+      "size": 2452,
+      "description": "How-to for installing the Alauda Container Platform VMware vSphere Infrastructure Provider (CAPV) alongside the Kubeadm Provider on the `global` cluster. Covers downloading both plugin packages from Customer Portal, uploading them, installing them as cluster plugins, and verifying with `kubectl get minfo -l cpaas.io/module-name=cluster-api-provider-vsphere`, the matching kubeadm-provider module, and the presence of `vsphere*.infrastructure.cluster.x-k8s.io` CRDs. Hands off first to the vSphere infrastructure-preparation checklist and then to cluster creation.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-13T13:09:02Z"
     },
     "docs/en/machine-configuration/index.mdx": {
       "sha256": "c23b548347e97a7165f001a6570bf92105328d29bbb9bf471e56664bd6350fbc",
@@ -741,23 +734,16 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/manage-nodes/vmware-vsphere.mdx": {
-      "sha256": "74dbd836f22c71e453bc3622e90d04b19d988e635bfb69576fa6656a63d266c8",
-      "size": 7173,
-      "description": "Day-2 procedures for vSphere worker nodes managed via `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment`. Documents scale-out by extending pool slots in `03-vspheremachineconfigpool-worker.yaml` before bumping `30-workers-md-0.yaml` `replicas`, the immutable-template rollout pattern (export, rename to `<cluster>-worker-v2`, strip server-generated fields, apply, then patch `MachineDeployment.spec.template.spec.infrastructureRef.name`) for changing `numCPUs`/`memoryMiB`/`diskGiB`/`dataDisks`, the analogous bootstrap-template swap, monitoring commands (`get machinedeployment,machine,vspheremachine,vspherevm`), and troubleshooting via `MachineConfigPoolReady` reasons such as `PoolBoundToOtherConsumer` and `NoAvailableSlots`.",
+      "sha256": "a1848b8f4ef8ab8a47169d8adc82f186effeda905ac07ef45bc192335f0ec706",
+      "size": 11691,
+      "description": "Day-2 guide for VMware vSphere worker nodes managed through `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment`. Covers scale-out by adding slots before replicas, immutable infrastructure-template and bootstrap-template replacement, rollout monitoring and rollback, and runtime topology changes for NICs, failure domains, and persistent disks. Preserves the existing pool identity when slots or VMDKs must be reused, explains that differently named pools do not share disks and that `releaseDelayHours` is an unused-slot reclaim grace period rather than a replacement wait, and provides checks for pool readiness, Machines, `VSphereMachine`, `VSphereVM`, and Nodes.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-13T07:33:12Z"
     },
     "docs/en/overview/architecture.mdx": {
       "sha256": "be3dace31f1830bb79de4afd63206f29d3edd82d560e8b47e6596454bd0e3c28",
       "size": 2323,
       "description": "Describes the three-provider Cluster API (CAPI) architecture used by the platform: the Kubeadm Bootstrap Provider handles node initialization/kubelet config/join tokens/certificate rotation, the Kubeadm Control Plane Provider deploys and rolls upgrades for the API server and etcd with HA load balancing and health monitoring, and a pluggable Infrastructure Provider (such as DCS) handles VM provisioning, networking, and resource management on the target IaaS. Includes the CAPI architecture diagram.",
-      "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
-    },
-    "docs/en/overview/feature.mdx": {
-      "sha256": "dae0a7109d741875e5fc8c156d499e63eea6f0557bcdf5c54ac0fe0d7203548e",
-      "size": 5989,
-      "description": "Catalogs Immutable Infrastructure capabilities: full cluster lifecycle (immutable-OS creation, deletion with provider resource release, horizontal scaling, Kubernetes upgrades), the pluggable infrastructure-provider model (DCS and VMware vSphere shipped, more on roadmap), and VM compute lifecycle/instance flavor/storage/network configuration options. Walks through four use cases — 3-node HA control plane with automatic failover, `MachineDeployment.replicas` based horizontal scaling, zero-downtime rolling upgrades governed by `maxSurge`/`maxUnavailable`, and multi-node-pool layouts (general-purpose, compute-optimized, memory-optimized) using separate `MachineDeployment`s, labels, and taints.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-05-16T06:24:44Z"
     },
