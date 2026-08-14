@@ -14,6 +14,22 @@ This page tracks release notes for the Alauda Container Platform VMware vSphere 
 
 For the current full capability list and installation steps, see [VMware vSphere Provider Installation](../install/vmware-vsphere.mdx).
 
+## v1.0.16 (2026-08-05) \{#v1-0-16}
+
+### Enhancements
+
+- **ACP 4.4 system component repositories** — The provider selects the Kube-OVN chart from the target Kube-OVN version, the CoreDNS image repository from the ACP version suffix in the CoreDNS tag, and the kube-proxy image repository from the Kubernetes version. Kube-OVN `v4.4` and later uses `acp/chart-kube-ovn`, CoreDNS tags for ACP `v4.4` and later use `acp`, and Kubernetes `v1.35` and later uses `acp/k8s` for kube-proxy. Earlier targets keep their legacy repository paths.
+
+### Fixed Issues
+
+- **Reliable component reconciliation during upgrades** — The provider reacts to KubeadmControlPlane version and rollout changes, waits for the control-plane rollout before changing workload-cluster kube-proxy and CoreDNS resources, and passes the workload cluster's existing Registry pull credentials to managed system components. This keeps Kube-OVN, CoreDNS, and kube-proxy aligned with the selected ACP and Kubernetes versions.
+
+### Notes
+
+- **External control plane LoadBalancer** — This release does not deploy a Self-built VIP. Provision an external LoadBalancer by following [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
+
+For the provider-version-specific Kube-OVN upgrade sequence, see [Upgrading Clusters on VMware vSphere](../upgrade-cluster/vmware-vsphere.mdx#upgrade-kube-ovn-before-the-control-plane).
+
 ## v1.0.15 (2026-07-09) \{#v1-0-15}
 
 ### Fixed Issues
