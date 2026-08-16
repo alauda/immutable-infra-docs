@@ -42,7 +42,8 @@ Every value used as `Machine.spec.version` (for both the control plane and worke
 
 - Every physical host must be able to reach `global.platformUrl` (`elemental-system-agent` registration, plan secret polling).
 - Every physical host must be able to pull from the platform registry (`global.registry.address`) for both `elemental install` (during the first boot) and `elemental upgrade` (during every reprovision).
-- The control-plane VIP must live in the same Layer-2 broadcast domain as the control-plane node IPs. The `vrid` chosen for the VIP must be unique within that broadcast domain.
+- For `Internal` Self-built VIP, the VIP must live in the same Layer-2 broadcast domain as the control-plane node IPs. The `vrid` must be unique in that domain, the network must allow VRRP and gratuitous ARP updates, and the node image must expose IPVS and allow Alive to set `net.ipv4.conf.all.arp_accept=1` and `net.ipv4.vs.conntrack=1`.
+- For `External` LoadBalancer, provision the listener and control-plane backends before cluster creation. Follow [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
 
 If the target VM or physical host does not receive an address from DHCP while booted into the live ISO, configure the network manually from the host console before waiting for registration. Check the NetworkManager connection name first, then apply the site-specific address, gateway, and DNS values:
 
@@ -114,11 +115,13 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 | `<kubernetes-version>` | `elemental-image-catalog` ConfigMap key (with leading `v`, for example `v1.33.7-2`). | `kubectl -n cpaas-system get cm elemental-image-catalog -o yaml` |
 | `<base-image-iso>` | Same ConfigMap entry, with `-iso` appended to the repository. Tag/digest matches the catalog value. | See the [SeedImage step](#step-1-machineregistration-seedimage). |
 | `<registry-address>` | Platform registry (same value as `global.registry.address` on the install chart). | `kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'` (when one exists). |
-| `<control-plane-vip>` / `<control-plane-port>` / `<vrid>` | Operator-supplied. The VIP must be free in the control-plane Layer-2 domain; `<vrid>` must be unique in that domain. | n/a |
+| `<control-plane-load-balancer-type>` | Operator decision. Use `Internal` for provider-managed Alive or `External` for an existing load balancer. | Review [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). |
+| `<control-plane-vip>` / `<control-plane-port>` | Operator-supplied stable endpoint. For `Internal`, use an unused IPv4 VIP in the control-plane Layer-2 domain. For `External`, use the load balancer frontend address. | n/a |
+| `<vrid>` | Operator-supplied VRID for `Internal` only. It must be unique in the control-plane Layer-2 domain. Remove the field for `External`. | n/a |
 | `<install-device>` | Whole-disk target for `elemental install`. A direct kernel path is suitable only when its identity is stable and unambiguous. For multi-disk bare-metal hosts that reuse one ISO, use `/dev/elemental-install-target`. | Confirm the disk by WWN from the host console. See [Select a Fixed System Disk on Multi-Disk Bare-Metal Hosts](../how-to/configure-fixed-install-disk-bare-metal.mdx). |
 | `<dns-image-tag>` / `<etcd-image-tag>` | Component versions baked into the bare-metal base image for `<kubernetes-version>`. | See [OS Support Matrix](../overview/os-support-matrix.mdx). |
 | `<kube-ovn-version>` | The `acp/chart-cpaas-kube-ovn` chart version matching the selected ACP and Kubernetes release. | Use the **kube-ovn (chart)** value from the [OS Support Matrix](../overview/os-support-matrix.mdx), not the Kube-OVN component version. |
-| `<dns-server>` | Operator-supplied when the first-boot registration path needs an explicit resolver. | Prefer `MachineRegistration.config.cloud-config` or later kubeadm cloud-init. Do not write `/etc/resolv.conf` from `SeedImage.cloud-config`. |
+| `<dns-server>` | Operator-supplied when the first-boot registration path needs an explicit resolver. | Prefer `MachineRegistration.config.cloud-config` or later `KubeadmControlPlane` bootstrap data (`format: cloud-config`). Do not write `/etc/resolv.conf` from `SeedImage.cloud-config`. |
 | `<ssh-authorized-keys>` | Operator-supplied OpenSSH public key — required for any interactive debugging on the node. | n/a |
 | `<inventory-name>` | Allocated by `elemental-operator` after the host boots the ISO and registers. Cannot be predicted before registration. | `kubectl -n cpaas-system get machineinventories.elemental.cattle.io` |
 | `<pool-name>` | Name of the `MachineInventoryPool` that claims an inventory. | Use `<cluster-name>-control-plane-pool` or `<cluster-name>-worker-pool` in the examples below. |
@@ -281,7 +284,14 @@ Size the control-plane pool to at least `KubeadmControlPlane.spec.replicas`. Siz
 
 ### Step 3: Create the Control-Plane Cluster Resources \{#step-3-control-plane}
 
-Create the `BaremetalCluster` (declares the control-plane VIP), the control-plane `BaremetalMachineTemplate` (points at the control-plane pool), the `KubeadmControlPlane` (replicas + kubeadm config), and the CAPI `Cluster`.
+Create the `BaremetalCluster` (declares the selected control-plane endpoint mode), the control-plane `BaremetalMachineTemplate` (points at the control-plane pool), the `KubeadmControlPlane` (replicas + kubeadm config), and the CAPI `Cluster`.
+
+The pre-GA Bare Metal API supports both endpoint modes in the same workflow:
+
+- `Internal`: the provider deploys Alive and reconciles the VIP and control-plane backend membership.
+- `External`: the provider skips Alive; the load balancer owner maintains the listener, health check, and backend membership.
+
+There is no legacy provider-version tab because Bare Metal has not had an earlier GA release. Select the mode with `<control-plane-load-balancer-type>` in the manifest below.
 
 :::tip
 **Full Configuration Reference**
@@ -297,9 +307,10 @@ metadata:
   namespace: cpaas-system
 spec:
   controlPlaneLoadBalancer:
-    type: Internal           # External: skip alive deployment, supply your own LB.
+    type: <control-plane-load-balancer-type>
     host: <control-plane-vip>
     port: <control-plane-port>
+    # Required only for Internal. Remove this field for External.
     vrid: <vrid>
   networkType: kube-ovn      # Enables provider-managed Kube-OVN AppRelease reconciliation.
 ---
@@ -415,10 +426,10 @@ spec:
 
 | Parameter | Type | Description | Required |
 |---|---|---|---|
-| `.spec.controlPlaneLoadBalancer.type` | string (`Internal` / `External`) | `Internal` deploys `alive` static pods on the control-plane nodes and manages the VIP. `External` skips `alive` and assumes an external LB already terminates `<control-plane-vip>:<control-plane-port>`. | No (defaults to `Internal`) |
-| `.spec.controlPlaneLoadBalancer.host` | string | Control-plane VIP. Backfilled into `.spec.controlPlaneEndpoint.host` when the endpoint is left empty. | Yes |
+| `.spec.controlPlaneLoadBalancer.type` | string (`Internal` / `External`) | `Internal` deploys Alive static pods and manages the VIP. `External` skips Alive and requires a pre-provisioned Layer 4 TCP LoadBalancer. | No (defaults to `Internal`) |
+| `.spec.controlPlaneLoadBalancer.host` | string | Control-plane endpoint. For `Internal`, use the Self-built VIP. For `External`, use the load balancer frontend address. Backfilled into `.spec.controlPlaneEndpoint.host` when the endpoint is left empty. | Yes |
 | `.spec.controlPlaneLoadBalancer.port` | int (1–65535) | Control-plane port. Typically `6443`. | Yes |
-| `.spec.controlPlaneLoadBalancer.vrid` | int (0–255) | `keepalived` `virtual_router_id`. Must be unique in the control-plane Layer-2 domain. Only consumed when `type=Internal`. | When `type=Internal` |
+| `.spec.controlPlaneLoadBalancer.vrid` | int (0–255) | Keepalived `virtual_router_id`. Must be unique in the control-plane Layer-2 domain. Remove the field for `External`. | When `type=Internal` |
 | `.spec.controlPlaneEndpoint` | object | API server endpoint exposed to CAPI. Once set, must not change. Leave empty to let the reconciler backfill it from `controlPlaneLoadBalancer`. | No |
 | `.spec.networkType` | string | CNI implementation managed by the provider. Set it to `kube-ovn`; any other value causes the provider to skip Kube-OVN `AppRelease` reconciliation and node-removal integration. | Yes for Kube-OVN clusters |
 
@@ -436,10 +447,10 @@ Each new control-plane `BaremetalMachine` advances `Pending → Allocated → Re
 - `BaremetalMachine.status.machineInventoryRef.name` — which inventory was picked.
 - `BaremetalMachine.status.planSecretRef.name` — plan secret being driven. The secret carries `baremetal.alauda.io/plan.type=reprovision`.
 - `MachineInventory.status.plan.state` — `Applied` once the host completes `cloud-init clean`, `elemental upgrade`, reboot, and `kubeadm init`/`join`.
-- `BaremetalCluster.status.conditions[EndpointReady]` — true once the VIP is reachable.
+- `BaremetalCluster.status.conditions[EndpointReady]` — true once the configured control-plane endpoint is reachable.
 
 :::warning
-The bare-metal provider does not support single-node control planes. Provision at least three control-plane replicas (`KubeadmControlPlane.spec.replicas: 3`) so that `alive` can arbitrate the VIP and etcd retains quorum.
+The bare-metal provider does not support single-node control planes. Provision at least three control-plane replicas (`KubeadmControlPlane.spec.replicas: 3`) so that etcd retains quorum. In `Internal` mode, the same nodes also participate in Alive VIP arbitration.
 :::
 
 ### Step 4: Deploy Worker Nodes
@@ -470,6 +481,30 @@ kubectl -n cpaas-system get machineinventorypools.infrastructure.cluster.x-k8s.i
 kubectl get nodes -o wide
 ```
 
+### Verify the Control Plane Endpoint
+
+Confirm the configured mode and endpoint:
+
+```bash
+kubectl -n cpaas-system get baremetalcluster <cluster-name> \
+  -o jsonpath='{.spec.controlPlaneLoadBalancer.type}{" "}{.spec.controlPlaneEndpoint.host}{":"}{.spec.controlPlaneEndpoint.port}{"\n"}'
+```
+
+For `Internal`, verify Alive and the node prerequisites:
+
+```bash
+kubectl --kubeconfig <workload-kubeconfig> -n kube-system get pods -l app=alive -o wide
+kubectl --kubeconfig <workload-kubeconfig> get --raw=/version
+```
+
+Run the following command on each control-plane node, not on the management cluster:
+
+```bash
+sysctl net.ipv4.conf.all.arp_accept net.ipv4.vs.conntrack
+```
+
+For `External`, verify the load balancer frontend and each backend according to [the External LoadBalancer contract](../how-to/control-plane-endpoint.mdx#external-loadbalancer-contract). Confirm that the load balancer owner has registered every current control-plane node and that HTTPS `/healthz` returns HTTP `200` for each backend.
+
 ### Expected Results
 
 A successfully created cluster shows:
@@ -480,6 +515,8 @@ A successfully created cluster shows:
 - Every used `MachineInventory.status.plan.state=Applied` with `baremetal.alauda.io/plan.type=reprovision` on its plan secret.
 - `MachineInventoryPool.status` satisfies `available + allocated + preparing + reprovisioning + unavailable = total`.
 - Kubernetes Nodes Ready.
+- For `Internal`, Alive Pods are Ready and the API is reachable through the Self-built VIP.
+- For `External`, the load balancer frontend is reachable and its backend list matches the current control-plane nodes.
 
 ---
 
@@ -493,7 +530,8 @@ A successfully created cluster shows:
 | `BaremetalMachine` in `Failed`, `ImageResolved=False / Reason=ImageCatalogMiss` | The target `Machine.spec.version` is not a key in `elemental-image-catalog`. | `kubectl -n cpaas-system get cm elemental-image-catalog -o yaml`. |
 | `ImageResolved=False / Reason=ImageRegistryMissing` | Neither the optional `cpaas.io/registry-address` annotation nor the platform registry-credential Secret resolves a registry address. | Cluster annotations; platform registry-credential Secret. |
 | Reprovision never completes; `MachineInventory.status.plan.state=Failed` | `elemental upgrade` failed (registry unreachable, TLS, disk full). | Plan secret `failed-output` field; host serial console. |
-| `BaremetalCluster` Ready, but the VIP is not reachable | `vrid` collides with another cluster; control-plane VIP not in the L2 domain; firewall blocking VRRP. | `kubectl -n kube-system get pod -l app=alive`, `ip addr show`, `ipvsadm -Ln` on a control-plane host. |
+| `BaremetalCluster` uses `Internal`, but the VIP is not reachable | `vrid` collides with another cluster; VIP is not in the control-plane L2 domain; VRRP or gratuitous ARP is blocked; IPVS or required sysctls are unavailable. | Alive Pods, `ip addr show`, `ipvsadm -Ln`, and the two required sysctl keys on a control-plane host. |
+| `BaremetalCluster` uses `External`, but the endpoint is not reachable | Listener, backend membership, TLS passthrough, health check, route, DNS, or certificate SAN is incorrect. | Load balancer configuration, HTTPS `/healthz` per backend, and ACP workload-cluster port requirements. |
 
 For the full operator-side state machine reference (every condition reason and recovery action), see [Provider Overview → clean / reprovision plans](../overview/providers/bare-metal.mdx#clean-reprovision).
 
