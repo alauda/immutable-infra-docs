@@ -76,6 +76,7 @@ Prepare **every** disk and virtual disk (VD) on each host before you boot the `S
 - Wipe all disks so that no bootable previous operating system remains. The host must boot the ISO, not an old on-disk OS.
 - Remove residual Elemental partition labels — `COS_STATE`, `COS_PERSISTENT`, `COS_OEM`, `COS_RECOVERY` — from **all** disks, not only the intended install disk. Elemental resolves partitions by label (`blkid -L COS_STATE`); a stale label left on a second disk (for example from a previous install or a leftover multipath member) makes it resolve the wrong device and the reprovision snapshotter fails.
 - On hosts where the same disk can appear through more than one path (multipath), make sure none of those paths exposes a disk that still carries a `COS_*` label; a residual label on any path can be resolved ahead of the intended install disk. Clean the disk rather than disabling multipath — the image keeps it enabled for network-attached storage boot.
+- On a host with multiple disks, do not leave `install.device` empty and do not use `/dev/sda` as a persistent identity. Follow [Select a Fixed System Disk on Multi-Disk Bare-Metal Hosts](../how-to/configure-fixed-install-disk-bare-metal.mdx) to reuse one ISO while selecting each host's system disk by WWN.
 - Set the boot order so the host boots the virtual CD / ISO first.
 
 ---
@@ -117,7 +118,7 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 | `<control-plane-load-balancer-type>` | Operator decision. Use `Internal` for provider-managed Alive or `External` for an existing load balancer. | Review [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). |
 | `<control-plane-vip>` / `<control-plane-port>` | Operator-supplied stable endpoint. For `Internal`, use an unused IPv4 VIP in the control-plane Layer-2 domain. For `External`, use the load balancer frontend address. | n/a |
 | `<vrid>` | Operator-supplied VRID for `Internal` only. It must be unique in the control-plane Layer-2 domain. Remove the field for `External`. | n/a |
-| `<install-device>` | Target disk for `elemental install`, such as `/dev/vda`, `/dev/sda`, or `/dev/nvme0n1`. | Confirm from the host console or inventory hardware data. Do not leave this implicit in virtualized tests. |
+| `<install-device>` | Whole-disk target for `elemental install`. A direct kernel path is suitable only when its identity is stable and unambiguous. For multi-disk bare-metal hosts that reuse one ISO, use `/dev/elemental-install-target`. | Confirm the disk by WWN from the host console. See [Select a Fixed System Disk on Multi-Disk Bare-Metal Hosts](../how-to/configure-fixed-install-disk-bare-metal.mdx). |
 | `<dns-image-tag>` / `<etcd-image-tag>` | Component versions baked into the bare-metal base image for `<kubernetes-version>`. | See [OS Support Matrix](../overview/os-support-matrix.mdx). |
 | `<kube-ovn-version>` | The `acp/chart-cpaas-kube-ovn` chart version matching the selected ACP and Kubernetes release. | Use the **kube-ovn (chart)** value from the [OS Support Matrix](../overview/os-support-matrix.mdx), not the Kube-OVN component version. |
 | `<dns-server>` | Operator-supplied when the first-boot registration path needs an explicit resolver. | Prefer `MachineRegistration.config.cloud-config` or later `KubeadmControlPlane` bootstrap data (`format: cloud-config`). Do not write `/etc/resolv.conf` from `SeedImage.cloud-config`. |
@@ -194,7 +195,7 @@ spec:
 
 Do not add `/etc/resolv.conf` to `SeedImage.spec.cloud-config`. Keep the ISO generic, and put site-specific resolver configuration in `MachineRegistration.spec.config.cloud-config` only when the first-boot registration path needs it. During the tested Global deployment flow, the ISO did not carry resolver files; node DNS was configured later by the kubeadm bootstrap data.
 
-`install.device`, `install.eject-cd`, and `install.reboot` are intentional. If the target disk is omitted, `elemental install` can select the live ISO device in VM-based tests. If `eject-cd` or `reboot` is false, a host can remain in the live environment after the first install and never become usable inventory for Cluster API.
+`install.device`, `install.eject-cd`, and `install.reboot` are intentional. If the target disk is omitted, `elemental install` can select an unintended device. On multi-disk physical hosts, use the [fixed system disk workflow](../how-to/configure-fixed-install-disk-bare-metal.mdx) instead of a changing `/dev/sdX` name. If `eject-cd` or `reboot` is false, a host can remain in the live environment after the first install and never become usable inventory for Cluster API.
 
 Apply the manifest and wait for the SeedImage build to finish:
 
