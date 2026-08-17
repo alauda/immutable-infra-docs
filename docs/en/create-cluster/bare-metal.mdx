@@ -28,7 +28,16 @@ Install the following plugins on the `global` cluster:
 
 See the [Installation Guide](../install/bare-metal.mdx) for details.
 
-### 2. Image Catalog Confirmed
+### 2. OS Images Imported and Image Catalog Confirmed
+
+Before creating any cluster resources, obtain the matching OS image pair from Alauda technical support and import **both** images into the target platform registry. Importing only one image is not sufficient:
+
+| Image | Used by | Purpose |
+|---|---|---|
+| OS image (`base-image`) | `elemental-image-catalog` | Reprovisions a registered host with the Kubernetes-specific root filesystem. |
+| OS ISO image (`base-image-iso`) | `SeedImage.spec.baseImage` | Builds the live ISO used for initial host installation and registration. |
+
+Use the image references in the target platform registry after the import completes. Do not point cluster resources at a build registry, derive one image reference from the other, or substitute an independently built image. Verify in the registry or from the image-import result that both final references exist before continuing. Adding an image-catalog entry or a `SeedImage` reference does **not** import the corresponding image.
 
 The bare-metal provider chart ships an `elemental-image-catalog` ConfigMap that maps `Machine.spec.version` to the `elemental upgrade` image used to (re)provision a node. You do **not** need to create this ConfigMap separately — confirm that the target Kubernetes version is present:
 
@@ -36,9 +45,7 @@ The bare-metal provider chart ships an `elemental-image-catalog` ConfigMap that 
 kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```
 
-Every value used as `Machine.spec.version` (for both the control plane and worker `MachineDeployment` resources) must appear as a key in this ConfigMap, with the leading `v` preserved. The provider resolves the image at reprovision time by substituting the platform registry address for the registry portion of the entry. If a target version is missing, no `reprovision` plan is written and `BaremetalMachine` ends up in `Failed / Reason=ImageCatalogMiss` until the entry is added.
-
-Obtain the matching `base-image` and `base-image-iso` references from Alauda technical support. Use `base-image` for host reprovisioning through the image catalog and `base-image-iso` for `SeedImage` / live installation. Do not derive one reference from the other or substitute an independently built image.
+Every value used as `Machine.spec.version` (for both the control plane and worker `MachineDeployment` resources) must appear as a key in this ConfigMap, with the leading `v` preserved. Confirm that the key resolves to the imported `base-image` in the target platform registry. The provider resolves the image at reprovision time by substituting the platform registry address for the registry portion of the entry. If a target version is missing, no `reprovision` plan is written and `BaremetalMachine` ends up in `Failed / Reason=ImageCatalogMiss` until the entry is added.
 
 ### 3. Network Connectivity \{#network-connectivity}
 
@@ -89,10 +96,11 @@ Use only stable storage identities reported by the registered inventory. Linux p
 
 ## Cluster Creation Workflow
 
-When using YAML, the workflow proceeds through five required steps, with an optional storage-preparation step before pool membership. Every Kubernetes resource must be applied in the `cpaas-system` namespace.
+When using YAML, import the paired OS images first, then proceed through five required resource steps, with an optional storage-preparation step before pool membership. Every Kubernetes resource must be applied in the `cpaas-system` namespace.
 
 | Step | Apply or perform | Result |
 |---|---|---|
+| 0 | Import the matching `base-image` and `base-image-iso` into the target platform registry | Both OS images are available before `SeedImage` build or host reprovisioning starts. |
 | 1 | `MachineRegistration` and `SeedImage` | `elemental-operator` builds the bootable ISO. |
 | 2 | Boot the ISO on each physical host | The host runs `elemental install` and registers as a `MachineInventory`. |
 | 2a (optional) | Declare and prepare `MachineInventory.spec.storage` | Explicit data volumes are validated and prepared while the inventory is unallocated. |
@@ -120,13 +128,14 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 |---|---|---|
 | `<cluster-name>` | Operator-supplied workload cluster name. Must not be `global`. | Choose once and use consistently for `Cluster`, `BaremetalCluster`, pools, templates, and registration resources. |
 | `<kubernetes-version>` | `elemental-image-catalog` ConfigMap key (with leading `v`, for example `v1.33.7-2`). | `kubectl -n cpaas-system get cm elemental-image-catalog -o yaml` |
-| `<base-image-iso>` | ISO image paired with the target release's `base-image`. | Obtain the exact supported reference from Alauda technical support; do not derive it from the image catalog entry. |
-| `<registry-address>` | Platform registry (same value as `global.registry.address` on the install chart). | `kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'` (when one exists). |
+| `<base-image>` | Imported OS image used by the image catalog for host reprovisioning. | Obtain the supported pair from Alauda technical support, import it, and use its final target-platform registry reference. |
+| `<base-image-iso>` | Imported OS ISO image paired with `<base-image>`. | Import the supported image and use its final target-platform registry reference; do not derive it from `<base-image>`. |
+| `<registry-address>` | Target platform registry into which both OS images are imported (same value as `global.registry.address` on the install chart). | `kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'` (when one exists). |
 | `<control-plane-load-balancer-type>` | Operator decision. Use `Internal` for provider-managed Alive or `External` for an existing load balancer. | Review [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). |
 | `<control-plane-vip>` / `<control-plane-port>` | Operator-supplied stable endpoint. For `Internal`, use an unused IPv4 VIP in the control-plane Layer-2 domain. For `External`, use the load balancer frontend address. | n/a |
 | `<vrid>` | Operator-supplied VRID for `Internal` only. It must be unique in the control-plane Layer-2 domain. Remove the field for `External`. | n/a |
 | `<install-device>` | Whole-disk target for `elemental install`. A direct kernel path is suitable only when its identity is stable and unambiguous. For multi-disk bare-metal hosts that reuse one ISO, use `/dev/elemental-install-target`. | Confirm the disk by WWN from the host console. See [Select a Fixed System Disk on Multi-Disk Bare-Metal Hosts](../how-to/configure-fixed-install-disk-bare-metal.mdx). |
-| `<dns-image-tag>` / `<etcd-image-tag>` | Component versions baked into the bare-metal base image for `<kubernetes-version>`. | See [OS Support Matrix](../overview/os-support-matrix.mdx). |
+| `<dns-image-tag>` / `<etcd-image-tag>` | Component versions baked into the bare-metal base image for `<kubernetes-version>`. | See the `coredns` and `etcd` columns in the [OS Support Matrix](../overview/os-support-matrix.mdx). |
 | `<kube-ovn-version>` | The `acp/chart-cpaas-kube-ovn` chart version matching the selected ACP and Kubernetes release. | Use the **kube-ovn (chart)** value from the [OS Support Matrix](../overview/os-support-matrix.mdx), not the Kube-OVN component version. |
 | `<dns-server>` | Operator-supplied when the first-boot registration path needs an explicit resolver. | Prefer `MachineRegistration.config.cloud-config` or later `KubeadmControlPlane` bootstrap data (`format: cloud-config`). Do not write `/etc/resolv.conf` from `SeedImage.cloud-config`. |
 | `<ssh-authorized-keys>` | Operator-supplied OpenSSH public key — required for any interactive debugging on the node. | n/a |
@@ -144,7 +153,7 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 
 Create a `MachineRegistration` that describes the registration URL and first-install cloud-config, and a `SeedImage` that points `elemental-operator` at the matching ISO base image.
 
-Set `SeedImage.spec.baseImage` to the exact `base-image-iso` reference supplied by Alauda technical support for the target release. It must be paired with the `base-image` used by the image catalog for later reprovisioning; do not construct the ISO reference by changing the repository name or tag yourself.
+Set `SeedImage.spec.baseImage` to the final target-platform registry reference of the imported `base-image-iso`. It must be paired with the imported `base-image` used by the image catalog for later reprovisioning; do not construct the ISO reference by changing the repository name or tag yourself.
 
 ```yaml title="01-machineregistration-seedimage.yaml"
 apiVersion: elemental.cattle.io/v1beta1
@@ -189,7 +198,7 @@ metadata:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
 spec:
   type: iso
-  baseImage: <base-image-iso>          # Obtain the exact reference from Alauda technical support.
+  baseImage: <base-image-iso>          # Use the imported target-platform registry reference.
   registrationRef:
     apiVersion: elemental.cattle.io/v1beta1
     kind: MachineRegistration
@@ -314,6 +323,12 @@ The pre-GA Bare Metal API supports both endpoint modes in the same workflow:
 
 There is no legacy provider-version tab because Bare Metal has not had an earlier GA release. Select the mode with `<control-plane-load-balancer-type>` in the manifest below.
 
+:::warning
+**Use the Kubernetes images built into the OS image**
+
+The supported bare-metal OS image preloads the kubeadm control-plane, CoreDNS, and etcd images under `cloud.alauda.io/alauda`. Keep that repository in the KCP configuration and use the component tags from the OS Support Matrix. Do not replace it with `<registry-address>/tkestack`: that produces image references that do not match the images preloaded in the OS. The OS configures its built-in pause image through containerd; do not add `pod-infra-container-image` to the KCP kubelet arguments.
+:::
+
 :::tip
 **Full Configuration Reference**
 
@@ -373,7 +388,7 @@ spec:
         sshAuthorizedKeys:
           - "<ssh-authorized-keys>"
     clusterConfiguration:
-      imageRepository: <registry-address>/tkestack
+      imageRepository: cloud.alauda.io/alauda
       dns:
         imageTag: <dns-image-tag>
       etcd:
@@ -706,7 +721,7 @@ spec:
     postKubeadmCommands:
       - chmod 600 /var/lib/kubelet/config.yaml
     clusterConfiguration:
-      imageRepository: <registry-address>/tkestack
+      imageRepository: cloud.alauda.io/alauda
       dns:
         imageTag: <dns-image-tag>
       etcd:
