@@ -33,7 +33,7 @@ The ACP product documentation owns Phase 1 prerequisites, supported ACP upgrade 
 | Distribution Version | The ACP Core release installed on the cluster. | CVO workflow documented in the ACP product documentation. |
 | Kubernetes and OS baseline | A validated Kubernetes minor, component set, and Alauda OS image for the installed ACP release. | Cluster API and the provider-specific Phase 2 procedure. |
 
-An ACP minor release line can offer more than one validated Kubernetes target over its patch lifecycle. Use [OS Support Matrix](../overview/os-support-matrix.mdx) for the exact patch-specific Kubernetes, component, and Alauda OS image values offered for Phase 2.
+An ACP minor release line can offer more than one validated Kubernetes target over its patch lifecycle. Use [OS Support Matrix](../overview/os-support-matrix.mdx) for the exact patch-specific Kubernetes and component values offered for Phase 2.
 
 ### Prerequisites
 
@@ -358,9 +358,9 @@ For a required Core hop, prepare and upgrade Aligned plugins as directed by the 
 
 ### Step 2 — Stage intermediate OS images for the provisioning mechanism
 
-For each intermediate Kubernetes/OS row, make the matching OS image (the **Alauda OS Image Version** value from the OS Support Matrix row) available to the node provisioning mechanism so the Kubernetes step can replace nodes from each image in turn:
+For each intermediate Kubernetes/OS row, make the Alauda OS image published for that ACP release available to the node provisioning mechanism so the Kubernetes step can replace nodes from each image in turn:
 
-- **IaaS providers (Huawei DCS, VMware vSphere, Huawei Cloud Stack)**: upload the OS image and register it as a VM template (or VM image, depending on the platform) under the exact name listed in the OS Support Matrix row.
+- **IaaS providers (Huawei DCS, VMware vSphere, Huawei Cloud Stack)**: upload the OS image and register it as a VM template (or VM image, depending on the platform). Record the name it is registered under — the machine templates reference that name.
 - **Bare metal**: make the OS image available to the node re-provisioning flow used by your cluster.
 
 The control plane and worker rollouts then step through the intermediate OS images one at a time, matched to the staged Kubernetes minor, until the cluster reaches the target ACP version row.
