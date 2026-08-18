@@ -45,7 +45,7 @@ Before you begin, ensure the following conditions are met:
 - The control plane is healthy and reachable.
 - All nodes are in the `Ready` state.
 - A current etcd backup has been taken and verified by using the supported ACP backup procedure.
-- The target VM template is present in the vSphere environment under the same name as the **Alauda OS Image Version** value in the OS Support Matrix row. The upgrade fails if the template is not present when the new `VSphereMachineTemplate` is applied.
+- The VM template built from the Alauda OS image published for the target ACP release is present in the vSphere environment. The upgrade fails if the template is not present when the new `VSphereMachineTemplate` is applied.
 - For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM templates are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
 - The target Kubernetes version is compatible with your workloads and add-ons.
 - The machine config pools have enough capacity for rolling updates.
@@ -81,13 +81,14 @@ Fleet Essentials 1.0.4 and later can request the ACP 4.3-and-later Distribution 
 
 ## Required Values From the OS Support Matrix \{#required-values}
 
-The authoritative mapping between an ACP release, its VM template, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the steps below need.
+The authoritative mapping between an ACP release, the Kubernetes version, and the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies the component values the steps below need.
+
+The VM template name is not in the matrix. It is the name the template was created under in vSphere from the Alauda OS image published for the target ACP release — see [Downloading Alauda OS](../overview/os-support-matrix.mdx#downloading-alauda-os) — and it is what `VSphereMachineTemplate.spec.template.spec.template` must be set to on both the control plane and worker templates.
 
 The cells you read from that row map to the upgrade manifests as follows:
 
 | OS Support Matrix column | Used to set | Where it lands |
 |---|---|---|
-| **Alauda OS Image Version** | `VSphereMachineTemplate.spec.template.spec.template` (target VM template name) | Control plane and worker `VSphereMachineTemplate` |
 | **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
 | **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
 | **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |

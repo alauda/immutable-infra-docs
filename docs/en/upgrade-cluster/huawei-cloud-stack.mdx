@@ -71,7 +71,7 @@ Before you start, ensure all of the following prerequisites are met:
 - The control plane is reachable.
 - All nodes are healthy and in `Ready` state.
 - A current etcd backup has been taken and verified by using the supported ACP backup procedure.
-- The target VM image is present in the HCS environment under the same name as the **Alauda OS Image Version** value in the OS Support Matrix row. The upgrade fails if the image is not present when the new `HCSMachineTemplate` is applied.
+- The VM image created from the Alauda OS image published for the target ACP release is present in the HCS environment. The upgrade fails if the image is not present when the new `HCSMachineTemplate` is applied.
 - For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and VM images are pre-staged. See [Cross-Version Upgrade Preparation](./index.mdx#cross-version-preparation).
 - The target Kubernetes version is compatible with your workloads and add-ons.
 - Review the Kubernetes upgrade path and version skew policy.
@@ -178,13 +178,14 @@ Upgrading the Kubernetes version involves updating both the control plane softwa
 
 #### Required Values From the OS Support Matrix \{#required-values}
 
-The authoritative mapping between an ACP release, its Alauda OS image, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the procedure below needs.
+The authoritative mapping between an ACP release, the Kubernetes version, and the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies the component values the procedure below needs.
+
+The ECS image name is not in the matrix. It is the name the image was uploaded under in HCS from the Alauda OS image published for the target ACP release — see [Downloading Alauda OS](../overview/os-support-matrix.mdx#downloading-alauda-os) — and it is what `HCSMachineTemplate.spec.template.spec.imageName` must be set to on both the control plane and worker templates.
 
 The cells you read from that row map to the upgrade manifests as follows:
 
 | OS Support Matrix column | Used to set | Where it lands |
 |---|---|---|
-| **Alauda OS Image Version** | `HCSMachineTemplate.spec.template.spec.imageName` | Control plane and worker `HCSMachineTemplate` |
 | **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
 | **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
 | **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
@@ -212,7 +213,7 @@ Complete the shared [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgr
 
    In `new-cp-template.yaml`:
    - Set `metadata.name` to `<new-template-name>`.
-   - Set `spec.template.spec.imageName` to the **Alauda OS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
+   - Set `spec.template.spec.imageName` to the name of the target Alauda OS image as uploaded to HCS.
    - Strip server-generated metadata (`resourceVersion`, `uid`, `generation`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration` annotation) and the entire `status` field.
    - Leave runtime identity fields unset, including `spec.template.spec.providerID` and `spec.template.spec.serverId`. The HCS provider sets `providerID` to `hcs://<cluster-name>/<machine-name>` and `serverId` to the HCS ECS instance ID after the VM is created; pre-filling them in the template breaks the controller's identity binding.
 

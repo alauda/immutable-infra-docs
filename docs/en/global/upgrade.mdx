@@ -38,7 +38,7 @@ Like workload clusters, the `global` cluster on Immutable Infrastructure follows
 
 - The `global` cluster has completed Phase 1 (Distribution Version upgrade).
 - An etcd backup of the `global` cluster has been taken and verified.
-- The target row in [OS Support Matrix](../overview/os-support-matrix.mdx) is available, and its Alauda OS image, Kubernetes version, CoreDNS tag, etcd tag, and Kube-OVN chart are staged.
+- The target row in [OS Support Matrix](../overview/os-support-matrix.mdx) is available, and its Kubernetes version, CoreDNS tag, etcd tag, and Kube-OVN chart are staged, together with the Alauda OS image published for that release.
 - The previous machine templates and bootstrap templates are retained until Phase 2 is verified.
 - A maintenance window plan that accounts for rolling control plane replacement.
 - For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and OS images are pre-staged. See [Cross-Version Upgrade Preparation](../upgrade-cluster/index.mdx#cross-version-preparation).
