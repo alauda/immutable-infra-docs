@@ -85,7 +85,7 @@ Apply it with `kubectl apply -f os-release.yaml`.
 | Field | Value source |
 |-------|--------------|
 | `cpaas.io/os-release` label | Fixed marker with an empty value. The wizard discovers the ConfigMap by this label. |
-| `osImageVersion` | The exact name of the Alauda OS image uploaded to the HCS platform. The provider uses it to locate the ECS image, and it becomes the node pool default image. For a standard release it matches the image name in the [OS Support Matrix](../overview/os-support-matrix.mdx). |
+| `osImageVersion` | The exact name of the Alauda OS image uploaded to the HCS platform. The provider uses it to locate the ECS image, and it becomes the node pool default image. For a standard release it matches the name the Alauda OS image published for that ACP release was uploaded under. See [Downloading Alauda OS](../overview/os-support-matrix.mdx#downloading-alauda-os). |
 | `supportedACPVersions` | The ACP Distribution versions this OS image serves, comma-separated (for example, `v4.3.2`, or `v4.3.0,v4.3.1`). The wizard matches the `global` cluster's Distribution against this list. |
 | `architecture` | `x86_64` or `aarch64`. Must match the architecture of the node flavors you plan to use. |
 | `osVariant`, `osBuild` | Descriptive fields shown for reference; not used for matching. |
@@ -448,7 +448,7 @@ spec:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `.spec.template.spec.imageName` | string | Yes | HCS image name. Use the image identifier published in the current release's OS support matrix; placeholder shown as `<alaudaos-version>` in the manifest above. The exact name moves with each Alauda OS release, so do not hardcode the example value across versions. |
+| `.spec.template.spec.imageName` | string | Yes | HCS image name. Use the name the Alauda OS image published for the target ACP release was uploaded under; placeholder shown as `<alaudaos-version>` in the manifest above. The exact name moves with each Alauda OS release, so do not hardcode the example value across versions. |
 | `.spec.template.spec.flavorName` | string | Yes | Provider-recognized HCS API value matched against `Flavor.Name`. Do not use the tenant UI display name |
 | `.spec.template.spec.availabilityZone` | string | No | Provider-recognized HCS API value matched against `ZoneName`. Every machine created from this template uses the selected zone. If omitted, the Provider selects a zone reported as available by HCS. See [Availability Zone Placement](../infrastructure/huawei-cloud-stack.mdx#availability-zone-placement) |
 | `.spec.template.spec.rootVolume.type` | string | Yes | Volume type (`SSD` or `SATA`) |

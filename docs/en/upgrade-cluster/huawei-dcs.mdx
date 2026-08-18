@@ -115,13 +115,14 @@ YAML-based upgrades do not depend on Fleet Essentials.
 
 ### Required Values From the OS Support Matrix \{#required-values}
 
-The authoritative mapping between an ACP release, its Alauda OS image, the Kubernetes version, the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies every value the YAML steps below need.
+The authoritative mapping between an ACP release, the Kubernetes version, and the matching CoreDNS, etcd, and Kube-OVN versions lives in [OS Support Matrix](../overview/os-support-matrix.mdx). Locate the row that corresponds to the target ACP version before you start; the row supplies the component values the YAML steps below need.
+
+The VM template name is not in the matrix. It is the name the template was created under on DCS from the Alauda OS image published for the target ACP release — see [Downloading Alauda OS](../overview/os-support-matrix.mdx#downloading-alauda-os) — and it is what `DCSMachineTemplate.spec.template.spec.vmTemplateName` must be set to on both the control plane and worker templates.
 
 The cells you read from that row map to the upgrade manifests as follows:
 
 | OS Support Matrix column | Used to set | Where it lands |
 |---|---|---|
-| **Alauda OS Image Version** | `DCSMachineTemplate.spec.template.spec.vmTemplateName` (new VM template the cloned nodes are built from) | Control plane and worker `DCSMachineTemplate` |
 | **Kubernetes Version** | `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version` | Both control plane and worker |
 | **coredns** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` | Control plane only |
 | **etcd** | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` | Control plane only |
@@ -129,7 +130,7 @@ The cells you read from that row map to the upgrade manifests as follows:
 
 The CoreDNS and etcd image tags are control-plane-only because `clusterConfiguration` is a `KubeadmControlPlane` field. Worker nodes inherit container image versions from the new VM template; the `MachineDeployment` does not carry its own `dns`/`etcd` tags. The Kube-OVN annotation lives on the `Cluster` resource, not on `KubeadmControlPlane`, because the DCS provider watches it independently of the Kubernetes control plane rollout.
 
-Confirm with the cluster's platform owner that the target Alauda OS image has already been uploaded to the DCS platform under the same name as the **Alauda OS Image Version** value in the matrix row. The upgrade fails if that VM template is not present on DCS when the `DCSMachineTemplate` is applied.
+Confirm with the cluster's platform owner that the Alauda OS image published for the target ACP release has already been uploaded to the DCS platform, and record the VM template name it was created under. The upgrade fails if that VM template is not present on DCS when the `DCSMachineTemplate` is applied.
 
 ### Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
 
@@ -195,7 +196,7 @@ Before you start, complete the shared [Upgrade Kube-OVN Before the Control Plane
 
 1. **Create a new `DCSMachineTemplate` for the target Kubernetes version**
 
-   Copy the existing control-plane template and update `metadata.name` to a new name and `spec.template.spec.vmTemplateName` to the **Alauda OS Image Version** value read from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx). Keep pool-managed persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` and additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]` rather than reintroducing them as template fields.
+   Copy the existing control-plane template and update `metadata.name` to a new name and `spec.template.spec.vmTemplateName` to the VM template created on DCS from the Alauda OS image published for the target ACP release. Keep pool-managed persistent disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` and additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]` rather than reintroducing them as template fields.
 
    ```bash
    kubectl get dcsmachinetemplate <current-cp-template-name> -n cpaas-system -o yaml > new-cp-template.yaml
@@ -233,12 +234,12 @@ Before you start, complete the shared [Upgrade Kube-OVN Before the Control Plane
 
 Worker node Kubernetes upgrades are managed through `MachineDeployment` resources. Worker upgrades carry fewer fields than the control plane: the CoreDNS and etcd image tags are part of `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration`, which `MachineDeployment` does not have. Worker nodes inherit Kubernetes component versions from the new VM template; the `MachineDeployment` only needs the target Kubernetes version and the new template reference.
 
-Before you start, read the **Alauda OS Image Version** and **Kubernetes Version** cells from the target ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx) as described in [Required Values From the OS Support Matrix](#required-values).
+Before you start, read the **Kubernetes Version** cell from the target ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx) and confirm the target VM template name on DCS, as described in [Required Values From the OS Support Matrix](#required-values).
 
 #### Procedure
 
 1. **Create a new `DCSMachineTemplate` for worker nodes**
-   - Create a new `DCSMachineTemplate` with a `vmTemplateName` set to the **Alauda OS Image Version** value from the target row in the [OS Support Matrix](../overview/os-support-matrix.mdx)
+   - Create a new `DCSMachineTemplate` with a `vmTemplateName` set to the VM template created on DCS from the Alauda OS image published for the target ACP release
    - Keep `/var/cpaas` and any other upgrade-preserved disks in `DCSIpHostnamePool.spec.pool[].persistentDisk` rather than reintroducing them as template disks
    - Keep additional NICs in `DCSIpHostnamePool.spec.pool[].additionNic[]`
 

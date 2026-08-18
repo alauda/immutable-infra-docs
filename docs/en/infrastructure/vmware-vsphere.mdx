@@ -46,7 +46,7 @@ Separate parameter collection into the following three sources. A value that can
 | Source | Examples | Collection rule |
 |---|---|---|
 | Automatically discoverable | Datacenters, compute clusters, resource pools, networks, datastores, VM templates, and the vCenter certificate thumbprint | Query vCenter with read-only tools, then have the vSphere administrator confirm the selected objects. |
-| Product-derived | Kubernetes, Alauda OS image, Kube-OVN chart, CoreDNS, etcd, provider chart, and CPI versions | Select the exact set published for the target ACP release. Use the [OS Support Matrix](../overview/os-support-matrix.mdx), provider release notes, and delivered package metadata; do not choose the newest Registry tag independently. |
+| Product-derived | Kubernetes, Alauda OS image, Kube-OVN chart, CoreDNS, etcd, provider chart, and CPI versions | Select the exact set published for the target ACP release. Use the [OS Support Matrix](../overview/os-support-matrix.mdx) for component versions and the OS download page for the OS image, together with provider release notes and delivered package metadata; do not choose the newest Registry tag independently. |
 | Operator-decided | Cluster and resource names, endpoint, CIDRs, DNS, node count, CPU, memory, disk capacity, and credentials | Record an explicit design decision and validation owner. These values cannot be inferred safely from inventory alone. |
 
 :::warning
