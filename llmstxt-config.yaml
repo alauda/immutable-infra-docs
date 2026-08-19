@@ -1,0 +1,48 @@
+# llms.txt Generator Configuration for Immutable Infrastructure Documentation
+
+# Project metadata
+project_name: "Immutable Infrastructure Documentation"
+summary: "Immutable Infrastructure product documentation covering Cluster API-based Kubernetes cluster lifecycle management, provider support, installation, upgrades, node operations, machine configuration, and Kubernetes API references."
+body: |
+  Documentation for Immutable Infrastructure, built with Doom and MDX.
+  Includes user guides, provider-specific workflows, operational how-to content, and generated Kubernetes API reference pages.
+
+# File inclusion/exclusion
+include_patterns:
+  - "docs/en/*.md"
+  - "docs/en/*.mdx"
+  - "docs/en/**/*.md"
+  - "docs/en/**/*.mdx"
+
+exclude_patterns:
+  - "README.md"
+  - "**/README.md"
+  - "node_modules/**"
+  - "**/node_modules/**"
+  - ".git/**"
+  - "**/.git/**"
+  - ".llmstxt-cache/**"
+  - "**/.llmstxt-cache/**"
+  - "**/__pycache__/**"
+  - "**/*.pyc"
+  - ".venv/**"
+  - "**/.venv/**"
+  - "venv/**"
+  - "**/venv/**"
+  - "dist/**"
+  - "**/dist/**"
+  - "build/**"
+  - "**/build/**"
+  - "**/.DS_Store"
+  - ".next/**"
+  - "**/.next/**"
+
+# Grouping strategy: 'auto', 'by_directory', 'by_extension'
+grouping_strategy: "by_directory"
+
+# Start H2 grouping from this relative path. Does not limit scan depth.
+grouping_base_path: "docs/en"
+
+# Batch and description settings
+batch_size: 15
+description_max_words: 150
