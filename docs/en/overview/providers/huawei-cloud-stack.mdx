@@ -8,6 +8,7 @@ queries:
   - hcs cluster api
   - hcs infrastructure provider
   - hcs web ui cluster management
+  - hcs availability zone selection
 ---
 
 # Huawei Cloud Stack Provider
@@ -30,7 +31,7 @@ HCS provider `v1.0.1` or later supports pool-managed persistent disks. Declare d
 - **Machine Configuration Pools**: Pre-defined hostnames, static IP addresses, and persistent disk slots for predictable VM provisioning
 - **Pool-Managed Persistent Disks**: EVS disks can be detached from an old ECS and attached to the replacement ECS during rolling upgrades
 - **Control Plane Security Bootstrap**: Supports kube-apiserver audit, admission, encryption provider, and kubelet certificate configuration through kubeadm bootstrap data
-- **Availability Zone Selection**: Supports specifying the target availability zone for HCS machines
+- **Per-Node-Pool Availability Zone Selection**: Select one HCS availability zone for the control plane or each worker node pool; separate worker pools can target different zones. See [Availability Zone Placement](../../infrastructure/huawei-cloud-stack.mdx#availability-zone-placement)
 
 ## Cluster Management Capabilities
 
