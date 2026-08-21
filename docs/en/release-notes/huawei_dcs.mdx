@@ -14,6 +14,26 @@ This page tracks release notes for the Alauda Container Platform Huawei DCS Infr
 
 For the current full capability list and installation steps, see [Huawei DCS Provider Installation](../install/huawei-dcs.mdx).
 
+## v1.0.22 (2026-08-21) \{#v1-0-22\}
+
+### New Features
+
+- **Provider-managed Self-built VIP for DCS** — DCS Provider `v1.0.22` supports `DCSCluster.spec.controlPlaneLoadBalancer.type: internal` when paired with ACP `v4.4` or later. The provider injects a temporary bootstrap VIP for the first control-plane initialization, then creates or updates the `alive` `ModuleInfo` and waits for the VIP endpoint to become ready. Reserve an IPv4 VIP in the control-plane Layer 2 network, keep its VRID unique in that network, and use three control-plane replicas for high availability. Existing external LoadBalancer clusters are not migrated automatically.
+
+### Enhancements
+
+- **Version-aware system component repositories** — The provider selects the Kube-OVN chart repository from the target chart version, the CoreDNS repository from the ACP suffix in the CoreDNS tag, and the kube-proxy repository from the Kubernetes version. Kube-OVN `v4.4+` uses `acp/chart-kube-ovn`; earlier chart versions retain `acp/chart-cpaas-kube-ovn`. Kubernetes `v1.35+` uses `acp/k8s/kube-proxy`.
+
+- **Upgrade-time system component reconciliation** — The provider watches KubeadmControlPlane version and rollout changes, configures the CoreDNS repository before control-plane creation, and reconciles CoreDNS and kube-proxy after the relevant rollout. Do not manually replace the source of provider-managed AppRelease resources.
+
+- **Pod log placement on the containerd data disk** — When a node has a dedicated `/var/lib/containerd` data disk, generated bootstrap configuration links `/var/log/pods` to `/var/lib/containerd/pods` so pod logs use the containerd data disk.
+
+### Fixed Issues
+
+- **CoreDNS image pull secret reconciliation** — CoreDNS image pull secrets are now evaluated from the CoreDNS Deployment instead of unrelated secrets on the sentry ServiceAccount.
+
+- **Dependency security maintenance** — Updated non-standard-library Go dependencies, including CEL and Kubernetes libraries, to address vulnerability findings and align with the supported platform baseline.
+
 ## v1.0.21 (2026-06-17) \{#v1-0-21}
 
 ### New Features
