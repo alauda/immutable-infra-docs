@@ -436,9 +436,6 @@ spec:
   controlPlaneEndpoint:
     host: <self-built-vip>
     port: 6443
-  # Optional DRS placement feature; not required for Self-built VIP.
-  controlPlaneHA:
-    enabled: true
   networkType: kube-ovn
   site: <site>
 ```
@@ -489,6 +486,8 @@ If you set `DCSCluster.spec.controlPlaneLoadBalancer.type` to `internal`, verify
 ```bash
 kubectl -n cpaas-system get dcscluster <cluster-name> \
   -o jsonpath='{.spec.controlPlaneLoadBalancer.type}{" "}{.spec.controlPlaneEndpoint.host}{":"}{.spec.controlPlaneEndpoint.port}{"\n"}'
+kubectl -n cpaas-system get cluster <cluster-name> \
+  -o jsonpath='{.spec.controlPlaneEndpoint.host}{":"}{.spec.controlPlaneEndpoint.port}{"\n"}'
 kubectl -n cpaas-system get moduleinfo \
   -l cpaas.io/cluster-name=<cluster-name>,cpaas.io/module-name=alive
 kubectl --kubeconfig <workload-kubeconfig> -n cpaas-system get apprelease alive

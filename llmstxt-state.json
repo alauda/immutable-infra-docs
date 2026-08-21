@@ -3,7 +3,7 @@
   "generator_version": 3,
   "project_name": "Immutable Infrastructure Documentation",
   "summary": "Immutable Infrastructure product documentation covering Cluster API-based Kubernetes cluster lifecycle management, provider support, installation, upgrades, node operations, machine configuration, and Kubernetes API references.",
-  "generated_at": "2026-08-19T06:55:36Z",
+  "generated_at": "2026-08-21T10:51:45.000Z",
   "include_patterns": [
     "docs/en/*.md",
     "docs/en/*.mdx",
@@ -566,11 +566,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/create-cluster/huawei-dcs.mdx": {
-      "sha256": "e0308eb6a9e580258aa1f6dc5b798246e2e0af4a70cd5ca3de13a969414ce580",
-      "size": 52834,
+      "sha256": "1c126beb6b81106d51a770bd90c3bf1b8b6207ee3b087c60f9f5f39f1e8544f1",
+      "size": 52876,
       "description": "Creating Kubernetes clusters on Huawei DCS through the web UI and YAML manifests. Covers provider gates, DCS API and file-upload connectivity, external LoadBalancer and DCS Provider v1.0.22+ with ACP v4.4+ Self-built VIP endpoint modes, IPv4 VIP/VRID/interface constraints, bootstrap and alive verification, DRS control-plane HA, persistent disks, magic tokens, component-version sources, single-control-plane behavior, and required Cluster annotations.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-21T10:22:14.682Z"
+      "updated_at": "2026-08-21T10:50:05.000Z"
     },
     "docs/en/create-cluster/index.mdx": {
       "sha256": "4a4fe829a89520ed3f99d13d9cac7c58502fe72481f5e286ed300a9e3a806e02",
@@ -601,11 +601,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "0a7bdcfd0387379184bf216856e607867f032f4ff33315ca76ef66d250af6a3c",
-      "size": 158539,
+      "sha256": "2d32a43900dbb92bf227bffc7b702849d2c45631230d79255465381f3d13d30d",
+      "size": 159647,
       "description": "End-to-end procedure for installing the global cluster through the temporary minialauda bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers provider-package delivery, registry formats, DCS external versus v1.0.22+ Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification, provider-resource handoff, optional DR inputs, and final decommissioning gates.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-21T10:17:50.316Z"
+      "updated_at": "2026-08-21T10:51:45.000Z"
     },
     "docs/en/global/upgrade.mdx": {
       "sha256": "51b4c7bfb190066f09aba4f67f9ea43b92c806ac140c4f156b59a33533b750b4",
@@ -946,9 +946,9 @@
     "docs/en/release-notes/index.mdx": {
       "sha256": "90fd004db4829d1436da05de20c9229a571e6588b86c9e89c3172c112e2bc0b0",
       "size": 114,
-      "description": "Section index for the per-provider Release Notes pages, rendered as an `<Overview />` child listing: Huawei Cloud Stack (`v1.0.1`-`v1.0.3`), Huawei DCS (`v1.0.0`-`v1.0.21`), VMware vSphere (`v1.0.0`-`v1.0.16`), and the platform-wide Kubeadm Provider (`v1.0.0`-`v1.0.12`). Each linked page carries a version timeline with one section per release tag; the Bare Metal Provider has no published release notes on this site.",
+      "description": "Section index for the per-provider Release Notes pages, rendered as an `<Overview />` child listing: Huawei Cloud Stack (`v1.0.1`-`v1.0.3`), Huawei DCS (`v1.0.0`-`v1.0.22`), VMware vSphere (`v1.0.0`-`v1.0.16`), and the platform-wide Kubeadm Provider (`v1.0.0`-`v1.0.12`). Each linked page carries a version timeline with one section per release tag; the Bare Metal Provider has no published release notes on this site.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-08-21T10:44:21Z"
     },
     "docs/en/release-notes/kubeadm.mdx": {
       "sha256": "7efa1963ada6c5b90f77069ec3b5914ad9c75ffa6a9f9863ec4aafb07e07ab5f",
