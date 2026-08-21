@@ -1609,7 +1609,7 @@ Create the provider-specific installer configuration JSON file on the current bo
 <Tabs>
   <Tab label="Huawei DCS">
 
-The DCS installer request includes the external HA VIP because DCS uses a third-party control plane VIP.
+The DCS installer request includes the `global` control-plane HA VIP. With an external LoadBalancer, this is the externally provisioned VIP. With DCS Provider `v1.0.22+` and ACP `v4.4+` `Self-built VIP`, use the reserved VIP that the provider-managed `alive` runtime owns.
 
 ```shell
 mkdir -p /root/yamls
@@ -2273,10 +2273,10 @@ The manifest references these but does not create them. Prepare them first, in o
 1. **DCS API access** — the endpoint (`https://<host>:7443`), an `administrator` user and password, and the site ID. These fill the `Secret` and `DCSCluster.spec.site`. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials).
 2. **A VM template** — upload the Alauda OS image and create a VM template from it; record its name for `vmTemplateName`. Use a `4.2.1+` template so the `/var/cpaas` persistent disk can be detached and reattached during node replacement. See [Machine Templates](../infrastructure/huawei-dcs.mdx#machine-templates).
 3. **Compute cluster, distributed virtual switch, port group, and datastore** — pick the target DCS compute cluster, a distributed virtual switch, a port group, and a datastore with enough free capacity. They fill `resource`, `dvSwitchName`, `portGroupName`, and `datastoreName`. See [DCS Platform Capacity and Placement](../infrastructure/huawei-dcs.mdx#capacity-and-placement).
-4. **IPs and the API endpoint** — three free node IPs (with gateway and DNS) for the control plane. Choose either an external LoadBalancer that follows [the control plane endpoint contract](../how-to/control-plane-endpoint.mdx) and forwards TCP `6443` to the three nodes, or reserve a separate IPv4 VIP in the same Layer 2 network for DCS Provider `v1.0.22` Self-built VIP with ACP `v4.4+`. These values fill the `DCSIpHostnamePool` and `DCSCluster.spec.controlPlaneLoadBalancer` / `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
+4. **IPs and the API endpoint** — prepare three free node IPs (with gateway and DNS) for the control plane; these fill the `DCSIpHostnamePool`. Then choose either an external LoadBalancer that follows [the control plane endpoint contract](../how-to/control-plane-endpoint.mdx) and forwards TCP `6443` to the three nodes, or a separate IPv4 VIP in the same Layer 2 network for DCS Provider `v1.0.22+` Self-built VIP with ACP `v4.4+`; the selected endpoint host and port fill `DCSCluster.spec.controlPlaneLoadBalancer` and `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
 5. **Versions and IDs to read** — `${K8S_VERSION}` plus the CoreDNS and etcd image tags from the `cpaas.io/dcs-vm-template` ConfigMap (see [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders)); the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx); and the registry address, VIP, and CIDR values you exported in Step 1.
 
-With those prepared, apply the manifest below.
+With those prepared, apply the manifest below. The worked example uses an external LoadBalancer so it remains valid for every supported DCS provider version. If you select DCS Provider `v1.0.22+` with ACP `v4.4+` `Self-built VIP`, apply the internal-mode replacement shown after the manifest before creating the `global` cluster.
 
 ```yaml
 ---
@@ -2456,6 +2456,21 @@ spec:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
     kind: DCSCluster
     name: global
+```
+
+#### Internal Self-built VIP variant
+
+The worked example above uses `type: external`. Before applying it, DCS Provider `v1.0.22+` with ACP `v4.4+` can replace resource 5's endpoint fields with this internal configuration. The VIP must be reserved in the control-plane Layer 2 network, and the `vrid` must be unique in that network:
+
+```yaml
+spec:
+  controlPlaneLoadBalancer:
+    host: "${CONTROL_PLANE_VIP}"
+    port: 6443
+    type: internal
+    vrid: <unique-vrid-1-255>
+    # interface: eth0  # optional; omit for provider/alive auto-detection
+  controlPlaneEndpoint: {host: "${CONTROL_PLANE_VIP}", port: 6443}
 ```
 
 ### Values to Replace \{#dcs-worked-example-values}
