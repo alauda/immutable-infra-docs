@@ -108,7 +108,7 @@ The Kube-OVN chart source also changes at chart version `v4.4`:
 | Earlier than `v4.4` | `acp/chart-cpaas-kube-ovn` |
 | `v4.4` and later | `acp/chart-kube-ovn` |
 
-If the target OS Support Matrix row uses Kube-OVN chart `v4.4` or later, upgrade the infrastructure provider to the full-source reconciliation version in the table before continuing. A manual Kube-OVN source patch is not a substitute for that provider upgrade because the same provider releases also reconcile the required CoreDNS and kube-proxy repository changes.
+If the target OS Support Matrix row uses Kube-OVN chart `v4.4` or later, upgrade the infrastructure provider to the full-source reconciliation version in the table before continuing. A manual Kube-OVN source patch is not a substitute for that provider upgrade because the same provider releases also reconcile the required CoreDNS and kube-proxy repository changes. DCS Self-built VIP is a separate creation-time endpoint feature and requires DCS Provider `v1.0.22+` with ACP `v4.4+`; changing an existing external endpoint to internal is not part of this upgrade procedure.
 
 #### Apply the Provider-Version-Specific Procedure
 
