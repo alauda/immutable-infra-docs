@@ -1,6 +1,6 @@
 ---
 weight: 40
-title: Upgrading Kubernetes on Bare Metal
+title: Upgrading Clusters on Bare Metal
 author: gangwang@alauda.io
 category: howto
 queries:
@@ -10,7 +10,7 @@ queries:
   - elemental upgrade reprovision
 ---
 
-# Upgrading Kubernetes on Bare Metal
+# Upgrading Clusters on Bare Metal
 
 This guide explains how to complete Phase 2 of the upgrade workflow for clusters on bare metal. Before you upgrade Kubernetes, complete the Distribution Version upgrade described in [Upgrading Clusters](index.mdx).
 
@@ -33,15 +33,16 @@ Bare-metal upgrades replace every node — they do not run `kubeadm upgrade` on 
 
 1. CAPI deletes one `Machine` according to the rollout strategy.
 2. The provider writes a `clean` plan to the inventory's plan secret.
-3. The host stops kubelet + CRI workload + containerd, then returns to `Available` in the same pool.
+3. The host stops kubelet, deactivates any managed data mounts, clears CRI workload, stops containerd, then returns to `Available` in the same pool.
 4. CAPI creates a replacement `Machine`.
 5. The provider picks an `Available` inventory from the same pool, resolves the new Kubernetes version against `elemental-image-catalog`, and writes a `reprovision` plan.
-6. The host runs `cloud-init clean` → `elemental upgrade --system <new-image>` → reboot. `initramfs` clears Kubernetes persistent state; cloud-init re-executes and runs `kubeadm init` / `kubeadm join` against the new control plane.
+6. The host stages managed-volume activation, runs `cloud-init clean` → `elemental upgrade --system <new-image>` → reboot. `initramfs` clears Kubernetes persistent state; managed mount units start before kubelet, and cloud-init re-executes and runs `kubeadm init` / `kubeadm join` against the new control plane.
 
 Two structural consequences operators must internalize before starting:
 
-- **Bare-metal does not preserve Kubernetes-managed disk state.** `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, `/etc/kubernetes` are cleared by the initramfs cleanup step of every reprovision. There is no equivalent of the DCS provider's pool-managed persistent disks today.
-- **The same `MachineInventory` may not be re-picked.** The provider does not guarantee that the inventory released by a `clean` plan is the same one re-allocated to the replacement `Machine`. Replacements are performed as delete-then-add when `maxSurge=0` (no overlap between old and new node), so pool capacity sizing need only accommodate the desired replica count — old and new nodes do not coexist during the rollout.
+- **Kubernetes-managed system state is not preserved.** `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes` are cleared by the initramfs cleanup step of every reprovision. Storage v2 does not permit these protected paths as managed data mounts.
+- **Declared data volumes can remain on an inventory.** The clean plan deactivates them without wiping their filesystems, and reprovision activates the selected inventory's prepared volumes before kubelet. This is host-local retention, not a backup or data-migration mechanism.
+- **The same `MachineInventory` may not be re-picked.** The provider does not guarantee that the inventory released by a `clean` plan is the same one re-allocated to the replacement `Machine`; data does not follow the replacement automatically. Replacements are performed as delete-then-add when `maxSurge=0` (no overlap between old and new node), so pool capacity sizing need only accommodate the desired replica count — old and new nodes do not coexist during the rollout.
 
 ## Upgrade Sequence
 
@@ -50,8 +51,9 @@ Upgrade bare-metal clusters in the following order:
 1. **(Prerequisite)** Upgrade the ACP platform on the `global` cluster. This brings the bare-metal provider, `elemental-operator`, and the related CAPI components to versions that understand the new schema. Trigger workload-cluster upgrades only after the management-side controllers have rolled out and become Ready.
 2. Upgrade the Distribution Version (Aligned Extensions) on the workload cluster. See [Upgrading Distribution Version](index.mdx).
 3. Ensure the target Kubernetes version is present in `elemental-image-catalog` (and the matching `-iso` repository is available for any future host re-registration).
-4. Upgrade the control plane Kubernetes version (replaces all control-plane nodes one at a time).
-5. Upgrade worker nodes to the target Kubernetes version (replaces all worker nodes within the `maxUnavailable` budget).
+4. Upgrade Kube-OVN to the chart version required by the target ACP release and wait for the `AppRelease` to reach `Success`.
+5. Upgrade the control plane Kubernetes version (replaces all control-plane nodes one at a time).
+6. Upgrade worker nodes to the target Kubernetes version (replaces all worker nodes within the `maxUnavailable` budget).
 
 Cluster API orchestrates the rolling replacement.
 
@@ -59,24 +61,45 @@ Cluster API orchestrates the rolling replacement.
 Skipping step 1 risks two failure modes: the old provider silently ignores new schema fields; or a controller image swap mid-rollout interrupts the plan secret state machine. Always settle the management-side upgrade before touching workload rollout.
 :::
 
+## Storage Compatibility Across Provider Upgrades
+
+An existing cluster created before managed storage was introduced remains compatible when `MachineInventory.spec.storage` stays absent or has `volumes: []`. In this unmanaged mode, the storage controller performs no disk operation and does not rewrite the running Machine's plan merely because the management-side provider was upgraded.
+
+This compatibility does **not** mean that managed storage can be enabled in place on every old host:
+
+- Upgrading only the provider and `elemental-operator` on the `global` cluster does not install `elemental-storage-observer.service` or early-boot storage integration into an older host OS.
+- Keep `spec.storage` empty on such hosts. To enable managed storage later, reinstall, reset, or replace the host with an approved observer-capable image, then verify the observer service and a fresh `status.observedStorage` report while the inventory is unallocated.
+- Configure and Prepare managed volumes only after those host-image prerequisites are satisfied. Do not add a non-empty storage declaration to a running or allocated inventory.
+
+For the preparation and validation procedure, see [Manage Data Disks on Bare-Metal Hosts](../how-to/manage-bare-metal-storage.mdx).
+
 ## Prerequisites
 
 Before you start, ensure all of the following prerequisites are met:
 
 - The Distribution Version upgrade is complete.
+- The installed Bare Metal provider is `v0.0.1` or later and its `AppRelease` reports the same requested and installed revision with `phase=Success`.
 - The control plane is reachable through the existing `<control-plane-vip>:<control-plane-port>`.
 - All current nodes are healthy and `Ready`.
+- Before changing Kube-OVN or reprovisioning any node, use <ExternalSiteLink name="acp" href="/configure/backup/etcd.html" children="ACP Cluster Enhancer" /> to create a current on-demand etcd backup. Verify that the newest `status.records` entry reports `result: Success`, record its `backupTimestamp` and `fileName`, and confirm that the corresponding backup archive exists and will remain retrievable if any control-plane node is reprovisioned or becomes unavailable.
 - The target Kubernetes version is a key in `elemental-image-catalog`. If it is not, add it before starting (see [Update the Image Catalog](#update-the-image-catalog)).
+- The target **kube-ovn (chart)** version has been read from the matching ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
+- `BaremetalCluster.spec.networkType` is `kube-ovn`; the provider skips Kube-OVN reconciliation for any other value.
 - The platform registry is reachable from every host in the cluster.
 - Both `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0` are set — bare-metal does not over-provision physical hosts.
 - The relevant pools have enough capacity to replace one node at a time without falling below the desired replica count.
+- Every inventory with a non-empty storage declaration reports `StoragePrepared=True`, and every currently allocated inventory reports `StorageActive=True`. Record each `BaremetalMachine.status.machineInventoryRef` and the managed filesystem UUIDs before the rollout so that you can detect selection of a different inventory instead of assuming data moved with the Machine.
+
+:::info
+The default local archive under `/var/cpaas/backup` can be used for recovery; S3-compatible storage is not required. However, bare-metal replacement can make the original node-local copy unavailable, and the replacement `Machine` is not guaranteed to use the same `MachineInventory`. If your recovery design cannot guarantee access to the local archive after node replacement or failure, keep an off-node copy in S3-compatible storage or another secure location outside the node before starting Phase 2.
+:::
 
 ## Update the Image Catalog \{#update-the-image-catalog}
 
 `elemental-image-catalog` is the resource that introduces a Kubernetes version to the bare-metal provider.
 
 :::info
-In most upgrades you do not edit this ConfigMap by hand. The bare-metal provider plugin re-renders `elemental-image-catalog` with the Kubernetes versions shipped by the new distribution when it is reapplied during the Distribution Version upgrade (Phase 1). Your task is normally just to **verify** that the target version is present (see the verification step below). The two options that follow are only needed when you must add an out-of-band version — for example a digest-pinned or test build that the plugin does not ship.
+In most upgrades you do not edit this ConfigMap by hand. The bare-metal provider plugin re-renders `elemental-image-catalog` with the Kubernetes versions shipped by the new distribution when it is reapplied during the Distribution Version upgrade (Phase 1). Your task is normally just to **verify** that the target version is present (see the verification step below). The two options that follow are only needed when technical support supplies an approved out-of-band image reference.
 :::
 
 **Option A — Add a chart override.** Append the new version under `provider.imageCatalog.images` (uses `global.registry.address` as the registry):
@@ -85,17 +108,14 @@ In most upgrades you do not edit this ConfigMap by hand. The bare-metal provider
 provider:
   imageCatalog:
     images:
-      v1.33.7-2:
+      <new-kubernetes-version>:
         repository: tkestack/baremetal-base-image
-        tag: v0.0.0-beta-1.33.7-2
-      <new-kubernetes-version>:                # for example, v1.34.5
-        repository: tkestack/baremetal-base-image
-        tag: <new-tag>                         # for example, v0.0.0-dev.0-1.34.5
+        tag: <official-image-tag>
 ```
 
 Reapply the bare-metal provider plugin. The chart re-renders the ConfigMap; the provider's in-process watch hot-reloads the cache without restarting.
 
-**Option B — Patch the ConfigMap directly.** Useful for digest-pinned images or out-of-band test versions:
+**Option B — Patch the ConfigMap directly.** Use this only for an approved image reference that must be pinned directly in the catalog:
 
 ```bash
 kubectl -n cpaas-system patch configmap elemental-image-catalog \
@@ -111,9 +131,17 @@ kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 
 The key must include the leading `v` (for example `v1.34.5`). If the key is missing when CAPI creates the replacement `Machine`, the resulting `BaremetalMachine` enters `Failed` with `ImageResolved=False / Reason=ImageCatalogMiss` and no `reprovision` plan is written — adding the key later restarts the reconciliation automatically.
 
-When the new version corresponds to a new Alauda OS / base-image release, the ISO variant for that release should also be available before the upgrade. The bare-metal provider does not rebuild SeedImages automatically, but you may want to refresh `MachineRegistration` / `SeedImage` for **future** host onboarding so the new hosts come up on the new release. The ISO repository is the same as the base-image repository with `-iso` appended.
+When the new version corresponds to a new Alauda OS release, obtain the matching `base-image` and `base-image-iso` references from Alauda technical support. The bare-metal provider uses `base-image` for reprovisioning and does not rebuild SeedImages automatically. Before future host onboarding, refresh `MachineRegistration` / `SeedImage` with the supported `base-image-iso` reference. Do not derive one image reference from the other or substitute an independently built image.
+
+## Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
+
+Follow the Bare Metal `v0.0.1+` flow in [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane). Bare Metal has no earlier supported provider flow in this documentation.
+
+The shared procedure verifies `BaremetalCluster.spec.networkType`, updates the CAPI `Cluster` annotation, lets the provider reconcile the complete chart source and specification, and checks the chart name, requested revision, installed revision, phase, and conditions. Do not patch the `AppRelease` source manually.
 
 ## Upgrade the Control Plane \{#upgrade-control-plane}
+
+Before continuing, complete the shared [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane) procedure and verify that `cni-kube-ovn` is at the target installed revision with `phase=Success`.
 
 Patch `KubeadmControlPlane.spec.version` to the new Kubernetes version. Where component image tags are pinned (DNS, etcd), update them in the same edit:
 
@@ -124,6 +152,7 @@ kubectl -n cpaas-system edit kubeadmcontrolplane <cluster-name>-control-plane
 - `spec.version` ← target Kubernetes version (must match an `elemental-image-catalog` key).
 - `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` ← matching CoreDNS image tag for the new release.
 - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← matching etcd image tag for the new release.
+- When the target is Kubernetes 1.35 or later, update `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json` in `spec.kubeadmConfigSpec.files` in this same edit, as described in [Required kubelet patch for Kubernetes 1.35](./index.mdx#kubernetes-1-35-kubelet-patch).
 
 The bare-metal provider does **not** require a new `BaremetalMachineTemplate` for a Kubernetes-only upgrade: the template only carries the pool reference, and the upgrade image is resolved from `Machine.spec.version` through the catalog. A new template is only required when you want to move the control plane to a different pool.
 
@@ -139,10 +168,10 @@ kubectl get nodes -o wide                                                    # w
 The expected sequence on each node:
 
 1. CAPI marks one old `Machine` for deletion; corresponding `BaremetalMachine` moves to `Preparing`.
-2. The provider writes a `clean` plan; the inventory ends up `Available` with cleared owner annotations.
+2. The provider writes a `clean` plan; managed volumes are deactivated without being wiped, and the inventory ends up `Available` with cleared owner annotations and storage returned to `Prepared`.
 3. CAPI creates a new `Machine` (with the target version); a new `BaremetalMachine` is created.
 4. The provider allocates an `Available` inventory from the control-plane pool, resolves the new image, and writes a `reprovision` plan.
-5. The host runs `elemental upgrade --system <new-image>`, reboots, and `kubeadm join`s the surviving control plane. `BaremetalMachine.status.phase` becomes `Running`.
+5. The host stages activation for that selected inventory's prepared volumes, runs `elemental upgrade --system <new-image>`, reboots, starts required mount units before kubelet, and `kubeadm join`s the surviving control plane. `BaremetalMachine.status.phase` becomes `Running` only after required storage is active.
 
 Repeat steps 1–5 until every control-plane node has been replaced.
 
@@ -152,10 +181,12 @@ Throughout the rollout, `alive` continues to manage the VIP. As control-plane me
 
 Patch each `MachineDeployment.spec.template.spec.version` to the new Kubernetes version. CAPI replaces workers within the `maxUnavailable` budget — the bare-metal provider re-uses the same worker pool and the same image-catalog resolution logic as the control plane.
 
+For Kubernetes 1.35 or later, first create a new worker `KubeadmConfigTemplate` containing the [required kubelet patch](./index.mdx#kubernetes-1-35-kubelet-patch), then update `spec.template.spec.bootstrap.configRef.name` in the same `MachineDeployment` edit as the version bump. The command below includes that reference. For an earlier target with no bootstrap change, omit the `bootstrap` object. Follow [Updating Bootstrap Templates](../manage-nodes/bare-metal.mdx#updating-bootstrap-templates) to create the immutable template.
+
 ```bash
 kubectl -n cpaas-system patch machinedeployment <cluster-name>-workers \
   --type='merge' \
-  -p='{"spec":{"template":{"spec":{"version":"<new-kubernetes-version>"}}}}'
+  -p='{"spec":{"template":{"spec":{"version":"<new-kubernetes-version>","bootstrap":{"configRef":{"name":"<new-bootstrap-template>"}}}}}}'
 ```
 
 Watch:
@@ -168,37 +199,71 @@ kubectl get nodes -o wide
 
 Worker upgrades carry fewer knobs than the control plane: there is no `clusterConfiguration` block on `MachineDeployment`, so no DNS / etcd tags to update. Kubernetes component versions on worker nodes follow the new base image.
 
-If the new release also requires a bootstrap-template change (different cloud-init, different `kubeletExtraArgs`), follow [Updating Bootstrap Templates](../manage-nodes/bare-metal.mdx#updating-bootstrap-templates) — that is a separate template swap, independent of the version bump.
+For earlier versions, a bootstrap-template change is needed only when the release changes settings such as cloud-init or `kubeletExtraArgs`.
 
 ## Cross-Version Upgrades
 
-Kubernetes only supports single-minor upgrades for the control plane (skew policy). To move from v1.32 → v1.34:
+Kubernetes control planes must move through supported minor-version hops. Use [Preparing for Cross-Version Upgrades](./index.mdx#cross-version-preparation) to identify and pre-stage every intermediate ACP row.
 
-1. Add the v1.33 entry to `elemental-image-catalog` and upgrade the control plane to v1.33; wait for the rollout to complete.
-2. Add the v1.34 entry; upgrade the control plane to v1.34.
-3. Upgrade the worker `MachineDeployment` to v1.34.
+For each intermediate row, and finally for the target row:
 
-The bare-metal rollout strategy already serializes node replacement, so cross-version upgrades do not require additional pool capacity beyond what was already needed for a same-minor upgrade.
+1. Ensure that row's Kubernetes version exists in `elemental-image-catalog`.
+2. Upgrade Kube-OVN to that row's **kube-ovn (chart)** version and wait for `phase=Success`.
+3. Upgrade the control plane to that row's Kubernetes version and wait for every control-plane node to become `Ready`.
+4. Upgrade every worker `MachineDeployment` to the same Kubernetes version and wait for the rollout to complete before starting the next hop.
+
+The version values always come from the OS Support Matrix; they are not fixed examples in this guide. The bare-metal rollout strategy already serializes node replacement, so cross-version upgrades do not require additional pool capacity beyond what is needed for a same-minor upgrade.
+
+## Recovering From a Failed Phase 2 Upgrade
+
+Do not treat a Kubernetes minor downgrade as an ordinary rollback:
+
+1. If no target-version control-plane `Machine` has been created, restore Kube-OVN by using [Restore Kube-OVN During Stage-1 Recovery](./index.mdx#restore-kube-ovn-during-stage-1-recovery), then restore the previous `KubeadmControlPlane` and `MachineDeployment` manifest values.
+2. If a target-minor control-plane machine has joined, stop further rollout and repair forward on the target minor. If forward repair cannot restore cluster health, restore the cluster from the verified pre-upgrade backup by following the <ExternalSiteLink name="acp" href="/configure/backup/etcd.html#etcd-restore" children="ACP etcd restore procedure" />. Do not patch Kubernetes, CoreDNS, or etcd back to the previous minor.
+
+Restoring etcd is a disaster-recovery action, not a pre-upgrade validation step. Do not run the restore procedure on a healthy cluster merely to verify the backup.
+
+Every host that completed a `reprovision` plan has already replaced its OS image and cleared Kubernetes-managed state. Changing version fields does not reconstruct that earlier node state.
 
 ## Verification
 
 After the rollout completes:
 
 ```bash
-kubectl -n cpaas-system get baremetalmachines.infrastructure.cluster.x-k8s.io
-kubectl -n cpaas-system get machines.cluster.x-k8s.io
+kubectl -n cpaas-system get baremetalmachines.infrastructure.cluster.x-k8s.io \
+  -l cluster.x-k8s.io/cluster-name=<cluster-name> \
+  -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,INVENTORY:.status.machineInventoryRef.name,PLAN_SECRET:.status.planSecretRef.name'
+kubectl -n cpaas-system get machines.cluster.x-k8s.io \
+  -l cluster.x-k8s.io/cluster-name=<cluster-name>
+kubectl -n cpaas-system get apprelease cni-kube-ovn
 kubectl get nodes -o wide
 ```
 
-All `BaremetalMachine` objects should be `Running`. Every CAPI `Machine` should report the new `spec.version`. Every workload `Node` should be `Ready` with the new `kubelet` version, and every `MachineInventory` plan secret should carry `baremetal.alauda.io/plan.type=reprovision` (the most recent plan applied).
+The `cni-kube-ovn` `AppRelease` should report the target installed revision with `phase=Success`. For the target cluster, every current `BaremetalMachine` should be `Running`, every CAPI `Machine` should report the new `spec.version`, and every workload `Node` should be `Ready` with the new `kubelet` version.
 
-`MachineInventoryPool.status` should satisfy `available + allocated + preparing + reprovisioning + unavailable = total` with `preparing = reprovisioning = 0`.
+For each current `BaremetalMachine`, use the `INVENTORY` and `PLAN_SECRET` columns to verify the inventory and plan that back the running node:
+
+```bash
+kubectl -n cpaas-system get machineinventories.elemental.cattle.io <inventory-name> \
+  -o jsonpath='{.status.plan.state}{" storage="}{.status.storage.phase}{"\n"}'
+kubectl -n cpaas-system get secret <plan-secret-name> \
+  -o jsonpath='{.metadata.annotations.baremetal\.alauda\.io/plan\.type}{"\n"}'
+```
+
+Each referenced `MachineInventory` should report `Applied`, and each referenced plan Secret should report `reprovision`. Apply this check only to inventories referenced by the current `BaremetalMachine` objects. A spare inventory that did not participate in the rollout may have no `reprovision` plan. An inventory that completed a `clean` plan but was not selected for a replacement Machine may still report `clean`; neither case means that the rollout is incomplete.
+
+For an inventory with managed volumes, also verify `status.storage.phase=Active`, `StoragePrepared=True`, `StorageActive=True`, and `BaremetalMachine.status.conditions[StorageReady]=True/AllVolumesReady`. Compare its current filesystem UUIDs with the pre-upgrade record. A different UUID usually means a different inventory was selected; it must not be interpreted as the original data having migrated.
+
+`MachineInventoryPool.status` should satisfy `available + allocated + preparing + reprovisioning + unavailable = total` with `preparing = reprovisioning = 0`. `available` may remain greater than zero when the pool contains spare inventories; those inventories are outside the plan verification above.
 
 ## Troubleshooting
 
 | Issue | What to check |
 |---|---|
+| The Kube-OVN annotation changed but the chart name, target revision, or installed revision did not converge | Confirm that the installed Bare Metal provider is `v0.0.1` or later, then inspect the `AppRelease` conditions and provider logs. Follow the shared [Kube-OVN verification](./index.mdx#verify-the-kube-ovn-apprelease); do not patch the source manually. |
 | Rollout stuck on the first new node | `BaremetalMachine.status.conditions[ImageResolved]` — confirm the new key is in `elemental-image-catalog` and that the `Cluster` carries `cpaas.io/registry-address`. |
+| Inventory does not become allocatable after clean | Check `MachineInventory.status.storage` and `status.observedStorage`. Managed volumes must be confirmed inactive and Prepared from a fresh host observation before the inventory can return to the allocation set. |
+| Replacement Machine waits on `StorageReady` | Verify that the selected inventory is the intended one, required device IDs and filesystem UUIDs still match, required mount units are active, and the host produced a fresh post-reboot observation. |
 | Host reboots into a state that never joins the cluster | `MachineInventory.status.plan.state` (`Failed` is terminal); inspect the host's serial console for `elemental upgrade` errors. Verify the platform registry is reachable from the host. |
 | New control-plane node fails `kubeadm join` | Confirm the VIP is still reachable; `alive` may have lost the lock. Check `kubectl -n kube-system get lease`, `ipvsadm -Ln`, `keepalived` logs from the static pod. |
 | Worker rollout stalls with `MachineDeployment.spec.strategy.rollingUpdate.maxSurge > 0` set | Bare-metal pools cannot honour over-provisioning. Set `maxSurge=0` and bump `maxUnavailable` to budget more parallel replacements within the pool. |

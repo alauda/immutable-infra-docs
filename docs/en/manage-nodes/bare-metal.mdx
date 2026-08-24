@@ -22,6 +22,7 @@ This document explains how to deploy worker nodes, scale them up and down, repla
 - The control plane must already be running. See [Create Cluster](../create-cluster/bare-metal.mdx).
 - The worker `MachineInventoryPool` must contain at least as many `Available` inventories as the target replica count, plus the headroom required by the rollout strategy.
 - The target `Machine.spec.version` must be a key in the `elemental-image-catalog` ConfigMap.
+- Any inventory with non-empty `spec.storage.volumes[]` must already report `status.storage.phase=Prepared` and `StoragePrepared=True` before it can count as `Available`. Follow [Manage Data Disks on Bare-Metal Hosts](../how-to/manage-bare-metal-storage.mdx) before adding a newly registered storage-managed inventory to the worker pool.
 :::
 
 :::info
@@ -43,6 +44,8 @@ The four resources that compose a worker node group:
 3. **`KubeadmConfigTemplate`** (`<cluster-name>-worker-bootstrap`) — cloud-init `user-data` for `kubeadm join`. The bare-metal provider normalizes this user-data at reprovision time (hostname, `provider-id`, `criSocket`); operators should not pre-fill those fields.
 4. **`MachineDeployment`** — controls replica count, version, rollout strategy.
 
+Managed data disks are not part of `BaremetalMachineTemplate`. Their declaration and retained data belong to each long-lived `MachineInventory`, so two members of the same worker pool may expose different host-local datasets unless operators standardize and verify their storage declarations.
+
 The Cluster API contract for templates: the running `Machine` set keeps an in-memory snapshot of the previous template, so editing a template in place does **not** trigger a rollout. Worker upgrades create a new `BaremetalMachineTemplate` and patch `MachineDeployment.spec.template.spec.infrastructureRef.name` to point at it.
 
 ## Worker Node Deployment \{#worker-node-deployment}
@@ -53,7 +56,7 @@ The Cluster API contract for templates: the running `Machine` set keeps an in-me
 kubectl -n cpaas-system get machineinventorypools.infrastructure.cluster.x-k8s.io <cluster-name>-worker-pool
 ```
 
-`status.available` must be at least the target replica count. If you need additional capacity, register more hosts (boot the `SeedImage` ISO on them — see [Create Cluster → Step 1](../create-cluster/bare-metal.mdx#step-1-machineregistration-seedimage)) and add their `MachineInventory` names to `spec.machineInventories`.
+`status.available` must be at least the target replica count. If you need additional capacity, register more hosts (boot the `SeedImage` ISO on them — see [Create Cluster → Step 1](../create-cluster/bare-metal.mdx#step-1-machineregistration-seedimage)), prepare any managed storage while each inventory is still unallocated, and then add their names to `spec.machineInventories`.
 
 ### Step 2: Configure the Worker `BaremetalMachineTemplate`
 
@@ -80,6 +83,8 @@ spec:
 
 ### Step 3: Configure the Bootstrap Template \{#step-3-configure-bootstrap-template}
 
+`imagePullCredentialsVerificationPolicy: NeverVerify` is required only starting with Kubernetes 1.35. Omit this parameter when creating workers with Kubernetes 1.34 or earlier.
+
 ```yaml
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
 kind: KubeadmConfigTemplate
@@ -103,6 +108,7 @@ spec:
             {
               "apiVersion": "kubelet.config.k8s.io/v1beta1",
               "kind": "KubeletConfiguration",
+              "imagePullCredentialsVerificationPolicy": "NeverVerify",
               "protectKernelDefaults": true,
               "staticPodPath": null,
               "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
@@ -195,7 +201,7 @@ kubectl get nodes -o wide                     # workload cluster
 
 **Prerequisites**:
 
-- The worker pool has enough `Available` inventories. If not, register the additional hosts (boot the SeedImage ISO and confirm the new `MachineInventory` objects) and append them to `MachineInventoryPool.spec.machineInventories[]`.
+- The worker pool has enough `Available` inventories. If not, register the additional hosts (boot the SeedImage ISO and confirm the new `MachineInventory` objects), prepare any managed storage, and append them to `MachineInventoryPool.spec.machineInventories[]`.
 
 **Procedure**:
 
@@ -216,7 +222,7 @@ kubectl get nodes -o wide                     # workload cluster
    kubectl -n cpaas-system edit machineinventorypool <cluster-name>-worker-pool
    ```
 
-   Append the new `MachineInventory` names — they must already be registered and Ready. Save and exit; the pool reconciler picks up the change and increases `status.total` and `status.available`.
+   Append the new `MachineInventory` names — they must already be registered and Ready. Inventories with managed volumes must also be Prepared; otherwise they increase `status.total` but remain unavailable for allocation. Save and exit, then confirm the expected increase in `status.available`.
 
 3. **Scale up the `MachineDeployment`**
 
@@ -246,7 +252,7 @@ Two strategies are supported, identical in shape to the upstream Cluster API con
 :::info
 **Inventory recycling**
 
-A `clean` plan stops kubelet, clears CRI workload, and stops containerd. It does **not** wipe Kubernetes persistent directories or reset the OS — that work happens later, when the same or a different inventory is picked for a new `BaremetalMachine` and runs the `reprovision` plan. Until then, the inventory returns to `Available` and may be allocated to another cluster.
+A `clean` plan stops kubelet, deactivates declared storage mounts, clears CRI workload, and stops containerd. It does **not** wipe managed filesystems, Kubernetes persistent directories, or reset the OS — OS cleanup happens later, when the same or a different inventory is picked for a new `BaremetalMachine` and runs the `reprovision` plan. Until then, the inventory returns to `Available` and may be allocated again. Deleting a Machine performs **Deactivate**, not storage Release, so the storage declaration, filesystem UUIDs, and data remain on that inventory.
 :::
 
 ##### Random Removal
@@ -292,11 +298,11 @@ CAPI selects machines for deletion in its standard order. Each selected `Baremet
    kubectl -n cpaas-system get machineinventories.elemental.cattle.io <inventory-name> -o yaml
    ```
 
-   The released inventory must show `baremetal.alauda.io/allocation-state=Available`, the `baremetal.alauda.io/owner-*` annotations must be cleared, and the pool annotation must remain. `MachineInventory` itself is **not** deleted.
+   The released inventory must show `baremetal.alauda.io/allocation-state=Available`, the `baremetal.alauda.io/owner-*` annotations must be cleared, and the pool annotation must remain. `MachineInventory` itself is **not** deleted. If it declares managed volumes, it must return to `status.storage.phase=Prepared` with `StorageActive=False/Inactive`; its business mount paths must be inactive while filesystem UUIDs and data remain unchanged.
 
 ### Replacing a Single Failed Node \{#replacing-a-node}
 
-If a `BaremetalMachine` lands in `Failed`, the safest recovery is to delete the failed `Machine`. CAPI immediately creates a replacement `Machine` (because `replicas` did not change), and the bare-metal provider picks an `Available` inventory from the same pool. Most often the replacement is a different `MachineInventory`; the provider does not guarantee that the freshly released inventory will be re-picked.
+If a `BaremetalMachine` lands in `Failed`, the safest recovery is to delete the failed `Machine`. CAPI immediately creates a replacement `Machine` (because `replicas` did not change), and the bare-metal provider picks an `Available` inventory from the same pool. Most often the replacement is a different `MachineInventory`; the provider does not guarantee that the freshly released inventory will be re-picked. Host-local managed data does not follow the replacement Machine. If the application must reuse a specific inventory's data, use a dedicated or deliberately ordered pool and verify `BaremetalMachine.status.machineInventoryRef` before relying on that data.
 
 ```bash
 kubectl -n cpaas-system delete machine <machine-name>
@@ -307,7 +313,7 @@ Investigate the original failure separately: read `BaremetalMachine.status.condi
 
 ### Upgrading Machine Infrastructure
 
-`BaremetalMachineTemplate` carries only the pool reference and allocation policy — there is no CPU / memory / disk spec to revisit. Infrastructure-side changes that require a template swap are limited to:
+`BaremetalMachineTemplate` carries only the pool reference and allocation policy — there is no CPU, memory, or disk declaration on the template. Managed storage is changed separately on an unallocated, inactive `MachineInventory`; see [Manage Data Disks on Bare-Metal Hosts](../how-to/manage-bare-metal-storage.mdx). Infrastructure-side changes that require a template swap are limited to:
 
 - Moving a `MachineDeployment` to a different pool.
 - Adjusting allocation policy (when more policies are added).
@@ -339,7 +345,7 @@ To roll out a bootstrap change:
      > new-worker-bootstrap.yaml
    ```
 
-2. Change `metadata.name`, remove server-generated fields (`resourceVersion`, `uid`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration`) and the entire `status`, and edit the desired fields.
+2. Change `metadata.name`, remove server-generated fields (`resourceVersion`, `uid`, `creationTimestamp`, `managedFields`, `kubectl.kubernetes.io/last-applied-configuration`) and the entire `status`, and edit the desired fields. For Kubernetes 1.35 or later, add the [required kubelet patch settings](../upgrade-cluster/index.mdx#kubernetes-1-35-kubelet-patch) to `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json`.
 3. Apply the new template:
 
    ```bash
@@ -374,7 +380,7 @@ The annotations the provider maintains on each `MachineInventory` are the author
 | `baremetal.alauda.io/owner-machine` | `Machine` name | Owning Cluster API `Machine`. |
 | `baremetal.alauda.io/owner-baremetalmachine` | `BaremetalMachine` name | Owning provider machine. |
 
-Each `BaremetalMachine.status.planSecretRef` plan secret also carries `baremetal.alauda.io/plan.type=clean|reprovision` so you can distinguish which plan is currently being driven.
+Each inventory's default plan secret also carries `baremetal.alauda.io/plan.type`. Normal node lifecycle uses `clean` or `reprovision`; inventory storage reconciliation additionally uses `storage-prepare` and `storage-release`. Inspect `MachineInventory.status.storage.conditions` and `.operation` together with the plan type when diagnosing storage.
 
 ---
 
@@ -387,11 +393,13 @@ Each `BaremetalMachine.status.planSecretRef` plan secret also carries `baremetal
 | Member missing | `MachineInventoryPool.MembersValid=False / Ready=False` | Pool's `status.unavailable`, message on the failing condition |
 | Inventory not Ready | Counted toward `status.unavailable` | `MachineInventory.status.conditions[Ready]`, plan secret existence |
 | Plan secret missing | Inventory ineligible for allocation | `MachineInventory.status.plan.secretRef`, presence of the referenced Secret |
+| Storage not prepared | Inventory does not count as `Available`; `StoragePrepared=False` | `MachineInventory.status.storage`, freshness and contents of `status.observedStorage`, and `storage-prepare` plan output |
 | Bootstrap secret missing | `BootstrapReady=False / Reason=BootstrapWaiting` | `Machine.spec.bootstrap.dataSecretName` |
 | Catalog miss | `BaremetalMachine` `Failed`, `ImageResolved=False / Reason=ImageCatalogMiss`, no plan written | `elemental-image-catalog` keys |
 | Registry annotation missing | `ImageResolved=False / Reason=ImageRegistryMissing` | `Cluster.metadata.annotations["cpaas.io/registry-address"]` |
 | Reprovision plan failed | `BaremetalMachine` `Failed`, inventory marked `Unavailable` | Plan secret `failed-output`; host serial console; reachable platform registry |
-| Clean plan failed | Deletion blocked by finalizer; inventory marked `Unavailable` | Same as above, focused on `clean` plan output |
+| Managed volume activation failed | `BaremetalMachine` `StorageReady=False`; node readiness is blocked for a required volume | Stable device identity, filesystem UUID, mount unit, fresh post-reboot observation, and plan `failed-output` |
+| Clean or Deactivate failed | Deletion blocked by finalizer; inventory marked `Unavailable` | `clean` plan output, host mounts, and `MachineInventory.status.storage.operation` |
 
 For the full operator-side state machine reference, see [Provider Overview → BaremetalMachine](../overview/providers/bare-metal.mdx#baremetalmachine).
 
@@ -400,4 +408,5 @@ For the full operator-side state machine reference, see [Provider Overview → B
 ## Next Steps
 
 - [Create Clusters](../create-cluster/bare-metal.mdx)
+- [Manage Data Disks](../how-to/manage-bare-metal-storage.mdx)
 - [Upgrade Clusters](../upgrade-cluster/bare-metal.mdx)

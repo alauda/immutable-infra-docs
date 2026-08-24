@@ -24,6 +24,18 @@ Pool-managed persistent disks are first supported in DCS provider `v1.0.16`.
 In `v1.0.16`, `DCSIpHostnamePool.spec.pool[].persistentDisk` is managed through YAML only; the web UI does not expose this configuration.
 :::
 
+## Alauda OS and Provider Compatibility \{#alauda-os-and-provider-compatibility}
+
+For a Huawei DCS cluster that uses Alauda OS, select the Alauda OS image published for the ACP release installed on the cluster. See [Downloading Alauda OS](../../overview/os-support-matrix.mdx#downloading-alauda-os).
+
+For ACP `v4.3.2` or later, including ACP `v4.4.0` and later, install DCS Provider `v1.0.21` or later. Do not pair DCS Provider `v1.0.21` or later with an Alauda OS image for an ACP release earlier than `v4.3.2`.
+
+:::info
+**Control plane endpoint boundary for v1.0.21**
+
+DCS Provider `v1.0.21` supports an external LoadBalancer for highly available control plane endpoints. It does not support `DCSCluster.spec.controlPlaneLoadBalancer.type: internal`. Plan the listener, backends, health check, and reachability in [Plan the Control Plane Endpoint](../../how-to/control-plane-endpoint.mdx).
+:::
+
 ## Key Features
 
 - **Virtual Machine Management**: Provision and manage VMs on DCS platform
@@ -40,17 +52,10 @@ It also supports **UI-based** cluster management when **Fleet Essentials** is in
 
 ### UI-Based Management (Fleet Essentials)
 
-:::warning
-**Fleet Essentials UI does not support ACP 4.3 cluster upgrades**
+:::info
+**Fleet Essentials upgrade boundary**
 
-The Fleet Essentials UI workflow has not been adapted to the Cluster Version Operator (CVO) mechanism introduced in ACP 4.3. Do not use the Fleet Essentials UI to upgrade DCS clusters on ACP 4.3.
-
-Two supported alternatives:
-
-- **YAML path** — Follow the YAML-based upgrade procedure in [Upgrading Kubernetes on Huawei DCS](../../upgrade-cluster/huawei-dcs.mdx).
-- **ACP Core cluster management UI** — Use the two-step upgrade flow built into the ACP Core platform; see <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html#request-the-upgrade" children="Request the upgrade for the global cluster" /> or <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html#request-the-upgrade" children="Request the upgrade for workload clusters" />.
-
-Cluster creation and node-pool management through the Fleet Essentials UI are unaffected by this limitation.
+Fleet Essentials 1.0.4 and later can request the ACP 4.3-and-later Distribution Version upgrade through CVO. It does not perform the DCS Kubernetes and Alauda OS replacement. Use [Upgrading Kubernetes on Huawei DCS](../../upgrade-cluster/huawei-dcs.mdx) for that Phase 2 YAML procedure. Cluster creation and routine node-pool management through Fleet Essentials are unaffected by this boundary.
 :::
 
 Fleet Essentials provides the UI extension anchors that allow Alauda Container Platform DCS Infrastructure Provider to add DCS-specific pages dynamically.

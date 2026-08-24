@@ -14,6 +14,8 @@ queries:
 
 This document describes how to install the `global` cluster onto Immutable Infrastructure. The `global` cluster is the platform control plane and is provisioned through Cluster API. Use this path when the platform control plane must run on an immutable operating system such as Alauda OS.
 
+For a `global` cluster on Huawei DCS, review [Alauda OS and Provider Compatibility](../overview/providers/huawei-dcs.mdx#alauda-os-and-provider-compatibility) before selecting the DCS Provider package and VM template.
+
 ## When to Use This Path
 
 Choose this installation path when all of the following conditions apply:
@@ -34,14 +36,14 @@ The following prerequisites apply to every provider:
 - The infrastructure provider package for your target platform.
 - Network reachability between the bootstrap host and the target IaaS platform API endpoint.
 - IP and hostname planning for the `global` control plane and worker nodes. See [Infrastructure Resources](../infrastructure/index.mdx) for the resource model used by each provider.
-- A stable Kubernetes API endpoint for the `global` cluster, such as a VIP or load balancer address.
+- A stable Kubernetes API endpoint for the `global` cluster. Select and validate the provider-specific endpoint mode in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx) before you create the cluster.
 - A platform access address, registry address, and Pod and Service CIDR ranges.
 - For x86_64 nodes that use ACP-provided Alauda OS images, the underlying CPUs must support the `x86-64-v2` ISA baseline. See [OS Support Matrix](../overview/os-support-matrix.mdx).
 
 <Directive type="warning" title="Naming Convention (Required)">
   This rule applies to **every** infrastructure provider supported by this install path — Huawei DCS, Huawei Cloud Stack, VMware vSphere, and any provider added in the future. Every manifest you author in Step 4 must follow it. Misnaming these resources has two distinct failure modes, both detailed below; one breaks initial provisioning, the other only surfaces during disaster recovery.
 
-  - The CAPI `Cluster` and the provider's infrastructure cluster resource (for example, `DCSCluster` for Huawei DCS or `HCSCluster` for Huawei Cloud Stack; each provider has its own equivalent) **must** be named exactly `global`. `cpaas-installer` looks them up by literal name, and the Huawei Cloud Stack provider only allocates the global ELB listener ports (`11443` for the registry and console, `2379` for DR etcd-sync, `443` for web access) when the infra cluster is named `global`. A different name silently breaks registry pull, DR etcd-sync, and the web console.
+  - The CAPI `Cluster` and the provider's infrastructure cluster resource (for example, `DCSCluster` for Huawei DCS or `HCSCluster` for Huawei Cloud Stack; each provider has its own equivalent) **must** be named exactly `global`. `cpaas-installer` looks them up by literal name, and the Huawei Cloud Stack provider only allocates the global ELB listener ports (`11443` for the registry and console, `2379` for DR etcd synchronization, `443` for web access) when the infra cluster is named `global`. A different name silently breaks registry pull, DR etcd synchronization, and the web console.
   - Every other CAPI resource (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`) and every other provider infrastructure resource (machine templates, IP/hostname pools, machine config pools, and any other per-provider resource) **must** use a name with the `global-` prefix. The DR (failover) mechanism uses this prefix to identify resources owned by the `global` cluster. **A `global` cluster resource without the `global-` prefix is invisible to DR and causes the standby cluster's machines to be deleted at failover time** — the cluster will provision and run normally, then lose nodes the first time DR is exercised. This is a hard requirement, not a stylistic convention.
   - `Cluster.spec.controlPlaneRef.name` and any other cross-references must match the prefixed names exactly.
 </Directive>
@@ -57,6 +59,22 @@ Before installation, record the supported version set for the delivery package:
 | Infrastructure provider chart version | Use the VMware vSphere, DCS, HCS, or Bare Metal provider chart version delivered with the target release. |
 | Alauda OS image or VM template | Must contain the Kubernetes version used by `K8S_VERSION`. |
 | `K8S_VERSION` | Use v-prefixed semver that matches the target Alauda OS image, such as `v<major>.<minor>.<patch>`. |
+
+## Installation Lifecycle
+
+![Global cluster installation lifecycle](./assets/global-install-lifecycle.svg)
+
+Use the following stage map to identify the input, expected result, and first diagnostic location for each part of the installation.
+
+| Stage | Input | Apply | Expected result | Diagnose first |
+|---|---|---|---|---|
+| Bootstrap environment | Core Package and bootstrap host | Run `setup.sh` | The `minialauda` management cluster, local registry, and installer Pods are running. | Bootstrap host containers and Pods in `cpaas-system`. |
+| Provider delivery | Kubeadm and infrastructure provider packages | Push packages and apply provider `AppRelease` objects. | Provider CRDs and controllers are Ready. | `AppRelease` status, provider Pods, and registry access. |
+| Cluster definition | Provider credentials, endpoint, network, node, and image values | Apply the complete Cluster API manifest. | `Cluster`, infrastructure cluster, control plane, and machine resources appear. | Resource conditions and provider-controller logs. |
+| Node provisioning | VM template or registered hosts | Let the infrastructure provider reconcile the Machines. | VMs or physical hosts boot and receive kubeadm bootstrap data. | Provider Machine objects, IaaS events, and guest initialization logs. |
+| Control plane | Kubernetes and component versions | Wait for `KubeadmControlPlane`. | The expected control-plane replicas are Ready and the API endpoint responds. | `KubeadmControlPlane`, Machines, etcd, and endpoint health. |
+| Platform installation | Installer request and import resources | Trigger the installer. | ACP Core components, registry, platform access, and base modules become healthy. | Installer progress API and Pods in `cpaas-system`. |
+| Handoff | Imported provider resources and credentials | Verify the final `global` cluster and every provider-specific handoff gate, then retire only `minialauda`. | The final cluster owns its providers and no longer depends on the temporary management cluster. For Bare Metal, the system-agent handoff ConfigMap matches the current endpoint, authentication profile, and complete target set. | Imported resources, provider credentials, final cluster annotations, and provider-specific handoff Jobs and ConfigMaps. |
 
 ## Procedure
 
@@ -83,6 +101,17 @@ export PROVIDER_SECRET_NAME="global-secret"
 
 Use `LOCAL_REGISTRY_ADDRESS` when pushing packages from the bootstrap host. Use `BOOTSTRAP_REGISTRY_ADDRESS` in AppRelease chart repository values because provider Pods read the chart repository from inside the bootstrap cluster's network. Use `NODE_REGISTRY_ADDRESS` (the bootstrap host's registry, `<bootstrap-host-ip>:11443`) in the Cluster API registry annotations, because provisioned `global` nodes must pull images through an address reachable from their subnet during provisioning. This is a temporary value: after the `global` cluster's own registry comes up, the installer automatically rewrites the `cpaas.io/registry-address` annotation on the `Cluster` and `DCSCluster` to the permanent platform registry, so later reconciles pull from the `global` cluster instead of the bootstrap host.
 
+Keep the Registry formats distinct:
+
+| Use | Format | Example |
+|---|---|---|
+| Registry HTTP API request | URL with `/v2/` path | `http://${LOCAL_REGISTRY_ADDRESS}/v2/ait/chart-cluster-api-provider-kubeadm/tags/list` |
+| Container image reference | Registry, repository, and tag or digest | `${BOOTSTRAP_REGISTRY_ADDRESS}/ait/cluster-api-provider-kubeadm:<tag>` |
+| `cpaas.io/registry-address` annotation | `<host>:<port>` only | `${NODE_REGISTRY_ADDRESS}` |
+| AppRelease `repoURL` | Registry address without `/v2/` | `${BOOTSTRAP_REGISTRY_ADDRESS}` |
+
+The `/v2/` segment belongs only to Registry HTTP API requests. Do not add it to image references, the `cpaas.io/registry-address` annotation, or AppRelease `repoURL`.
+
 ### Step 2 — Create the Bootstrap Cluster
 
 Run the bootstrap script provided by the Core Package with Bash. This brings up a temporary KIND-based bootstrap cluster named `minialauda` on the bootstrap host — the temporary Cluster API management cluster used only to provision the `global` cluster. After it completes, make the matching `kubectl` client from the bootstrap control-plane container available on the bootstrap host and configure the exported kubeconfig.
@@ -107,9 +136,34 @@ kubectl get nodes
 
 The bootstrap script provisions an embedded registry, the Cluster API control plane, and the installer components that drive the `global` cluster installation.
 
+By default, the embedded bootstrap Registry is anonymous and no `global-registry-auth` Secret is created. If you configured both a Registry username and password during bootstrap setup, `setup.sh` creates that Secret in `cpaas-system`.
+
 ### Step 3 — Upload and Install Provider Packages
 
 Upload the Kubeadm provider package and the infrastructure provider package to the local registry.
+
+The AppRelease examples below use the default anonymous bootstrap Registry and therefore do not reference `global-registry-auth`.
+
+If the bootstrap Registry requires authentication, verify that the Secret exists before you create any provider AppRelease:
+
+```shell
+kubectl -n cpaas-system get secret global-registry-auth -o name
+```
+
+Then add both authentication fields to each provider AppRelease before applying it:
+
+```yaml
+spec:
+  source:
+    chartPullSecret: global-registry-auth
+  values:
+    global:
+      registry:
+        imagePullSecrets:
+          - global-registry-auth
+```
+
+If the Registry is anonymous, do not create a placeholder Secret and do not add these fields. The bootstrap Secret is also not a credential-transfer mechanism: workload clusters receive their Registry pull Secret from the `global` cluster's `public-registry-credential` flow. Do not copy the bootstrap `global-registry-auth` Secret into a workload cluster.
 
 <Directive type="info" title="Why cluster.type is Baremetal for every provider">
   The AppRelease values in the tabs below all set `global.cluster.type: Baremetal`. This is a chart-internal classifier, not the IaaS provider name. Keep `Baremetal` for the Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal `global` installations. The value drives how the platform configures node-level components; it does not select the infrastructure provider.
@@ -159,7 +213,6 @@ spec:
     cluster: ""
     namespace: ""
   source:
-    chartPullSecret: global-registry-auth
     charts:
       - name: ait/chart-cluster-api-provider-kubeadm
         releaseName: cluster-api-provider-kubeadm
@@ -187,8 +240,6 @@ spec:
       region: global
       registry:
         address: ${BOOTSTRAP_REGISTRY_ADDRESS}
-        imagePullSecrets:
-          - global-registry-auth
       replicas: 1
       scheme: https
 ---
@@ -205,7 +256,6 @@ spec:
     cluster: ""
     namespace: ""
   source:
-    chartPullSecret: global-registry-auth
     charts:
       - name: ait/chart-cluster-api-provider-dcs
         releaseName: cluster-api-provider-dcs
@@ -233,8 +283,6 @@ spec:
       region: global
       registry:
         address: ${BOOTSTRAP_REGISTRY_ADDRESS}
-        imagePullSecrets:
-          - global-registry-auth
       replicas: 1
       scheme: https
 EOF
@@ -293,7 +341,6 @@ spec:
     cluster: ""
     namespace: ""
   source:
-    chartPullSecret: global-registry-auth
     charts:
       - name: ait/chart-cluster-api-provider-kubeadm
         releaseName: cluster-api-provider-kubeadm
@@ -321,8 +368,6 @@ spec:
       region: global
       registry:
         address: ${BOOTSTRAP_REGISTRY_ADDRESS}
-        imagePullSecrets:
-          - global-registry-auth
       replicas: 1
       scheme: https
 ---
@@ -339,7 +384,6 @@ spec:
     cluster: ""
     namespace: ""
   source:
-    chartPullSecret: global-registry-auth
     charts:
       - name: ait/chart-cluster-api-provider-vsphere
         releaseName: cluster-api-provider-vsphere
@@ -367,8 +411,6 @@ spec:
       region: global
       registry:
         address: ${BOOTSTRAP_REGISTRY_ADDRESS}
-        imagePullSecrets:
-          - global-registry-auth
       replicas: 1
       scheme: https
 EOF
@@ -428,7 +470,6 @@ spec:
     cluster: ""
     namespace: ""
   source:
-    chartPullSecret: global-registry-auth
     charts:
       - name: ait/chart-cluster-api-provider-kubeadm
         releaseName: cluster-api-provider-kubeadm
@@ -456,8 +497,6 @@ spec:
       region: global
       registry:
         address: ${BOOTSTRAP_REGISTRY_ADDRESS}
-        imagePullSecrets:
-          - global-registry-auth
       replicas: 1
       scheme: https
 ---
@@ -474,7 +513,6 @@ spec:
     cluster: ""
     namespace: ""
   source:
-    chartPullSecret: global-registry-auth
     charts:
       - name: ait/chart-cluster-api-provider-hcs
         releaseName: cluster-api-provider-hcs
@@ -502,8 +540,6 @@ spec:
       region: global
       registry:
         address: ${BOOTSTRAP_REGISTRY_ADDRESS}
-        imagePullSecrets:
-          - global-registry-auth
       replicas: 1
       scheme: https
 EOF
@@ -686,7 +722,6 @@ spec:
     cluster: ""
     namespace: ""
   source:
-    chartPullSecret: global-registry-auth
     charts:
       - name: ait/chart-cluster-api-provider-kubeadm
         releaseName: cluster-api-provider-kubeadm
@@ -714,8 +749,6 @@ spec:
       region: global
       registry:
         address: ${BOOTSTRAP_REGISTRY_ADDRESS}
-        imagePullSecrets:
-          - global-registry-auth
       replicas: 1
       scheme: https
 ---
@@ -732,7 +765,6 @@ spec:
     cluster: ""
     namespace: ""
   source:
-    chartPullSecret: global-registry-auth
     charts:
       - name: ait/chart-cluster-api-provider-baremetal
         releaseName: cluster-api-provider-baremetal
@@ -762,8 +794,6 @@ spec:
       region: global
       registry:
         address: ${BOOTSTRAP_REGISTRY_ADDRESS}
-        imagePullSecrets:
-          - global-registry-auth
       replicas: 1
       scheme: https
     handoffHook:
@@ -825,19 +855,19 @@ Create one provider-specific manifest for the `global` cluster. The manifest use
 Use the provider creation guides as the detailed resource reference:
 
 - Huawei DCS: [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx)
-- VMware vSphere: [Creating a VMware vSphere Cluster in the global Cluster](../create-cluster/vmware-vsphere/create-cluster-in-global.mdx)
+- VMware vSphere: [Infrastructure Preparation](../infrastructure/vmware-vsphere.mdx) and [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere.mdx)
 - Huawei Cloud Stack: [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx)
 
 Apply the [naming convention from Common Prerequisites](#common-prerequisites) to every resource in the manifest you author below.
 
-Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format` to the value that the target provider accepts. The provider controllers enforce this:
+Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format` to the value that the target provider accepts. This is an API field: enter `cloud-config`, not `cloud-init`. For the providers below, `cloud-init` is the guest operating-system software that receives and applies the generated `cloud-config` data. The provider controllers enforce the field value:
 
 | Provider | Bootstrap userdata format |
 |----------|---------------------------|
 | Huawei DCS | `ignition` (provider-enforced; the DCS provider rejects any other format with `invalid format, expected ignition, got <other>`). |
-| VMware vSphere | `cloud-init` (provider default; setting `ignition` is not supported). |
-| Huawei Cloud Stack | `cloud-init` (provider-enforced; the HCS provider rejects `ignition` with `ignition format is not supported`). |
-| Bare Metal | `cloud-init` (the bare-metal provider consumes CAPI bootstrap data and renders elemental plans). |
+| VMware vSphere | `cloud-config` (CAPI bootstrap data is processed by the guest `cloud-init` software; setting `ignition` is not supported). |
+| Huawei Cloud Stack | `cloud-config` (the HCS provider rejects `ignition`; the guest processes the generated data with `cloud-init`). |
+| Bare Metal | `cloud-config` (the bare-metal provider consumes CAPI bootstrap data and renders elemental plans that the guest processes with `cloud-init`). |
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -867,6 +897,7 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: DCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for Alauda OS.
+- With DCS Provider `v1.0.21`, use an external LoadBalancer and set `DCSCluster.spec.controlPlaneLoadBalancer.type: external`. Validate the listener, backends, health check, and reachability in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). Do not set `type: internal` for this provider release.
 - Keep the `KubeadmControlPlane.spec.kubeadmConfigSpec.users` entry with a non-empty `sshAuthorizedKeys` list (the `boot` user). The DCS `ignition` format rejects an empty SSH key list, so this field is required even for a `global` cluster you do not plan to access over SSH. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders) for what to supply when no interactive key is needed.
 - Keep the non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries. The file contents (the PodSecurity admission config, the kubelet patch, and the audit policy), together with the full `clusterConfiguration`, `preKubeadmCommands`, `postKubeadmCommands`, and the init and join node-registration patches, are identical to a workload cluster. Copy them from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, or reference the `dcs-kubernetes-<major.minor>-files` Secret documented there. The wiring fragment below shows only the `global`-specific fields layered on top of that base.
 - For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef` and do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
@@ -962,7 +993,7 @@ The VMware vSphere `global` manifest must contain the following resources in the
 | `ClusterResourceSet`, `ConfigMap`, and `Secret` for the vSphere CPI | Delivers the vSphere CPI resources to the `global` cluster after the API server becomes reachable. |
 | `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` for workers | Creates worker nodes. |
 
-Prepare the vSphere input values by using [Preparing Parameters for a VMware vSphere Cluster](../create-cluster/vmware-vsphere/parameter-checklist.mdx). Prepare the `global` cluster manifest by using [Creating a VMware vSphere Cluster in the global Cluster](../create-cluster/vmware-vsphere/create-cluster-in-global.mdx) and [VMware vSphere Provider](../overview/providers/vmware-vsphere.mdx) as the base references. The create-cluster guide is written for workload clusters that are created from the `global` cluster, but most vSphere YAML in that guide can be reused for the `global` cluster after you apply the following additional requirements:
+Prepare the vSphere input values by using [VMware vSphere Infrastructure Preparation](../infrastructure/vmware-vsphere.mdx). Prepare the `global` cluster manifest by using [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere.mdx) and [VMware vSphere Provider](../overview/providers/vmware-vsphere.mdx) as the base references. The create-cluster guide creates workload clusters by applying manifests to an existing `global` management cluster; it does not create the `global` cluster itself. Reuse its vSphere resource definitions only after you apply the following `global`-specific requirements:
 
 - Set `Cluster.metadata.name` and `VSphereCluster.metadata.name` to `global` (the infra cluster shares the CAPI `Cluster` name). Prefix every other CAPI resource and provider resource with `global-`; the wiring fragment below uses `KubeadmControlPlane.metadata.name: global-kcp`.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: VSphere`.
@@ -970,7 +1001,8 @@ Prepare the vSphere input values by using [Preparing Parameters for a VMware vSp
 - Keep the VMware vSphere annotations required by the platform controllers, including the network and CPI annotations from the VMware vSphere create-cluster guide.
 - Set `VSphereMachineTemplate.spec.template.spec.folder` to `/<datacenter>/vm/global` so operators can identify the `global` cluster VMs in vCenter. In a DR deployment, use distinct child folders such as `/<datacenter>/vm/global/primary` and `/<datacenter>/vm/global/standby` for the primary and standby clusters.
 - Set `VSphereCluster.spec.identityRef.name` to `global-vsphere-credentials`. This fixed Secret name is required only for the VMware vSphere `global` installation path; non-`global` VMware vSphere clusters follow the generic create-cluster guide.
-- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-init`, or leave the field unset because `cloud-init` is the default for VMware vSphere.
+- With VMware vSphere Provider `v1.0.16`, provision the external LoadBalancer before applying the manifest. Use the contract in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx); this provider release does not deploy a Self-built VIP.
+- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-config`, or leave the field unset when the provider defaults this API field to `cloud-config`. `cloud-init` is the guest software that processes the data; it is not a valid value for this field.
 - Keep the release manifest's kubeadm files, including the VMware vSphere `/etc/kubernetes/encryption-provider.conf` file entry, kubelet patches, audit policy, and installer RBAC entries. VMware vSphere delivers this file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`; do not follow the DCS `DCSCluster.spec.encryptionProviderConfigRef` pattern.
 
 <Directive type="warning" title="Fragment Scope">
@@ -1032,7 +1064,7 @@ spec:
       kind: VSphereMachineTemplate
       name: global-cp-machine-template
   kubeadmConfigSpec:
-    format: cloud-init
+    format: cloud-config
     clusterConfiguration:
       etcd:
         local:
@@ -1068,7 +1100,7 @@ Use the HCS resource fields from [Creating Clusters on Huawei Cloud Stack](../cr
 - Set `HCSCluster.spec.identityRef.name` to `${PROVIDER_SECRET_NAME}`. Step 7 imports this Secret into the final `global` cluster.
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: HCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
-- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-init`, or leave the field unset because `cloud-init` is the default for HCS.
+- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-config`, or leave the field unset when the provider defaults this API field to `cloud-config`. `cloud-init` is the guest software name, not the field value.
 - Keep the release manifest's non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries.
 - For a normal non-DR deployment, do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - Keep `/var/cpaas` as platform state. Declare it in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` when it must survive node replacement; do not rely on `HCSMachineTemplate.spec.template.spec.dataVolumes[]` as preserved state.
@@ -1130,7 +1162,7 @@ spec:
       kind: HCSMachineTemplate
       name: global-cp-machine-template
   kubeadmConfigSpec:
-    format: cloud-init
+    format: cloud-config
     clusterConfiguration:
       etcd:
         local:
@@ -1168,11 +1200,11 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
 - Add `Cluster.metadata.labels.cluster-type: ProviderBaremetal`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Add `Cluster.metadata.annotations["cpaas.io/kube-ovn-join-cidr"]`, `Cluster.metadata.annotations["cpaas.io/sentry-deploy-type"]: Baremetal`, and `Cluster.metadata.annotations["cpaas.io/alb-address-type"]: ClusterAddress`.
-- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-config`, or leave it unset because `cloud-config` is the provider path used by Bare Metal.
+- Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-config`, or leave it unset when the provider defaults this API field to `cloud-config`. The resulting data is processed by `cloud-init` on the node.
 - Set `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0`. Bare-metal pools cannot over-provision physical hosts.
 - Keep `controlplane.cluster.x-k8s.io/skip-kube-proxy: ""` on the `KubeadmControlPlane` when the release manifest uses kube-ovn.
 - Put `${CONTROL_PLANE_VIP}` and `${PLATFORM_HOST}` in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`.
-- Set `BaremetalCluster.spec.controlPlaneLoadBalancer.host` to `${CONTROL_PLANE_VIP}`, `port` to `6443`, and use a `vrid` that is unique in the control-plane Layer-2 domain.
+- Choose the Bare Metal endpoint mode in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). For `Internal`, set the VIP, port `6443`, and a unique `vrid`. For `External`, set the external load balancer frontend address and port, and omit `vrid`.
 - For a normal non-DR deployment, `BaremetalCluster.spec.encryptionProviderConfigRef` can be omitted. For DR, set it as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment); do not deliver `/etc/kubernetes/encryption-provider.conf` by adding it to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - For Bare Metal DR, add `baremetal.cluster.io/system-agent-auth-scope: global` to the `MachineRegistration` used for the bootstrap `global` hosts. Do not set `baremetal.cluster.io/system-agent-server-url` during bootstrap. The bootstrap ISO must register through the bootstrap host; the handoff job later moves the `global` machines to the local direct API endpoint.
 - If a `global` VM or physical host does not have DHCP during the live-ISO boot, configure the NIC manually from the host console before waiting for `MachineInventory` registration. Use the same NetworkManager procedure described in [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx#network-connectivity), replacing the example address, gateway, DNS, and connection name with the values for that host.
@@ -1184,6 +1216,8 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
 </Directive>
 
 The following fragment shows the `global`-specific Cluster API wiring. Fill the inventory names, registration configuration, image references, and optional worker resources by using the Bare Metal create-cluster reference.
+
+Set `<control-plane-load-balancer-type>` to `Internal` for provider-managed Alive or `External` for a user-provisioned LoadBalancer. When you use `External`, remove `vrid`. See [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx) for the requirements of each mode.
 
 ```yaml
 apiVersion: cluster.x-k8s.io/v1beta1
@@ -1224,9 +1258,10 @@ metadata:
   namespace: cpaas-system
 spec:
   controlPlaneLoadBalancer:
-    type: Internal
+    type: <control-plane-load-balancer-type>
     host: ${CONTROL_PLANE_VIP}
     port: 6443
+    # Required only for Internal. Remove this field for External.
     vrid: <unique-vrid>
     # vipMode defaults to nic. Set it explicitly only when the environment
     # requires another supported mode, such as arp or policy_route.
@@ -1734,7 +1769,7 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   </Tab>
   <Tab label="Bare Metal">
 
-The Bare Metal installer request includes the control-plane VIP because the `global` cluster uses the VIP exposed by `alive` after handoff. Set `REGISTRY_DOMAIN` to `${CONTROL_PLANE_VIP}:11443` for that side. In a DR pair, primary and standby must therefore use different Registry addresses: each Global keeps its own Registry on its own control-plane VIP, and Registry traffic does not follow the platform-domain DNS switch. Keep `registry.externalAddress` unset so the installer deploys and populates the local platform Registry. Do not use the bootstrap Registry address or `${PLATFORM_HOST}:11443` in this field.
+The Bare Metal installer request includes the control-plane endpoint used after handoff. In `Internal` mode, Alive exposes the self-built VIP. In `External` mode, the user-provisioned load balancer exposes the same endpoint and maintains the control-plane backends. Set `REGISTRY_DOMAIN` to `${CONTROL_PLANE_VIP}:11443` for that side. In a DR pair, primary and standby keep separate local Registry addresses on their own control-plane VIPs; Registry traffic does not follow the platform-domain DNS switch. Keep `registry.externalAddress` unset so the installer deploys and populates the local platform Registry. Do not use the bootstrap Registry address or `${PLATFORM_HOST}:11443` in this field.
 
 ```shell
 mkdir -p /root/yamls
@@ -1856,11 +1891,13 @@ Issues that are not listed here usually point to environment-specific causes. Ca
 
 Use this section when you deploy primary and standby `global` clusters for disaster recovery. Complete these additions before you apply the provider-specific manifest for each `global` cluster.
 
+Before you begin, complete the [bidirectional DR network requirements](./disaster_recovery.mdx#network-requirements). Do not start either installation until both cluster VIPs have the required load-balancer listeners and the inter-cluster network rules allow the required traffic in both directions. The direction used during normal operation is standby to primary, but it reverses after failover.
+
 <Directive type="warning" title="Bare Metal Fresh-install Scope">
   The Bare Metal split-auth procedure in this section covers only a fresh installation of the primary and standby `global` clusters. It does not define or validate an in-place upgrade or migration of an existing Bare Metal DR pair, or the repair or recovery of a failed environment. Use a separately validated operations runbook for those lifecycle tasks.
 </Directive>
 
-Primary and standby clusters must use the same encryption provider configuration. For Bare Metal, primary and standby must also use the same Kubernetes ServiceAccount signing key so that the workload-cluster `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. The machines that form each `global` cluster use a separate cluster-local identity and do not share their token with the peer `global` cluster. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
+Primary and standby clusters must use the same encryption provider configuration. For Bare Metal, primary and standby must also use the same Kubernetes ServiceAccount signing key so that the fixed `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. The machines that form each `global` cluster use separate cluster-local identities. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
 
 ### Prepare Shared DR Variables
 
@@ -2557,7 +2594,23 @@ The installation is successful when all of the following conditions are true:
 
 ## Decommission the Bootstrap Cluster \{#decommission-bootstrap-cluster}
 
-After the installer reports success, the `global` cluster runs its own Cluster API providers and no longer depends on the temporary bootstrap cluster (`minialauda`). Once verification passes, remove it from the bootstrap host — delete only the local bootstrap cluster (`minialauda`) and its KIND container network.
+After the installer reports success, the `global` cluster runs its own Cluster API providers. Once the general verification and the provider-specific handoff gate below pass, remove the temporary bootstrap cluster from the bootstrap host — delete only the local bootstrap cluster (`minialauda`) and its KIND container network.
+
+<Directive type="warning" title="Bare Metal: Require the Final Handoff Gate">
+  Do not remove `minialauda` merely because `KubeadmControlPlane` is Ready, the installer reports success, or the `baremetal-system-agent-handoff` Job is `Complete`. Each imported Global host must complete the probe from the final `global` cluster before the bootstrap endpoint can be retired.
+
+  Read the final handoff record from the new `global` cluster:
+
+  ```shell
+  kubectl --kubeconfig <global-kubeconfig> -n cpaas-system \
+    get configmap baremetal-system-agent-handoff \
+    -o jsonpath='{.data.ready}{"\n"}{.data.profile}{"\n"}{.data.config}{"\n"}'
+  ```
+
+  Continue only when the current installer handoff hook has recreated or run the Job with the deployed provider configuration and completed successfully, `data.ready` is `true`, `data.profile` matches the selected authentication and endpoint mode, and `data.config` is a 64-character lowercase hexadecimal digest. The handoff binary computes this digest from the effective endpoint, TLS and authentication inputs, identity names, and the complete imported target plan set; do not try to reconstruct or approve it by visual comparison. The successful current Job is what proves that the stored digest matches those inputs.
+
+  Also confirm that every imported target object and referenced plan Secret exists in the final cluster. If the current Job failed or timed out, its final validation rejected the ConfigMap, the target set is incomplete, or a referenced plan Secret is missing, keep `minialauda` running and investigate the handoff Job and provider logs.
+</Directive>
 
 <Directive type="info" title="Verify the DCS credential Secret reached the global cluster">
   The DCS API credential `Secret` is copied to the `global` cluster during installation by the `dcs-import-extra-resources` ConfigMap you create in Step 7 — it imports the Secret named in your `DCSCluster.spec.credentialSecretRef`. Before you remove the bootstrap host, verify it is present: `kubectl --kubeconfig <global-kubeconfig> get secret <name> -n cpaas-system`. If it is missing, copy it over first — without it the `global` cluster's DCS provider has no DCS API credentials and cannot reconcile (for example, scale-out later fails).
@@ -2587,7 +2640,7 @@ The manifest references these but does not create them. Prepare them first, in o
 1. **DCS API access** — the endpoint (`https://<host>:7443`), an `administrator` user and password, and the site ID. These fill the `Secret` and `DCSCluster.spec.site`. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials).
 2. **A VM template** — upload the Alauda OS image and create a VM template from it; record its name for `vmTemplateName`. Use a `4.2.1+` template so the `/var/cpaas` persistent disk can be detached and reattached during node replacement. See [Machine Templates](../infrastructure/huawei-dcs.mdx#machine-templates).
 3. **Compute cluster, distributed virtual switch, port group, and datastore** — pick the target DCS compute cluster, a distributed virtual switch, a port group, and a datastore with enough free capacity. They fill `resource`, `dvSwitchName`, `portGroupName`, and `datastoreName`. See [DCS Platform Capacity and Placement](../infrastructure/huawei-dcs.mdx#capacity-and-placement).
-4. **IPs and the API load balancer** — three free node IPs (with gateway and DNS) for the control plane, and a control-plane VIP / load balancer that balances at least port `6443` across the three nodes (the DCS provider does not create it). These fill the `DCSIpHostnamePool` and `DCSCluster.spec.controlPlaneLoadBalancer` / `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
+4. **IPs and the API load balancer** — three free node IPs (with gateway and DNS) for the control plane, and an external LoadBalancer that follows [the control plane endpoint contract](../how-to/control-plane-endpoint.mdx) and forwards TCP `6443` to the three nodes. DCS Provider `v1.0.21` does not create this load balancer. These values fill the `DCSIpHostnamePool` and `DCSCluster.spec.controlPlaneLoadBalancer` / `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
 5. **Versions and IDs to read** — `${K8S_VERSION}` plus the CoreDNS and etcd image tags from the `cpaas.io/dcs-vm-template` ConfigMap (see [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders)); the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx); and the registry address, VIP, and CIDR values you exported in Step 1.
 
 With those prepared, apply the manifest below.

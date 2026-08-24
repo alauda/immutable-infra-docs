@@ -31,8 +31,9 @@ The provider currently follows a YAML-only workflow. There is no Fleet Essential
 - **Plan-driven node lifecycle** — node attach uses a `reprovision` plan (write cloud-init, `cloud-init clean`, `elemental upgrade`, reboot, cloud-init re-execute, `kubeadm init/join`). Node detach uses a `clean` plan (stop kubelet, clear CRI workload, stop containerd). `MachineInventory` is never deleted by the provider during scaling, upgrade, or cluster deletion.
 - **Cluster API native object tree** — uses upstream `Cluster`, `KubeadmControlPlane`, `MachineDeployment`, `Machine`. The provider only owns the infrastructure tree (`BaremetalCluster`, `BaremetalMachine`, `BaremetalMachineTemplate`, `MachineInventoryPool`). There is no custom control-plane CRD.
 - **Image-catalog driven Kubernetes versions** — the provider keeps a cluster-scoped `elemental-image-catalog` ConfigMap that maps `Machine.spec.version` to an `elemental upgrade` image. Upgrades become "patch the version, controller resolves the matching image, reprovisions the node."
-- **Control-plane HA via `alive`** — `BaremetalCluster.spec.controlPlaneLoadBalancer` declares a control-plane VIP and VRID; the provider deploys the `alive` chart (keepalived + IPVS + `kube-lock` Lease arbitration) onto the control-plane nodes once the workload cluster is reachable.
+- **Two control-plane endpoint modes** — `BaremetalCluster.spec.controlPlaneLoadBalancer.type: Internal` deploys Alive (keepalived + IPVS + `kube-lock` Lease arbitration) and reconciles the Self-built VIP. `External` skips Alive and uses a pre-provisioned Layer 4 TCP LoadBalancer whose backends are maintained outside the cluster. See [Plan the Control Plane Endpoint](../../how-to/control-plane-endpoint.mdx).
 - **Network identity preservation** — `elemental-register` reports the live-ISO observed network as `MachineInventory.spec.observedNetwork`. The first `elemental install` and every later `reprovision` plan replay that snapshot as cloud-init `network-config v2`, so a host keeps its address, default route, and DNS across the entire lifecycle.
+- **Inventory-owned managed data disks** — an operator can declare up to 32 XFS or ext4 data volumes in `MachineInventory.spec.storage`. The provider prepares them before allocation, activates their mount units before kubelet during reprovision, deactivates them during node removal, and preserves their filesystems and data for reuse of the same inventory. See [Manage Data Disks on Bare-Metal Hosts](../../how-to/manage-bare-metal-storage.mdx).
 
 ## Differences from VM-Based Providers
 
@@ -41,7 +42,7 @@ The provider currently follows a YAML-only workflow. There is no Fleet Essential
 | Node creation | Clone a VM template from a credential-scoped platform | Reprovision an already-installed physical host via `elemental upgrade` |
 | Node deletion | Power-off and delete the VM | Run `clean` plan; host stays in inventory and returns to pool |
 | Pool model | IP pool / hostname pool sized per replica | `MachineInventoryPool` listing concrete `MachineInventory` names |
-| Data on the node | System and template disks recreated on every replacement; declared persistent disks survive (DCS) | `elemental upgrade` snapshot model — `initramfs` clears Kubernetes persistent state; pool-managed persistent disks are not part of this provider |
+| Data on the node | System and template disks recreated on every replacement; declared persistent disks survive (DCS) | `initramfs` clears Kubernetes-managed system state on every reprovision. Data volumes explicitly declared on the long-lived `MachineInventory` can retain their filesystems and data, but the data stays with that inventory and does not follow a replacement `Machine` automatically. |
 | Recovery time | Minutes per replacement | Minutes per `elemental upgrade` + reboot |
 | First install path | One-off VM template upload by the platform admin | Live ISO built by `SeedImage`, booted on the host, `elemental install` to disk |
 | Control-plane LB | External LB supplied by operator | Internal LB managed by `alive` static pods on the control-plane nodes (External LB supported through `type: External`) |
@@ -71,12 +72,15 @@ Triggers `elemental-operator` to build a bootable ISO that contains the registra
 
 #### `MachineInventory` \{#machineinventory}
 
-The long-lived host identity object. The provider only relies on the following parts of its contract:
+The long-lived host identity object. The provider relies on the following parts of its contract:
 
 - `status.plan.secretRef` — the single default plan secret owned by `elemental-operator`.
 - `status.plan.state` — `Applied` / `Failed` transitions used to drive the `BaremetalMachine` state machine.
 - `status.conditions` — host-side readiness signals.
 - `spec.observedNetwork` — fork-only field populated by `elemental-register` from the live-ISO NICs; replayed during install and during every `reprovision` plan.
+- `spec.storage` — optional operator-authored declaration of inventory-owned data volumes.
+- `status.observedStorage` — objective device, filesystem, mount, and multipath facts reported by `elemental-storage-observer.service` on the host.
+- `status.storage` — provider-owned Prepare / Activate / Deactivate / Release state, operation journal, conditions, and applied-volume identities.
 
 The provider never deletes a `MachineInventory`, never uses `MachineInventorySelector`, and does not run a separate `MachineInventoryLifecycleController` — that lifecycle remains with `elemental-operator`.
 
@@ -116,16 +120,18 @@ Phase transitions: `Pending → Allocated → Reprovisioning → Running`; delet
 
 A cluster-scoped `ConfigMap` (default name `elemental-image-catalog` in `cpaas-system`) that maps `Machine.spec.version` to an `elemental upgrade` image. The bare-metal provider chart renders this ConfigMap from `provider.imageCatalog.images` (`global.registry.address` is prepended to each repository) and from `provider.imageCatalog.data` (for fully-qualified overrides such as digest-pinned images). The reconciler hot-reloads the ConfigMap; a missing key is a terminal `Failed` state, not a fallback to a default image.
 
-The image catalog also drives `SeedImage.spec.baseImage`: the ISO variant is the same repository with `-iso` appended and the same tag/digest as the catalog entry.
+Obtain the matching `base-image` and `base-image-iso` references from Alauda technical support. The image catalog uses `base-image` for reprovisioning, while `SeedImage.spec.baseImage` uses `base-image-iso` for live installation. Do not derive one reference from the other or substitute an independently built image.
 
-#### `clean` and `reprovision` plans \{#clean-reprovision}
+#### Host lifecycle plans \{#clean-reprovision}
 
-The only two plan types the provider writes into `MachineInventory.spec.plan` (annotated with `baremetal.alauda.io/plan.type=clean|reprovision`):
+The provider serializes all host work through the inventory's single default plan secret. The secret's `baremetal.alauda.io/plan.type` annotation identifies the current lifecycle plan:
 
-- **`reprovision`** — runs on node attach. Writes NoCloud `user-data` / `meta-data` (and, when `MachineInventory.spec.observedNetwork` is non-empty, `network-config` v2), writes a cleanup marker, runs `cloud-init clean --logs --seed`, runs `elemental upgrade --reboot=false --system <image>`, and triggers a delayed reboot. After reboot, `initramfs` clears `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, `/etc/kubernetes`; cloud-init re-runs and performs `kubeadm init` / `kubeadm join`.
-- **`clean`** — runs on node detach. Stops `kubelet`, clears CRI workload, stops `containerd`. It explicitly **does not** run `kubeadm reset`, `cloud-init clean`, or `elemental upgrade`, and it does not reboot. Real cleanup is deferred to the `reprovision` plan that runs when the host is re-allocated.
+- **`storage-prepare`** — runs while an inventory is available and before allocation. It preflights every declared volume, then adopts an existing matching filesystem or initializes an explicitly authorized blank device. It does not mount business paths.
+- **`reprovision`** — runs on node attach. It embeds managed-volume activation, writes NoCloud `user-data` / `meta-data` (and, when `MachineInventory.spec.observedNetwork` is non-empty, `network-config` v2), writes a cleanup marker, runs `cloud-init clean --logs --seed`, runs `elemental upgrade --reboot=false --system <image>`, and triggers a delayed reboot. After reboot, `initramfs` clears `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes`; managed mount units start before kubelet, and cloud-init performs `kubeadm init` / `kubeadm join`.
+- **`clean`** — runs on node detach. It stops kubelet, deactivates managed mounts, clears CRI workload, and stops containerd. It explicitly **does not** wipe managed filesystems, run `kubeadm reset`, run `cloud-init clean`, run `elemental upgrade`, or reboot. OS cleanup is deferred to the next `reprovision` plan.
+- **`storage-release`** — runs only while an inventory is available and all managed volumes are inactive. It removes provider ownership and activation metadata for volumes removed from `spec.storage` without wiping their filesystems or data.
 
-The provider applies the plans through the upstream "single default plan secret" semantics; it does not use `MachineInventorySelector` or `FleetBundle`.
+The provider does not use `MachineInventorySelector` or `FleetBundle`. Storage lifecycle details, safety gates, and examples are documented in [Manage Data Disks on Bare-Metal Hosts](../../how-to/manage-bare-metal-storage.mdx).
 
 #### `alive` (control-plane HA) \{#alive}
 
@@ -164,6 +170,7 @@ The bare-metal provider enforces that support decision through `elemental-image-
 - A control-plane VIP, free port (typically `6443`), and a `vrid` unique within the control-plane Layer-2 broadcast domain.
 - One `MachineInventoryPool` per role (control plane, worker) sized to at least the target replica count plus headroom for upgrades.
 - A host with a real hardware TPM (`/dev/tpm0`) can register with `emulate-tpm: false`. Any host without a hardware TPM — virtual machines and physical servers that ship without a TPM module alike — must set `MachineRegistration.spec.config.elemental.registration.emulate-tpm: true`; the physical-versus-virtual distinction does not apply.
+- Managed data disks additionally require an observer-capable host OS image with `elemental-storage-observer.service` enabled. Upgrading only the management-side provider and `elemental-operator` does not add this service to hosts installed from an older image.
 
 ## Documentation
 
@@ -172,5 +179,6 @@ For detailed instructions on using the bare-metal provider, see:
 - [Installation](../../install/bare-metal.mdx)
 - [Creating Clusters](../../create-cluster/bare-metal.mdx)
 - [Managing Nodes](../../manage-nodes/bare-metal.mdx)
+- [Managing Data Disks](../../how-to/manage-bare-metal-storage.mdx)
 - [Upgrading Clusters](../../upgrade-cluster/bare-metal.mdx)
 - [API Reference](../../apis/providers/bare-metal/)
