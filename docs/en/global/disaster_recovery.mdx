@@ -72,7 +72,7 @@ Workload registrations use the platform domain. Do not reuse a bootstrap Global 
 
 ### Synchronization Rules \{#synchronization-rules}
 
-`etcd-sync` runs on the standby and reads the primary. ACP 4.4.0 supplies the base rules and accepts additional rules from labeled ConfigMaps. The custom rule source must exist on both Global clusters so it is available after a role switch.
+`etcd-sync` runs on the standby and reads the primary. The DR-capable v4.4 chart already supplies the standard Bare Metal prefixes and Global-resource exclusions, and accepts additional rules from labeled ConfigMaps. The custom rule source must exist on both Global clusters so it is available after a role switch.
 
 Create `baremetal-dr-rules` with weight `100`:
 
@@ -88,31 +88,18 @@ metadata:
     etcd-sync.cpaas.io/weight: "100"
 data:
   ignore-equal.txt: |
-    /registry/serviceaccounts/cpaas-system/baremetal-global-system-agent
-    /registry/secrets/cpaas-system/baremetal-global-system-agent-token
-    /registry/roles/cpaas-system/baremetal-global-system-agent
-    /registry/rolebindings/cpaas-system/baremetal-global-system-agent
-    /registry/secrets/cpaas-system/public-registry-credential
-    /registry/monitoring.coreos.com/servicemonitors/cpaas-system/etcd-sync-monitor
+    # Add one line for every Global plan Secret on both sides.
     /registry/secrets/cpaas-system/<primary-global-plan-secret>
     /registry/secrets/cpaas-system/<standby-global-plan-secret>
-    /registry/elemental.cattle.io/machineinventories/cpaas-system/<primary-global-inventory>
-    /registry/elemental.cattle.io/machineinventories/cpaas-system/<standby-global-inventory>
-    /registry/elemental.cattle.io/machineregistrations/cpaas-system/<primary-global-registration>
-    /registry/elemental.cattle.io/machineregistrations/cpaas-system/<standby-global-registration>
-  ignore-prefix-file.txt: |
-    /registry/elemental.cattle.io/seedimages
-  ignore-kvs-file.txt: |
-    /registry/elemental.cattle.io/machineinventories|"baremetal.cluster.io/system-agent-auth-scope":"global"|"baremetal.cluster.io/system-agent-auth-scope": "global"
-    /registry/elemental.cattle.io/machineregistrations|"baremetal.cluster.io/system-agent-auth-scope":"global"|"baremetal.cluster.io/system-agent-auth-scope": "global"
 ~~~
 
-Replace all placeholders with live values:
+The built-in chart rules already cover Bare Metal resource prefixes, Global inventory/registration filtering, `SeedImage`, the Global-local system-agent bundle, the monitor, and the local registry credentials. Do not duplicate those entries in this ConfigMap. The installed chart must contain those built-in rules before synchronization starts.
+
+Replace the plan placeholders with live values:
 
 - Read plan names from `MachineInventory.status.plan.secretRef.name`.
-- Read inventory and registration names from the Global resources on each side.
-- Update the ConfigMap on both sides before adding a Global node or starting a new failover cycle.
-- Do not add `pre-sync-prefix-file.txt`; the 4.4.0 chart supplies the startup list separately.
+- Add one line for every Global plan Secret on both sides.
+- Update the ConfigMap on both sides whenever a Global plan Secret is added or replaced.
 
 Before the first sync, require the rule source annotation `etcd-sync.cpaas.io/status: accepted` and confirm that `etcd-sync-rule-snapshot` contains the source:
 
@@ -127,12 +114,7 @@ kubectl --kubeconfig <standby-kubeconfig> -n cpaas-system \
 
 A rejected source is not active. Fix it before allowing the mirror to write.
 
-The built-in 4.4.0 rules synchronize non-`global` CAPI, Bare Metal, Elemental, plan, bootstrap, kubeconfig, and required credential resources. They also synchronize the shared `baremetal-system-agent` ServiceAccount, token Secret, Role, and RoleBinding. The DR rule source keeps these resources local:
-
-- Global CAPI and provider resources.
-- Global `MachineInventory` and `MachineRegistration`.
-- The Global-local system-agent bundle and Global plan Secrets.
-- `SeedImage`, local registry credentials, and the etcd-sync monitor.
+The plugin chart owns the standard CAPI, Bare Metal, Elemental, Global-resource, system-agent, SeedImage, registry, and monitor rules. This ConfigMap adds only the runtime Global plan Secret keys that cannot be known when the chart is rendered.
 
 `dcs-import-extra-resources` is an installation-time handoff input. It must contain durable provider resources and the Bare Metal encryption Secret, but it is not an etcd-sync rule source.
 
@@ -174,7 +156,7 @@ After failover, verify:
 | --- | --- |
 | Rule source is `rejected` | Rule data keys, syntax, and the `message` annotation |
 | A Global plan is overwritten | Its exact Secret key is missing from `ignore-equal.txt`; stop sync and update both rule ConfigMaps |
-| A Global inventory is deleted | Its exact key is missing from `ignore-equal.txt`; stop sync and restore the local object |
+| A Global inventory is deleted | The installed chart is missing its built-in Global exclusion; stop sync and verify the rendered chart before restoring the local object |
 | A workload host gets `401` or `403` | Signing key, issuer/audience, shared token Secret, and Role `resourceNames` |
 | Monitor reports differences | Active/standby direction, rule snapshot, and fencing state |
 

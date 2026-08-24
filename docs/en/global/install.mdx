@@ -2503,7 +2503,7 @@ Install the v4.4.0-or-later `global-etcd-sync` plugin on the current standby Glo
 
 ### Apply the Bare Metal rule ConfigMap
 
-Apply the same `baremetal-dr-rules` ConfigMap to the primary and standby. Use the template in [Bare Metal etcd-sync Rules](./disaster_recovery.mdx#synchronization-rules). Replace the plan, inventory, and registration placeholders with current values from both clusters. Do this before the first synchronization and whenever a Global node or plan is added.
+Apply the same `baremetal-dr-rules` ConfigMap to the primary and standby. Use the template in [Bare Metal etcd-sync Rules](./disaster_recovery.mdx#synchronization-rules). Replace the plan placeholders with every current Global plan Secret name from both clusters. The plugin chart supplies the remaining Bare Metal rules. Update this ConfigMap whenever a Global plan Secret is added or replaced.
 
 ### Verify the dynamic rule source
 
