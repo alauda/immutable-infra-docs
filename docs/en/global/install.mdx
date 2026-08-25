@@ -1904,14 +1904,14 @@ infrastructure:
 | Subsection | Huawei DCS | VMware vSphere | Huawei Cloud Stack | Bare Metal |
 |------------|:----------:|:--------------:|:------------------:|:----------:|
 | Prepare Shared DR Variables | ✓ | ✓ | ✓ | ✓ |
-| Prepare Shared ServiceAccount Signing Key | — | — | — | ✓ |
+| Bare Metal: Prepare Shared ServiceAccount Signing Key | — | — | — | ✓ |
 | Add DR etcd Server Certificate SANs | ✓ | ✓ | ✓ | ✓ |
 | Add Provider-Specific DR Fields | ✓ | ✓ | ✓ | ✓ |
 | Install Primary and Standby Clusters | ✓ | ✓ | ✓ | ✓ |
-| Bare Metal verification before decommissioning | — | — | — | ✓ |
-| Apply the Bare Metal rule ConfigMap | — | — | — | ✓ |
+| Bare Metal: Verify Before Decommissioning | — | — | — | ✓ |
+| Bare Metal: Apply the Rule ConfigMap | — | — | — | ✓ |
 | Install etcd-sync | ✓ | ✓ | ✓ | ✓ |
-| Verify the Bare Metal dynamic rule source | — | — | — | ✓ |
+| Bare Metal: Verify the Dynamic Rule Source | — | — | — | ✓ |
 | Start and verify synchronization | ✓ | ✓ | ✓ | ✓ |
 
 Applying a Bare Metal-only step to another provider changes objects that provider does not expect —
@@ -1953,7 +1953,7 @@ resources:
 EOF_CONF
 ```
 
-### Prepare Shared ServiceAccount Signing Key (Bare Metal) \{#prepare-shared-serviceaccount-signing-key}
+### Bare Metal: Prepare Shared ServiceAccount Signing Key \{#prepare-shared-serviceaccount-signing-key}
 
 <Directive type="info" title="Bare Metal only">
   Only Bare Metal needs a shared ServiceAccount signing key. Huawei DCS, VMware vSphere, and Huawei
@@ -2243,7 +2243,9 @@ For this fresh DR installation, each final Global cluster must report `data.read
 
 Run Steps 1 through 9 for both the primary and standby `global` clusters.
 
-For Bare Metal DR, use two independent bootstrap hosts: one for the primary installation and one for the standby installation. Do not reuse the same bootstrap cluster for both sides. The bootstrap environment contains installer state, AppRelease objects, registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it can pollute the two `global` installations and can make handoff or cleanup affect the wrong side.
+<Directive type="warning" title="Bare Metal only: use two separate bootstrap hosts">
+  Use two independent bootstrap hosts, one for the primary installation and one for the standby. Do not reuse the same bootstrap cluster for both sides. The bootstrap environment holds installer state, AppRelease objects, Registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it pollutes the two `global` installations and can make handoff or cleanup act on the wrong side.
+</Directive>
 
 Use the provider-specific installer configuration differences for both sides:
 
@@ -2258,7 +2260,7 @@ For the primary cluster, make sure the platform domain resolves to the primary H
 
 After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` at `${PLATFORM_HOST}:11443` — the same value the primary installation used. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
 
-#### Bare Metal verification before decommissioning either bootstrap cluster \{#bare-metal-dr-verification}
+#### Bare Metal: Verify Before Decommissioning Either Bootstrap Cluster \{#bare-metal-dr-verification}
 
 <Directive type="info" title="Bare Metal only">
   Everything from here to the end of this subsection applies to the Bare Metal path only. Huawei DCS,
@@ -2315,7 +2317,7 @@ verify_baremetal_global_registry \
   "${STANDBY_GLOBAL_KUBECONFIG}" "${GLOBAL_REGISTRY_ADDRESS}"
 ```
 
-For Bare Metal, run the complete handoff gate on both sides before decommissioning either bootstrap KIND cluster. `GLOBAL_HOSTS` is the space-separated management address list for that side's installed Global machines. Run this from a secured host that can use both Global kubeconfigs and SSH to the machines. Keep shell tracing disabled because the runtime connection file contains a bearer token.
+Run the complete handoff gate on both sides before decommissioning either bootstrap KIND cluster. `GLOBAL_HOSTS` is the space-separated management address list for that side's installed Global machines. Run this from a secured host that can use both Global kubeconfigs and SSH to the machines. Keep shell tracing disabled because the runtime connection file contains a bearer token.
 
 ```shell
 set -euo pipefail
@@ -2492,7 +2494,7 @@ verify_baremetal_handoff \
   "${STANDBY_GLOBAL_HOSTS}" "${STANDBY_GLOBAL_REGISTRATION_NAME}"
 ```
 
-Still on Bare Metal, also verify the Global-local permission boundary on both sides. Before the first non-`global` workload plan exists, the shared `baremetal-system-agent` ServiceAccount, token Secret, Role, and RoleBinding may be absent on both clusters. Do not create or copy that bundle by hand merely to satisfy the Global installation gate; the active operator creates it when the first shared-scope registration is reconciled, and `etcd-sync` then copies it to standby.
+Also verify the Global-local permission boundary on both sides. Before the first non-`global` workload plan exists, the shared `baremetal-system-agent` ServiceAccount, token Secret, Role, and RoleBinding may be absent on both clusters. Do not create or copy that bundle by hand merely to satisfy the Global installation gate; the active operator creates it when the first shared-scope registration is reconciled, and `etcd-sync` then copies it to standby.
 
 ```shell
 verify_global_local_system_agent_rbac() {
@@ -2572,11 +2574,11 @@ verify_global_local_system_agent_rbac "${PRIMARY_GLOBAL_KUBECONFIG}"
 verify_global_local_system_agent_rbac "${STANDBY_GLOBAL_KUBECONFIG}"
 ```
 
-For Bare Metal, do not reduce acceptance to the `ready` signal alone. A runtime token or CA mismatch, a stale bootstrap endpoint in the persistent OEM file, a failed plan probe, or an incorrect permission boundary means fresh handoff is incomplete even when `data.ready` is `true`.
+Do not reduce acceptance to the `ready` signal alone. A runtime token or CA mismatch, a stale bootstrap endpoint in the persistent OEM file, a failed plan probe, or an incorrect permission boundary means fresh handoff is incomplete even when `data.ready` is `true`.
 
 After the standby installation succeeds, switch the platform domain back to the primary entrance. Primary is the active source during the first synchronization.
 
-### Apply the Bare Metal rule ConfigMap
+### Bare Metal: Apply the Rule ConfigMap
 
 <Directive type="info" title="Bare Metal only">
   Only Bare Metal needs a custom `etcd-sync` rule source. Huawei DCS, VMware vSphere, and Huawei
@@ -2584,7 +2586,7 @@ After the standby installation succeeds, switch the platform domain back to the 
   [Install etcd-sync](#install-etcd-sync), where the install order does not matter.
 </Directive>
 
-For Bare Metal, apply this ConfigMap **before** you install `etcd-sync`, on both the primary and the standby.
+Apply this ConfigMap **before** you install `etcd-sync`, on both the primary and the standby.
 
 Apply the same `baremetal-dr-rules` ConfigMap to the primary and standby. Use the template in [Bare Metal etcd-sync Rules](./disaster_recovery.mdx#synchronization-rules). Replace the plan placeholders with every current Global plan Secret name from both clusters. Read the names from `MachineInventory.status.plan.secretRef.name` **after handoff has completed on both sides** — fresh handoff creates the Global plan Secrets, so names collected earlier are stale. The plugin chart supplies the remaining Bare Metal rules. Update this ConfigMap whenever a Global plan Secret is added or replaced.
 
@@ -2625,9 +2627,9 @@ kubectl -n cpaas-system create secret generic etcd-sync-active-cluster-token \
 ~~~
 
 During installation the `etcd-sync-bootstrap` Job runs before the `etcd-sync` Deployment starts. The plugin installation continues only after the Job prepares `remote-etcd-ca`, `remote-etcd-issuer`, and `remote-etcd-client`.
-### Verify the Bare Metal dynamic rule source
+### Bare Metal: Verify the Dynamic Rule Source
 
-For Bare Metal, before opening the sync path, confirm that the rule source reports `accepted` and appears in `ConfigMap/etcd-sync-rule-snapshot`:
+Before opening the sync path, confirm that the rule source reports `accepted` and appears in `ConfigMap/etcd-sync-rule-snapshot`:
 
 ~~~shell
 kubectl --kubeconfig <standby-kubeconfig> -n cpaas-system \
@@ -2675,7 +2677,7 @@ The installation is successful when all of the following conditions are true:
 - Critical Pods in `cpaas-system` are `Running` or `Completed`.
 - `ClusterModule/global` reports the base module as healthy.
 
-## Prepare the global Cluster as a Management Cluster (Bare Metal) \{#prepare-global-as-management-cluster}
+## Bare Metal: Prepare the global Cluster as a Management Cluster \{#prepare-global-as-management-cluster}
 
 <Directive type="info" title="Bare Metal only">
   This section applies to the Bare Metal installation path only. Huawei DCS, VMware vSphere, and
