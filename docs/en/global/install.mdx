@@ -2547,17 +2547,23 @@ After the standby installation succeeds, switch the platform domain back to the 
 
 ### Apply the Bare Metal rule ConfigMap
 
-Apply this ConfigMap **before** you install `etcd-sync`, on both the primary and the standby.
+<Directive type="info" title="Bare Metal only">
+  Only Bare Metal needs a custom `etcd-sync` rule source. Huawei DCS, VMware vSphere, and Huawei
+  Cloud Stack deployments skip this section and go straight to
+  [Install etcd-sync](#install-etcd-sync), where the install order does not matter.
+</Directive>
+
+For Bare Metal, apply this ConfigMap **before** you install `etcd-sync`, on both the primary and the standby.
 
 Apply the same `baremetal-dr-rules` ConfigMap to the primary and standby. Use the template in [Bare Metal etcd-sync Rules](./disaster_recovery.mdx#synchronization-rules). Replace the plan placeholders with every current Global plan Secret name from both clusters. Read the names from `MachineInventory.status.plan.secretRef.name` **after handoff has completed on both sides** — fresh handoff creates the Global plan Secrets, so names collected earlier are stale. The plugin chart supplies the remaining Bare Metal rules. Update this ConfigMap whenever a Global plan Secret is added or replaced.
 
 <Directive type="warning" title="Create the rule source before the mirror can start">
-  Installing `etcd-sync` with `active_cluster_vip` and the active-cluster token already set opens the sync path immediately. If the custom rule source does not exist yet, the first synchronization runs without the Global plan Secret exclusions and overwrites the standby plan Secrets with the primary ones — the failure mode listed as `A Global plan is overwritten` in [Troubleshooting](./disaster_recovery.mdx#troubleshooting). The standby Global hosts would then receive plans that belong to the primary cluster.
+  Installing `etcd-sync` with `active_cluster_vip` and the active-cluster token already set opens the sync path immediately. If the Bare Metal rule source does not exist yet, the first synchronization runs without the Global plan Secret exclusions and overwrites the standby plan Secrets with the primary ones — the failure mode listed as `A Global plan is overwritten` in [Troubleshooting](./disaster_recovery.mdx#troubleshooting). The standby Global hosts would then receive plans that belong to the primary cluster.
 
   Creating the ConfigMap first has no side effect: until the plugin is installed it is an ordinary labeled ConfigMap that nothing reads. If you must install the plugin first, leave `active_cluster_vip` unset and set it only after the rule source reports `accepted`.
 </Directive>
 
-### Install etcd-sync (ACP 4.4.0+)
+### Install etcd-sync (ACP 4.4.0+) \{#install-etcd-sync}
 
 Install the v4.4.0-or-later plugin on the current standby Global only. Do not install or run the mirror on both sides at the same time.
 
@@ -2619,13 +2625,38 @@ sudo kubectl delete po -n cpaas-system -l service_name=cluster-transformer
 
 For the DR lifecycle after installation, see [Global Cluster Disaster Recovery](./disaster_recovery.mdx).
 
-## Prepare the global Cluster as a Management Cluster \{#prepare-global-as-management-cluster}
+## Verification
 
-The steps above install the `global` cluster itself. Creating workload clusters afterwards is a
-separate concern: the `global` cluster then acts as the Cluster API management cluster, and it needs
-provider components and artifacts that the bootstrap preparation did not put there. For Bare Metal,
-complete this section on **both** `global` clusters of a DR pair — after a failover the standby
-becomes the active management cluster and must be able to reconcile the same workload clusters.
+After the installer reports completion, verify that the `global` cluster is healthy.
+
+```shell
+kubectl --kubeconfig <global-kubeconfig> get nodes
+kubectl --kubeconfig <global-kubeconfig> get clusters.platform.tkestack.io global \
+  -o jsonpath='{.status.phase}'
+kubectl --kubeconfig <global-kubeconfig> get pods -n cpaas-system
+kubectl --kubeconfig <global-kubeconfig> get clustermodule global
+```
+
+The installation is successful when all of the following conditions are true:
+
+- The installer progress API reports `status: Success` and `type: Complete`.
+- All `global` cluster nodes are `Ready`.
+- Critical Pods in `cpaas-system` are `Running` or `Completed`.
+- `ClusterModule/global` reports the base module as healthy.
+
+## Prepare the global Cluster as a Management Cluster (Bare Metal) \{#prepare-global-as-management-cluster}
+
+<Directive type="info" title="Bare Metal only">
+  This section applies to the Bare Metal installation path only. Huawei DCS, VMware vSphere, and
+  Huawei Cloud Stack deployments do not need any of these steps: their `global` clusters receive the
+  provider components and artifacts they need during installation.
+</Directive>
+
+The steps above install the `global` cluster itself. Creating Bare Metal workload clusters afterwards
+is a separate concern: the `global` cluster then acts as the Cluster API management cluster, and it
+needs provider components and artifacts that the bootstrap preparation did not put there. Complete
+this section on **both** `global` clusters of a DR pair — after a failover the standby becomes the
+active management cluster and must be able to reconcile the same workload clusters.
 
 Importing the Cluster API resources during installation only creates the CRDs. It does not install
 the Bare Metal or Kubeadm providers on the `global` cluster.
@@ -2721,25 +2752,6 @@ A workload `MachineRegistration` must not carry the
 `system-agent-auth-scope: shared`. That shared identity, together with the shared ServiceAccount
 signing key, is what lets a workload host keep reporting through the platform domain after a
 failover.
-
-## Verification
-
-After the installer reports completion, verify that the `global` cluster is healthy.
-
-```shell
-kubectl --kubeconfig <global-kubeconfig> get nodes
-kubectl --kubeconfig <global-kubeconfig> get clusters.platform.tkestack.io global \
-  -o jsonpath='{.status.phase}'
-kubectl --kubeconfig <global-kubeconfig> get pods -n cpaas-system
-kubectl --kubeconfig <global-kubeconfig> get clustermodule global
-```
-
-The installation is successful when all of the following conditions are true:
-
-- The installer progress API reports `status: Success` and `type: Complete`.
-- All `global` cluster nodes are `Ready`.
-- Critical Pods in `cpaas-system` are `Running` or `Completed`.
-- `ClusterModule/global` reports the base module as healthy.
 
 ## Decommission the Bootstrap Cluster \{#decommission-bootstrap-cluster}
 
