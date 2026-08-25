@@ -577,11 +577,6 @@ Upload the packages.
   -r "${LOCAL_REGISTRY_ADDRESS}" -c "${KUBEADM_PROVIDER_PACK}"
 ```
 
-<Directive type="warning" title="Use One Pinned Elemental Source Commit">
-  The Bare Metal provider package deploys `elemental-operator`, while the Bare Metal base image and ISO contain the `elemental-register` binary used by each host. For every newly produced installation medium, build the operator, `baremetal-base-image`, and `baremetal-base-image-iso` from the same pinned `elemental-operator` commit. When that commit changes, rebuild the base image and ISO before using them to install new hosts; record the elemental commit and image digests, and do not rely on a mutable branch name or cached layer as proof of source consistency.
-
-</Directive>
-
 Create and apply the AppRelease resources for the Kubeadm provider and the Bare Metal provider.
 
 <Directive type="warning" title="Bare Metal Bootstrap Endpoint">
