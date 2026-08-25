@@ -150,11 +150,22 @@ The plugin chart owns the standard CAPI, Bare Metal, Elemental, Global-resource,
 ### Failover \{#failover-procedure}
 
 1. Fence the primary so it cannot write workload resources.
-2. Wait for the monitor to show zero differences, then stop `etcd-sync` on the old standby.
+2. Wait for the monitor to show no differences, then **uninstall** `etcd-sync` from the old standby. Removing its `ModuleInfo` is what uninstalls the plugin; scaling the Deployments to zero is not enough (see the warning below).
 3. Switch the platform domain to the standby control-plane entrance.
 4. Verify the standby API and platform endpoint.
 5. Confirm workload hosts reconnect through the platform domain and can update plan feedback.
-6. Install `global-etcd-sync` on the new standby (the fenced former primary) with the reverse active/standby values and the same `baremetal-dr-rules` ConfigMap.
+6. Install the `etcd-sync` plugin on the new standby (the fenced former primary) with the reverse active/standby values and the same `baremetal-dr-rules` ConfigMap. Remember that the active-cluster token must now come from the new active cluster, and that pushing the plugin package uses the Registry credential of the cluster the platform domain now points to.
+
+<Directive type="warning" title="Uninstall the mirror, do not just scale it down">
+  On startup `etcd-sync` resolves the platform domain and checks that the cluster the domain points to does not have `etcd-sync` installed. This is what prevents the mirror from running on both sides at once. If step 2 only scaled the Deployments to zero, the `ModuleInfo` still exists and the new standby refuses to start with:
+
+  ~~~text
+  check failed, error: moduleinfo <name> is found, it shouldn't happen,
+    please remove it or check the DNS resolution of platformURL: <platform-domain>
+  ~~~
+
+  Despite the wording this is the safety check working as intended, not a defect. Delete the `ModuleInfo` on the new active cluster and the new standby starts normally.
+</Directive>
 
 Keep the fenced cluster isolated until a separately planned failback. Never run both providers against the same workload inventory.
 
