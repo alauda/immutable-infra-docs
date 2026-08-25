@@ -2664,6 +2664,23 @@ active management cluster and must be able to reconcile the same workload cluste
 Importing the Cluster API resources during installation only creates the CRDs. It does not install
 the Bare Metal or Kubeadm providers on the `global` cluster.
 
+Set the values this section uses. Run it once per `global` cluster, with
+`GLOBAL_KUBECONFIG` pointing at the cluster you are preparing.
+
+```shell
+export GLOBAL_KUBECONFIG="<path-to-this-global-kubeconfig>"
+# Tag of the Alauda OS image used for this installation, for example v4.4.0-1.35.6-acp.1.
+export OS_IMAGE_TAG="<os-image-tag>"
+```
+
+Read the Registry password of the cluster you are preparing from its own
+`cpaas-system/registry-admin` Secret:
+
+```shell
+GLOBAL_REGISTRY_PASSWORD="$(kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system \
+  get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)"
+```
+
 ### Install the Cluster API providers on the global cluster
 
 Upload the same Bare Metal and Kubeadm provider packages you used for the bootstrap cluster to the
