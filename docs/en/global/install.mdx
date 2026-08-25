@@ -1898,7 +1898,29 @@ Before you begin, complete the [bidirectional DR network requirements](./disaste
   The Bare Metal split-auth procedure in this section covers only a fresh installation of the primary and standby `global` clusters. It does not define or validate an in-place upgrade or migration of an existing Bare Metal DR pair, or the repair or recovery of a failed environment. Use a separately validated operations runbook for those lifecycle tasks.
 </Directive>
 
-Primary and standby clusters must use the same encryption provider configuration. For Bare Metal, primary and standby must also use the same Kubernetes ServiceAccount signing key so that the fixed `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. The machines that form each `global` cluster use separate cluster-local identities. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
+Not every subsection below applies to every provider. Complete the ones marked for your
+infrastructure:
+
+| Subsection | Huawei DCS | VMware vSphere | Huawei Cloud Stack | Bare Metal |
+|------------|:----------:|:--------------:|:------------------:|:----------:|
+| Prepare Shared DR Variables | ✓ | ✓ | ✓ | ✓ |
+| Prepare Shared ServiceAccount Signing Key | — | — | — | ✓ |
+| Add DR etcd Server Certificate SANs | ✓ | ✓ | ✓ | ✓ |
+| Add Provider-Specific DR Fields | ✓ | ✓ | ✓ | ✓ |
+| Install Primary and Standby Clusters | ✓ | ✓ | ✓ | ✓ |
+| Bare Metal verification before decommissioning | — | — | — | ✓ |
+| Apply the Bare Metal rule ConfigMap | — | — | — | ✓ |
+| Install etcd-sync | ✓ | ✓ | ✓ | ✓ |
+| Verify the Bare Metal dynamic rule source | — | — | — | ✓ |
+| Start and verify synchronization | ✓ | ✓ | ✓ | ✓ |
+
+Applying a Bare Metal-only step to another provider changes objects that provider does not expect —
+in particular, do not add the Bare Metal `KubeadmControlPlane` signing-key `files` entries to a DCS,
+VMware vSphere, or Huawei Cloud Stack manifest.
+
+All providers: primary and standby clusters must use the same encryption provider configuration. For DCS and Bare Metal, the provider-specific cluster resource references a Secret that contains `encryption-provider.conf`; for HCS, normal non-DR deployments do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`. VMware vSphere keeps the release manifest's `/etc/kubernetes/encryption-provider.conf` file entry.
+
+Bare Metal only: primary and standby must additionally use the same Kubernetes ServiceAccount signing key, so that the fixed `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. The machines that form each `global` cluster still use separate cluster-local identities.
 
 ### Prepare Shared DR Variables
 
@@ -1931,10 +1953,16 @@ resources:
 EOF_CONF
 ```
 
-### Prepare Shared ServiceAccount Signing Key \{#prepare-shared-serviceaccount-signing-key}
+### Prepare Shared ServiceAccount Signing Key (Bare Metal) \{#prepare-shared-serviceaccount-signing-key}
 
-For Bare Metal DR, generate the ServiceAccount signing key once and use the same files in both the primary and standby `KubeadmControlPlane` manifests.
+<Directive type="info" title="Bare Metal only">
+  Only Bare Metal needs a shared ServiceAccount signing key. Huawei DCS, VMware vSphere, and Huawei
+  Cloud Stack deployments skip this section — they share the encryption provider configuration, but
+  each side keeps its own signing key. Do not add these `files` entries to a non-Bare Metal
+  `KubeadmControlPlane`.
+</Directive>
 
+Generate the ServiceAccount signing key once and use the same files in both the primary and standby `KubeadmControlPlane` manifests. The fixed `baremetal-system-agent` token created on the primary cluster is only accepted by the standby API server when both sides sign with the same key.
 ```shell
 mkdir -p /root/global-dr-sa
 openssl genrsa -out /root/global-dr-sa/sa.key 2048
