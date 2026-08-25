@@ -2235,7 +2235,15 @@ For the primary cluster, make sure the platform domain resolves to the primary H
 
 After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` at `${PLATFORM_HOST}:11443` — the same value the primary installation used. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
 
-For Bare Metal, verify the Registry propagation on each final `global` cluster before installing `etcd-sync`. Keep `ProductBase.spec.registry.preferPlatformURL` at the installer-generated value. Both sides must report the same `${PLATFORM_HOST}:11443` value in `spec.registry.address` and in the two Cluster annotations; that identical value is what lets **<Term name="product" /> etcd Synchronizer** replicate these keys without overwriting anything.
+#### Bare Metal verification before decommissioning either bootstrap cluster \{#bare-metal-dr-verification}
+
+<Directive type="info" title="Bare Metal only">
+  Everything from here to the end of this subsection applies to the Bare Metal path only. Huawei DCS,
+  VMware vSphere, and Huawei Cloud Stack deployments continue at
+  [Install etcd-sync](#install-etcd-sync) after both installations report success.
+</Directive>
+
+Verify the Registry propagation on each final `global` cluster before installing `etcd-sync`. Keep `ProductBase.spec.registry.preferPlatformURL` at the installer-generated value. Both sides must report the same `${PLATFORM_HOST}:11443` value in `spec.registry.address` and in the two Cluster annotations; that identical value is what lets **<Term name="product" /> etcd Synchronizer** replicate these keys without overwriting anything.
 
 ```shell
 verify_baremetal_global_registry() {
@@ -2461,7 +2469,7 @@ verify_baremetal_handoff \
   "${STANDBY_GLOBAL_HOSTS}" "${STANDBY_GLOBAL_REGISTRATION_NAME}"
 ```
 
-Also verify the Global-local permission boundary on both sides. Before the first non-`global` workload plan exists, the shared `baremetal-system-agent` ServiceAccount, token Secret, Role, and RoleBinding may be absent on both clusters. Do not create or copy that bundle by hand merely to satisfy the Global installation gate; the active operator creates it when the first shared-scope registration is reconciled, and `etcd-sync` then copies it to standby.
+Still on Bare Metal, also verify the Global-local permission boundary on both sides. Before the first non-`global` workload plan exists, the shared `baremetal-system-agent` ServiceAccount, token Secret, Role, and RoleBinding may be absent on both clusters. Do not create or copy that bundle by hand merely to satisfy the Global installation gate; the active operator creates it when the first shared-scope registration is reconciled, and `etcd-sync` then copies it to standby.
 
 ```shell
 verify_global_local_system_agent_rbac() {
@@ -2541,7 +2549,7 @@ verify_global_local_system_agent_rbac "${PRIMARY_GLOBAL_KUBECONFIG}"
 verify_global_local_system_agent_rbac "${STANDBY_GLOBAL_KUBECONFIG}"
 ```
 
-Do not reduce acceptance to the `ready` signal alone. A runtime token or CA mismatch, a stale bootstrap endpoint in the persistent OEM file, a failed plan probe, or an incorrect permission boundary means fresh handoff is incomplete even when `data.ready` is `true`.
+For Bare Metal, do not reduce acceptance to the `ready` signal alone. A runtime token or CA mismatch, a stale bootstrap endpoint in the persistent OEM file, a failed plan probe, or an incorrect permission boundary means fresh handoff is incomplete even when `data.ready` is `true`.
 
 After the standby installation succeeds, switch the platform domain back to the primary entrance. Primary is the active source during the first synchronization.
 
@@ -2594,9 +2602,9 @@ kubectl -n cpaas-system create secret generic etcd-sync-active-cluster-token \
 ~~~
 
 During installation the `etcd-sync-bootstrap` Job runs before the `etcd-sync` Deployment starts. The plugin installation continues only after the Job prepares `remote-etcd-ca`, `remote-etcd-issuer`, and `remote-etcd-client`.
-### Verify the dynamic rule source
+### Verify the Bare Metal dynamic rule source
 
-Before opening the sync path, confirm that the rule source reports `accepted` and appears in `ConfigMap/etcd-sync-rule-snapshot`:
+For Bare Metal, before opening the sync path, confirm that the rule source reports `accepted` and appears in `ConfigMap/etcd-sync-rule-snapshot`:
 
 ~~~shell
 kubectl --kubeconfig <standby-kubeconfig> -n cpaas-system \
