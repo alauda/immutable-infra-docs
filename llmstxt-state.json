@@ -804,9 +804,9 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/machine-configuration/overview.mdx": {
-      "sha256": "afb34f519a57178f2199fb9730990b5a49606ce8d9058a44523cd8ab3735a3f2",
-      "size": 7165,
-      "description": "Conceptual reference for Machine Configuration, defining the `MachineConfig` and `MachineConfigPool` CRDs, the auto-created `master`/`worker` pools and `00-master`/`00-worker` configs, custom worker pool inheritance, the rendered `render-<pool>-<hash>` config flow, the cordon/drain/apply/reboot/uncordon update sequence executed by `machine-config-daemon`, drift detection that marks nodes `Degraded`, and the `kubectl get machineconfigpool` / `kubectl get machineconfig` / per-node annotation queries used to inspect status (`Done`, `Working`, `Degraded`).",
+      "sha256": "6428d6c7924525ce5bd64dfc1669008d3ad7f12a1aa797fecd6c806eae770130",
+      "size": 7239,
+      "description": "Conceptual reference for Machine Configuration, defining the `MachineConfig` and `MachineConfigPool` CRDs, the auto-created `master`/`worker` pools and `00-master`/`00-worker` configs, custom worker pool inheritance, the rendered `render-<pool>-<hash>` config flow, the cordon/drain/apply/reboot/uncordon update sequence executed by `machine-config-daemon`, drift detection that marks nodes `Degraded`, the status inspection queries, and a link to the release notes.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-05-16T06:24:44Z"
     },
@@ -921,6 +921,13 @@
       "description": "Routing stub in the Overview section that carries no release content of its own: it states that release notes are maintained per infrastructure provider and links out to the four dedicated pages under `release-notes/` (Huawei Cloud Stack, Huawei DCS, VMware vSphere, Kubeadm), noting that the Bare Metal Provider has no published release notes on this site. The actual per-tag version timelines live on those linked pages, not here.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
+    },
+    "docs/en/machine-configuration/release-note.md": {
+      "sha256": "445f92610fd0f3d11cfc234300f8c1ed46344c3b4dc912ae37ff9da132972941",
+      "size": 2388,
+      "description": "Version timeline for machine-config versions confirmed in cloud.alauda.io: v4.0.13 (first published version, consolidating source tags through v4.0.13), v4.0.16 (consolidating v4.0.14-v4.0.16), and v4.0.18 (consolidating v4.0.17-v4.0.18).",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-08-26T00:00:00Z"
     },
     "docs/en/release-notes/huawei_cloud_stack.mdx": {
       "sha256": "864587f5e28da84fa0cb61e6159ef7831e29171219506dd9143cba4dba8702ad",
