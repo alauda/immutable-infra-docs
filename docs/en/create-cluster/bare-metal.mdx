@@ -207,6 +207,40 @@ spec:
   targetPlatform: linux/amd64
   size: 20Gi
   cleanupAfterMinutes: 120
+  cloud-config:
+    stages:
+      rootfs:
+        - name: "Size COS_STATE for reprovisioning"
+          files:
+            - path: /etc/elemental/config.d/partitions.yaml
+              permissions: 0644
+              content: |
+                install:
+                  partitions:
+                    state:
+                      size: 20480
+```
+
+### Size COS_STATE before the first install \{#size-cos-state}
+
+The `state` partition holds the running system plus every retained snapshot. The Elemental default is 8192 MiB, which is not enough for this platform: a base image occupies roughly 3 GiB, so a host that keeps the normal set of snapshots leaves under 3 GiB free, and the next `elemental upgrade` fails part-way through with `no space left on device`. Every reprovision and every cluster upgrade goes through `elemental upgrade`, so an under-sized `state` partition turns into a failed rollout later, on a cluster that is already in production.
+
+Size it to at least 20480 MiB (20 GiB) at install time. Partition sizes are fixed when `elemental install` runs and cannot be changed afterwards without reinstalling the host.
+
+<Directive type="warning" title="This setting only works in SeedImage.spec.cloud-config">
+  Put the `partitions.yaml` fragment in `SeedImage.spec.cloud-config`, not in `MachineRegistration.spec.config.cloud-config`.
+
+  `SeedImage.spec.cloud-config` is written into the ISO and executed by the live system during boot (the ISO's kernel command line carries `elemental.setup=/run/initramfs/live/iso-config`), so the file exists before `elemental install` starts and reads `/etc/elemental/config.d/`.
+
+  `MachineRegistration.spec.config.cloud-config` is packaged as an OEM configuration for the *installed* system. It is applied after the disk layout has already been decided, so a `partitions.yaml` placed there silently has no effect and the host still gets an 8 GiB `state` partition.
+</Directive>
+
+Verify the result on the first installed host before rolling out the rest of the fleet:
+
+```bash
+# Expect ~20G, not 8G
+lsblk -o NAME,SIZE,LABEL | grep COS_STATE
+df -h /
 ```
 
 Do not add `/etc/resolv.conf` to `SeedImage.spec.cloud-config`. Keep the ISO generic, and put site-specific resolver configuration in `MachineRegistration.spec.config.cloud-config` only when the first-boot registration path needs it. During the tested Global deployment flow, the ISO did not carry resolver files; node DNS was configured later by the kubeadm bootstrap data.
