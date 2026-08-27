@@ -228,10 +228,7 @@ The `state` partition holds the running system plus every retained snapshot. The
 Size it to at least 20480 MiB (20 GiB) at install time.
 
 <Directive type="warning" title="Placement and stage both matter">
-  The fragment must sit in `SeedImage.spec.cloud-config` under `stages.boot`. The two obvious alternatives both fail silently — the install succeeds, reports nothing unusual, and still leaves an 8 GiB partition:
-
-  - `MachineRegistration.spec.config.cloud-config` is applied to the *installed* system, after the disk layout has been decided.
-  - `stages.rootfs` never runs in a live ISO, because the ISO's GRUB entry carries `elemental.disable` and the rootfs stage unit depends on a mount that flag suppresses.
+  The fragment must sit in `SeedImage.spec.cloud-config` under `stages.boot`. Putting it in `MachineRegistration.spec.config.cloud-config`, or under any other stage, leaves an 8 GiB partition and reports no error.
 </Directive>
 
 Verify the result on the first installed host before rolling out the rest of the fleet:
