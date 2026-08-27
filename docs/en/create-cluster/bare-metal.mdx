@@ -209,7 +209,7 @@ spec:
   cleanupAfterMinutes: 120
   cloud-config:
     stages:
-      rootfs:
+      boot:
         - name: "Size COS_STATE for reprovisioning"
           files:
             - path: /etc/elemental/config.d/partitions.yaml
@@ -223,16 +223,24 @@ spec:
 
 ### Size COS_STATE before the first install \{#size-cos-state}
 
-The `state` partition holds the running system plus every retained snapshot. The Elemental default is 8192 MiB, which is not enough for this platform: a base image occupies roughly 3 GiB, so a host that keeps the normal set of snapshots leaves under 3 GiB free, and the next `elemental upgrade` fails part-way through with `no space left on device`. Every reprovision and every cluster upgrade goes through `elemental upgrade`, so an under-sized `state` partition turns into a failed rollout later, on a cluster that is already in production.
+The `state` partition holds the running system plus every retained snapshot. The Elemental default is 8192 MiB, which is not enough for this platform. Snapshots are copy-on-write, so several snapshots of the *same* image share their extents and cost almost nothing — a host that reprovisions onto the tag it already runs stays comfortably inside 8 GiB. An upgrade to a *different* image shares nothing: the partition has to hold two unrelated systems of roughly 3.5 GiB at once, and `elemental upgrade` dies part-way through with `no space left on device`. Each failed attempt also leaves a partial snapshot behind, so the free space shrinks with every retry. Because every cluster upgrade goes through `elemental upgrade`, an under-sized `state` partition turns into a failed rollout later, on a cluster that is already in production.
 
 Size it to at least 20480 MiB (20 GiB) at install time. Partition sizes are fixed when `elemental install` runs and cannot be changed afterwards without reinstalling the host.
 
-<Directive type="warning" title="This setting only works in SeedImage.spec.cloud-config">
-  Put the `partitions.yaml` fragment in `SeedImage.spec.cloud-config`, not in `MachineRegistration.spec.config.cloud-config`.
+<Directive type="warning" title="Only SeedImage.spec.cloud-config works, and only in the boot stage">
+  Both halves of this matter. The fragment must sit in `SeedImage.spec.cloud-config`, not in `MachineRegistration.spec.config.cloud-config`, and its stage must be `boot`, not `rootfs`. Every wrong combination fails silently — the install succeeds, reports nothing unusual, and leaves an 8 GiB `state` partition:
 
-  `SeedImage.spec.cloud-config` is written into the ISO and executed by the live system during boot (the ISO's kernel command line carries `elemental.setup=/run/initramfs/live/iso-config`), so the file exists before `elemental install` starts and reads `/etc/elemental/config.d/`.
+  | Placement | Stage | Result |
+  | --- | --- | --- |
+  | `MachineRegistration.spec.config.cloud-config` | any | 8192 MiB |
+  | `SeedImage.spec.cloud-config` | `rootfs` | 8192 MiB |
+  | `SeedImage.spec.cloud-config` | `boot` | 20480 MiB |
 
-  `MachineRegistration.spec.config.cloud-config` is packaged as an OEM configuration for the *installed* system. It is applied after the disk layout has already been decided, so a `partitions.yaml` placed there silently has no effect and the host still gets an 8 GiB `state` partition.
+  `MachineRegistration.spec.config.cloud-config` is wrapped into an OEM configuration for the *installed* system (`elemental-operator`, `pkg/install/install.go`). The file does appear on the installed host — `cat /etc/elemental/config.d/partitions.yaml` will show it — but by then the disk layout has already been decided.
+
+  `rootfs` never runs in a live ISO. Elemental writes both `elemental.disable` and `elemental.setup=` into the ISO's GRUB entry (`elemental-toolkit`, `pkg/action/build-iso.go`); `elemental.disable` makes `sysroot-generator.sh` exit before it creates `sysroot.mount`, and `elemental-setup-rootfs.service` declares `Requires=sysroot.mount`. The stages that do run in a live ISO are `boot`, `network`, and `reconcile`.
+
+  Of those, only `boot` is ordered ahead of the install: the console shows `Finished Elemental system configuration` (the `boot` stage) before `Starting Elemental Register Install`, whereas `network` starts concurrently with the install and cannot be relied on.
 </Directive>
 
 Verify the result on the first installed host before rolling out the rest of the fleet:
