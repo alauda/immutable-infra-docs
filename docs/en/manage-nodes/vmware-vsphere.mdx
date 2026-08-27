@@ -14,7 +14,7 @@ queries:
 
 This document explains how to manage worker nodes on VMware vSphere after the baseline cluster is running. Node lifecycle operations are managed through `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` resources.
 
-## Prerequisites
+## Prerequisites \{#prerequisites}
 
 Before you begin, ensure the following conditions are met:
 
@@ -22,6 +22,18 @@ Before you begin, ensure the following conditions are met:
 - The worker machine config pool has enough available slots.
 - The control plane is healthy and reachable.
 - You know which manifest files currently define the worker nodes.
+- You know the installed provider version. The behavior on this page is validated against VMware vSphere Provider `v1.0.17`. See [Provider Requirements](../create-cluster/vmware-vsphere.mdx#provider-requirements).
+
+:::warning
+**A Day-2 `apply` can be rejected**
+
+The rollout and pool rules are enforced on `UPDATE` as well as `CREATE`, so they are checked on every edit this page makes:
+
+- Re-applying an archived `MachineDeployment` manifest re-submits the whole object. If that file omits `strategy.rollingUpdate.maxSurge: 0` or a `maxUnavailable` of `1` or more, the apply is rejected — including an apply whose only intended change is `replicas`. Correct the file before you apply it. `strategy.type: OnDelete` is exempt from both rules.
+- A slot whose `status.configStatuses[].state` is `InUse` or `Released` cannot be removed, cannot have its `network.primary.ip` or `.ipv6` changed, and cannot lose a persistent disk or change one's `sizeGiB`, `mountPath`, or assigned `unitNumber`. Adding a slot, or adding a disk to an existing slot, is accepted.
+
+Match a rejection message against [Admission rejections](../create-cluster/vmware-vsphere.mdx#admission-rejections).
+:::
 
 ## Steps
 
@@ -83,6 +95,8 @@ kubectl apply -f 17-vspheremachineconfigpool-worker.yaml
 kubectl apply -f 30-workers-md-0.yaml
 ```
 
+The second command replaces the whole `MachineDeployment` spec, not only `replicas`. Confirm the archived file carries `strategy.rollingUpdate.maxSurge: 0` and a `maxUnavailable` of `1` or more before you apply it, or the scale-out is rejected.
+
 **Note:** Keep the same existing `VSphereMachineConfigPool.metadata.name` when scale-out or replacement must preserve the logical pool. Slots and VMDKs are not reused across differently named pool objects. `releaseDelayHours` is the reclaim grace period for an unused `Released` slot, not a delay before same-pool reuse.
 
 ### Roll out updated worker node configuration \{#roll-out-updated-worker-node-configuration}
@@ -102,7 +116,7 @@ Typical changes include:
 - System disk sizing (`diskGiB`)
 - VM network devices (`network.devices`)
 
-Persistent disks are owned by `VSphereMachineConfigPool` slots rather than `VSphereMachineTemplate`. Update the pool slots first when a replacement needs a changed persistent-disk layout.
+Persistent disks are owned by `VSphereMachineConfigPool` slots rather than `VSphereMachineTemplate`, so update the pool slots before you start the replacement. That change can only be additive: the slot you are about to replace a node on is `InUse` or `Released`, which accepts a new disk but rejects removing one or changing an existing disk's `sizeGiB`, `mountPath`, or assigned `unitNumber`. A different geometry for an existing disk therefore needs a new slot, not an edit of the current one. See [Allocated slots are immutable](../create-cluster/vmware-vsphere.mdx#create-the-machine-config-pools).
 
 1. **Export the existing template**
 
@@ -225,7 +239,7 @@ Confirm the following results:
 
 Networking, placement, and disk topology are part of the machine templates and machine config pool. Treat a change to these fields as an immutable rollout, not as an in-place VM edit:
 
-1. Add or update the required slot definitions in the existing `VSphereMachineConfigPool` before increasing replicas or starting replacement.
+1. Add the required slot definitions to the existing `VSphereMachineConfigPool` before increasing replicas or starting replacement. An allocated slot accepts additions only; see the admission warning in [Prerequisites](#prerequisites).
 2. Create a new `VSphereMachineTemplate` when its immutable VM, network, placement, or system-disk fields change.
 3. Create a new `KubeadmConfigTemplate` when bootstrap files or node configuration change.
 4. Update the `MachineDeployment` references only after the new pool capacity and templates exist.
