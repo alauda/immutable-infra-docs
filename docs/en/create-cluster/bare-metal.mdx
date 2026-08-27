@@ -223,26 +223,15 @@ spec:
 
 ### Size COS_STATE before the first install \{#size-cos-state}
 
-The `state` partition holds the running system plus every retained snapshot. The Elemental default is 8192 MiB, which is not enough for this platform. Snapshots are copy-on-write, so several snapshots of the *same* image share their extents and cost almost nothing — a host that reprovisions onto the tag it already runs stays comfortably inside 8 GiB. An upgrade to a *different* image shares nothing: the partition has to hold two unrelated systems of roughly 3.5 GiB at once, and `elemental upgrade` dies part-way through with `no space left on device`. Each failed attempt also leaves a partial snapshot behind, so the free space shrinks with every retry. Because every cluster upgrade goes through `elemental upgrade`, an under-sized `state` partition turns into a failed rollout later, on a cluster that is already in production.
+The `state` partition holds the running system plus every retained snapshot. The Elemental default of 8192 MiB is not enough: snapshots of one image share extents, but an upgrade to a *different* image has to hold two unrelated systems of roughly 3.5 GiB at once and fails part-way through with `no space left on device`, leaving a partial snapshot behind on every retry. Every cluster upgrade goes through `elemental upgrade`, and partition sizes are fixed at install time, so this only surfaces later — on a cluster already in production that can no longer be repartitioned without a reinstall.
 
-Size it to at least 20480 MiB (20 GiB) at install time. Partition sizes are fixed when `elemental install` runs and cannot be changed afterwards without reinstalling the host.
+Size it to at least 20480 MiB (20 GiB) at install time.
 
-<Directive type="warning" title="Only SeedImage.spec.cloud-config works, and only in the boot stage">
-  Both halves of this matter. The fragment must sit in `SeedImage.spec.cloud-config`, not in `MachineRegistration.spec.config.cloud-config`, and its stage must be `boot`, not `rootfs`. Every wrong combination fails silently — the install succeeds, reports nothing unusual, and leaves an 8 GiB `state` partition:
+<Directive type="warning" title="Placement and stage both matter">
+  The fragment must sit in `SeedImage.spec.cloud-config` under `stages.boot`. The two obvious alternatives both fail silently — the install succeeds, reports nothing unusual, and still leaves an 8 GiB partition:
 
-  | Placement | Stage | Result |
-  | --- | --- | --- |
-  | `MachineRegistration.spec.config.cloud-config` | any | 8192 MiB |
-  | `SeedImage.spec.cloud-config` | `rootfs` | 8192 MiB |
-  | `SeedImage.spec.cloud-config` | `boot` | 20480 MiB |
-
-  `MachineRegistration.spec.config.cloud-config` is wrapped into an OEM configuration for the *installed* system (`elemental-operator`, `pkg/install/install.go`). The file does appear on the installed host — `cat /etc/elemental/config.d/partitions.yaml` will show it — but by then the disk layout has already been decided.
-
-  `rootfs` never runs in a live ISO. Elemental writes both `elemental.disable` and `elemental.setup=` into the ISO's GRUB entry (`elemental-toolkit`, `pkg/action/build-iso.go`); `elemental.disable` makes `sysroot-generator.sh` exit before it creates `sysroot.mount`, and `elemental-setup-rootfs.service` declares `Requires=sysroot.mount`. The stages that do run in a live ISO are `boot`, `network`, and `reconcile`.
-
-  Of those, only `boot` is ordered ahead of the install: the console shows `Finished Elemental system configuration` (the `boot` stage) before `Starting Elemental Register Install`, whereas `network` starts concurrently with the install and cannot be relied on.
-
-  A cloud-init style `write_files` block works too: yip maps those entries into the `boot` stage (`rancher/yip`, `pkg/schema/loader_cloudinit.go`). The explicit `stages.boot` form is used here because it names the stage the whole thing depends on.
+  - `MachineRegistration.spec.config.cloud-config` is applied to the *installed* system, after the disk layout has been decided.
+  - `stages.rootfs` never runs in a live ISO, because the ISO's GRUB entry carries `elemental.disable` and the rootfs stage unit depends on a mount that flag suppresses.
 </Directive>
 
 Verify the result on the first installed host before rolling out the rest of the fleet:
