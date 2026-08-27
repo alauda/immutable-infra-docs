@@ -207,6 +207,36 @@ spec:
   targetPlatform: linux/amd64
   size: 20Gi
   cleanupAfterMinutes: 120
+  cloud-config:
+    stages:
+      boot:
+        - name: "Size COS_STATE for reprovisioning"
+          files:
+            - path: /etc/elemental/config.d/partitions.yaml
+              permissions: 0644
+              content: |
+                install:
+                  partitions:
+                    state:
+                      size: 20480
+```
+
+### Size COS_STATE before the first install \{#size-cos-state}
+
+The `state` partition holds the running system plus every retained snapshot. The Elemental default of 8192 MiB is not enough: snapshots of one image share extents, but an upgrade to a *different* image has to hold two unrelated systems of roughly 3.5 GiB at once and fails part-way through with `no space left on device`, leaving a partial snapshot behind on every retry. Every cluster upgrade goes through `elemental upgrade`, and partition sizes are fixed at install time, so this only surfaces later — on a cluster already in production that can no longer be repartitioned without a reinstall.
+
+Size it to at least 20480 MiB (20 GiB) at install time.
+
+<Directive type="warning" title="Placement and stage both matter">
+  The fragment must sit in `SeedImage.spec.cloud-config` under `stages.boot`. Putting it in `MachineRegistration.spec.config.cloud-config`, or under any other stage, leaves an 8 GiB partition and reports no error.
+</Directive>
+
+Verify the result on the first installed host before rolling out the rest of the fleet:
+
+```bash
+# Expect ~20G, not 8G
+lsblk -o NAME,SIZE,LABEL | grep COS_STATE
+df -h /
 ```
 
 Do not add `/etc/resolv.conf` to `SeedImage.spec.cloud-config`. Keep the ISO generic, and put site-specific resolver configuration in `MachineRegistration.spec.config.cloud-config` only when the first-boot registration path needs it. During the tested Global deployment flow, the ISO did not carry resolver files; node DNS was configured later by the kubeadm bootstrap data.
