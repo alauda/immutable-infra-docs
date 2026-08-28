@@ -88,7 +88,7 @@ Decide which registry this cluster pulls its platform components from — Kube-O
 | Registry of the `global` cluster | Nothing. The cluster inherits it. | Workload nodes reach the registry the `global` cluster uses with acceptable throughput. |
 | Dedicated registry | A RegistryCredential Secret in `cpaas-system`, referenced from the `Cluster` by the `cpaas.io/registry-reference` label. | Workload nodes sit in a different region or network segment and should pull from a registry close to them. |
 
-Either way, the registry must already hold the platform payload for the target version, and every workload cluster node must reach its address.
+Either way, the registry must already hold Alauda Container Platform Core for the target version plus the packages for every platform plugin you intend to install on this cluster, and every workload cluster node must reach its address.
 
 For the dedicated-registry procedure and its constraints, see [Choose the Image Registry for a Workload Cluster](../how-to/workload-cluster-image-registry.mdx).
 

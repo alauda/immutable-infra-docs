@@ -24,7 +24,7 @@ Decide before you create the cluster. The binding is read only while the cluster
 | Registry of the `global` cluster | Nothing. Every workload cluster inherits it. | The workload cluster reaches the registry the `global` cluster uses with acceptable throughput and availability. |
 | Dedicated registry | A RegistryCredential Secret in `cpaas-system`, referenced from the `Cluster` by the `cpaas.io/registry-reference` label. | The workload cluster is in a different region or network segment and should pull from a registry close to it. |
 
-Both options are available on every infrastructure provider, but only through YAML. The cluster creation wizards do not offer a registry credential to select, so use the YAML workflow of your provider's cluster creation guide when a cluster needs a dedicated registry.
+Both options are available on every infrastructure provider. The default needs nothing, so it applies to clusters created through the web UI as well. A dedicated registry is configured through YAML only: the cluster creation wizards do not offer a registry credential to select, so use the YAML workflow of your provider's cluster creation guide when a cluster needs one.
 
 ## What the Binding Covers \{#coverage}
 
@@ -56,25 +56,32 @@ In both cases the operator does not configure anything per cluster.
 
 - You can create Secrets in the `cpaas-system` namespace of the `global` cluster.
 - The dedicated registry is reachable from every workload cluster node, and from the `global` cluster if you want to verify it from there.
-- The dedicated registry already holds the platform payload for the target version. See [Prepare the Registry](#prepare-the-registry).
+- The dedicated registry already holds Alauda Container Platform Core for the target version, plus the packages for every platform plugin you intend to install on this cluster. See [Prepare the Registry](#prepare-the-registry).
 
 ### Step 1 — Prepare the Registry \{#prepare-the-registry}
 
-The platform never copies images into a dedicated registry. Populate it before you create the cluster; a cluster that points at an empty registry cannot finish bootstrapping.
+The platform never copies images into a dedicated registry. Populate it yourself, before you create the cluster.
 
-Upload the platform payload for the target version to the dedicated registry using the same Core Package procedure that prepares an external platform image registry, with the dedicated registry as the target address. The payload must match the version and CPU architecture of the cluster you are about to create.
+Two things decide what it must hold:
 
-Then confirm from a node in the target network that the registry answers and holds the payload:
+- **Alauda Container Platform Core for the target version is always required.** Its images and packages must match the version and CPU architecture of the cluster you are about to create.
+- **Everything beyond Core depends on which platform plugins you intend to install on this cluster.** Only you know that set — the platform does not derive it and will not fill the gaps later. Upload the packages for those plugins together with Core.
+
+Use the same Core Package upload procedure that prepares an external platform image registry, with the dedicated registry as the target address.
+
+Then confirm from a node in the target network that the registry answers:
 
 ```bash
 export DEDICATED_REGISTRY="<registry-host>:<port>"
 curl -sk "https://${DEDICATED_REGISTRY}/v2/" -o /dev/null -w '%{http_code}\n'
 ```
 
+This proves reachability and TLS only. Confirm the uploaded repositories and tags in your registry's own administration interface or API.
+
 The `/v2/` segment belongs only to Registry HTTP API requests. Do not include it — or a scheme — in the Secret or in any cluster field.
 
 :::warning
-Verify the payload before you create the cluster. A missing image surfaces later as Pods stuck in `ImagePullBackOff` on a cluster that already reports its control plane as ready, which is considerably harder to diagnose than a registry check that fails up front.
+Verify the contents before you create the cluster. A cluster bound to an incomplete registry still comes up — kubeadm resolves the control plane from a different registry, so Nodes reach `Ready` and the cluster looks healthy. The gap only surfaces afterwards, as platform Pods stuck in `ImagePullBackOff`. That is considerably harder to diagnose than a registry check that fails up front.
 :::
 
 ### Step 2 — Create the RegistryCredential Secret \{#create-the-secret}
@@ -103,7 +110,7 @@ stringData:
 | --- | --- | --- |
 | `metadata.namespace` | Yes | Must be `cpaas-system`. |
 | `capi.cpaas.io/provider` label | Yes | Must be `registry-credential`. Without it the platform does not treat the Secret as a registry credential. |
-| `cpaas.io/registry-credential-format` label | Yes | Use `direct` for a credential you author. Omitting the label selects the legacy encrypted format, which expects an uploaded authentication file instead of these fields. |
+| `cpaas.io/registry-credential-format` label | Yes, for this procedure | Set it to `direct` for a credential you author. The label itself is optional to the platform, but omitting it selects the legacy encrypted format, which expects an uploaded authentication file instead of the fields below. |
 | `cpaas.io/display-name` annotation | No | Shown wherever the platform lists credentials. Set it so the entry is recognizable. |
 | `stringData.registry` | Yes | `<host>[:<port>]` only. No scheme, no path. |
 | `stringData.username`, `stringData.password` | Together | Set both or neither. Omit both for an anonymous registry. Setting only one is rejected. |
@@ -171,7 +178,7 @@ Platform component images use the dedicated registry. Images kubeadm manages, an
 | Correct the registry address in a credential | Yes, with care | Updating `registry` repoints every cluster that references this Secret. Verify that all of them can reach the new address and that it holds the payload for each of their versions. |
 | Move an existing cluster to a different registry | No | The reference is fixed at creation. Recreate the cluster with the intended reference. |
 | Share one credential across clusters | Yes | Reference the same Secret from any number of clusters. A single update reaches all of them. Different Secrets never affect each other. |
-| Delete a credential | Only when unreferenced | The platform rejects deletion while any cluster still references the Secret, and the error names those clusters. Delete or recreate the clusters first. |
+| Delete a credential | Only when unreferenced | The platform rejects deletion while any cluster still references the Secret, and the error names those clusters. Remove that reference first, by deleting those clusters or recreating them against a different credential. |
 
 ## Troubleshooting \{#troubleshooting}
 
@@ -181,5 +188,5 @@ Platform component images use the dedicated registry. Images kubeadm manages, an
 | The Secret is rejected on create or update | `registry` is empty, or only one of `username` and `password` is set. | Set `registry`, and set the credential pair together or leave both out. |
 | The Secret is rejected with an unsupported-format message | `cpaas.io/registry-credential-format` carries a value other than `direct` or `encrypted`, including an empty value. | Use `direct` for a credential you author, or remove the label to use the legacy encrypted format. |
 | The cluster reports its control plane as ready, but platform Pods stay in `ImagePullBackOff` | The dedicated registry does not hold the payload for this version, or the nodes cannot authenticate to it. | Repeat [Step 1](#prepare-the-registry) from a workload cluster node and confirm the credential in the Secret. |
-| Deleting a credential is rejected | One or more clusters still reference it. | Read the cluster names from the error, then delete or recreate those clusters first. |
+| Deleting a credential is rejected | One or more clusters still reference it. | Read the cluster names from the error. Delete those clusters, or recreate them against a different credential, before deleting this one. |
 | A new label value on an existing `Cluster` changes nothing | The reference is read only at cluster creation. | Recreate the cluster with the intended reference. |
