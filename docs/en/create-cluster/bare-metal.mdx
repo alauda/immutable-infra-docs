@@ -58,26 +58,35 @@ The host firewall on an Alauda OS node is preconfigured and maintained by the pl
 
 | Stage | Source | Destination | Protocol / port | Purpose |
 | --- | --- | --- | --- | --- |
+| First boot | Each host booted from the `SeedImage` ISO | Site DNS servers | UDP and TCP `53` | The host resolves the platform access address and the registry host by name before it can reach either |
+| First boot | Each host | Site NTP servers | UDP `123` | The clock gate in [Host Time Synchronization](#host-time-synchronization) |
 | First boot | Each host booted from the `SeedImage` ISO | Platform access address (`global.platformUrl`) | TCP `443`, or the custom platform HTTPS port | `elemental-register` registers the host, which creates its `MachineInventory` |
 | First boot | Each host | Platform registry (`global.registry.address`) | TCP `11443` | `elemental install` pulls the Alauda OS image. Every later `elemental upgrade` reprovision pulls it again |
-| Provisioning and steady state | Each host | Platform access address, path `/kubernetes/global` | TCP `443`, or the custom platform HTTPS port | `elemental-system-agent` polls its plan Secret. This is the platform ingress path, not a direct connection to a kube-apiserver |
+| Provisioning and steady state | Each workload-cluster host | Platform access address, path `/kubernetes/global` | TCP `443`, or the custom platform HTTPS port | `elemental-system-agent` polls its plan Secret. This is the platform ingress path, not a direct connection to a kube-apiserver |
 | Cluster join | Every node of the new cluster | This cluster's control-plane endpoint | TCP `6443`, or the port set in `BaremetalCluster.spec.controlPlaneLoadBalancer.port` | `kubeadm join` and `kubelet` reach the API server |
 | Cluster join | Every node of the new cluster | Platform registry resolved from the `cpaas.io/registry-address` annotation | TCP `11443` | The node pulls the platform images — CoreDNS, kube-proxy, and kube-ovn |
 | Cluster management | `global` cluster nodes | This cluster's control-plane endpoint | TCP `6443`, or the configured control-plane port | The Cluster API controllers run on `global` and reconcile this cluster through its API server |
-| Cluster runtime | Every node of the new cluster | Every other node of the same cluster | Component ports, plus Pod and Service traffic that is not filtered by port | etcd (`2379`, `2380`) between control-plane nodes, `kubelet`, and the CNI. For the component port inventory, see <ExternalSiteLink name="acp" href="/install/prepare/communication_matrix.html" children="Communication Matrix" /> |
+| Cluster runtime | Every node of the new cluster | Every other node of the same cluster | etcd `2379` and `2380` between control-plane nodes; the Kube-OVN overlay tunnel, UDP `6081` for the default Geneve encapsulation; `kubelet`; and Pod and Service traffic that is not filtered by port | Cluster-internal traffic. For the full component port inventory, see <ExternalSiteLink name="acp" href="/install/prepare/communication_matrix.html" children="Communication Matrix" />. Confirm the tunnel port against your own configuration if you changed the Kube-OVN tunnel type or attached a secondary network |
 
 :::warning
 **`443` alone is not enough for a workload host**
 
-`elemental-system-agent` reaches the platform through `https://<platform-domain>/kubernetes/global`, so registration and plan polling need only the platform HTTPS port. That is not the whole requirement. The same host still pulls its operating system and platform images from the registry on `11443`, joins the API server on the control-plane endpoint port, and exchanges cluster traffic with the other nodes. A firewall approval that covers only `443` produces hosts that register successfully and then fail during install or join, where the cause is much harder to see.
+`elemental-register` and `elemental-system-agent` both reach the platform through the platform access address, so registration and plan polling need only the platform HTTPS port. That is not the whole requirement. The same host still resolves names through DNS, pulls its operating system and platform images from the registry on `11443`, joins the API server on the control-plane endpoint port, and exchanges cluster traffic with the other nodes. A firewall approval that covers only `443` produces hosts that register successfully and then fail during install or join, where the cause is much harder to see.
 :::
 
-**Bootstrap phase.** The endpoints above apply once a `global` cluster exists. While `global` itself is still being installed, its hosts register against the temporary bootstrap endpoint instead, and a different set of ports applies — see [Bootstrap host network](../global/install.mdx#bootstrap-host-network). A `SeedImage` built during that phase points at the bootstrap endpoint and must not be reused after handoff; create new `MachineRegistration` and `SeedImage` objects on the active `global` cluster. A workload `SeedImage` stays valid across a handoff only because its registration URL uses the platform domain rather than a bootstrap address.
+**Scope of the table.** These are the paths for workload-cluster hosts, which is what this page creates. Two neighbouring cases are documented elsewhere and are not covered above:
+
+- **Bootstrap.** While `global` itself is still being installed, its hosts register against the temporary bootstrap endpoint and a different set of ports applies — see [Bootstrap host network](../global/install.mdx#bootstrap-host-network).
+- **`global` hosts after handoff.** A `global` host's system agent uses the Global control-plane endpoint rather than the platform ingress path, and in a DR pair it uses the local control-plane VIP on `6443` directly. See [Endpoint and Identity](../global/disaster_recovery.mdx#endpoint-and-identity).
+
+A `SeedImage` built during the bootstrap phase points at the bootstrap endpoint and must not be reused after handoff; create new `MachineRegistration` and `SeedImage` objects on the active `global` cluster. A workload `SeedImage` created on the `global` cluster stays valid across a handoff, because its registration URL is the platform domain rather than a bootstrap address.
 
 **Control-plane endpoint.**
 
 - For `Internal` Self-built VIP, the VIP must live in the same Layer-2 broadcast domain as the control-plane node IPs. The `vrid` must be unique in that domain, the network must allow VRRP and gratuitous ARP updates, and the node image must expose IPVS and allow Alive to set `net.ipv4.conf.all.arp_accept=1` and `net.ipv4.vs.conntrack=1`.
 - For `External` LoadBalancer, provision the listener and control-plane backends before cluster creation. Follow [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
+
+**First-boot addressing.**
 
 If the target VM or physical host does not receive an address from DHCP while booted into the live ISO, configure the network manually from the host console before waiting for registration. Check the NetworkManager connection name first, then apply the site-specific address, gateway, and DNS values:
 
@@ -94,20 +103,21 @@ nmcli connection up "Wired connection 1"
 
 ### 4. Host Time Synchronization \{#host-time-synchronization}
 
-Each host's clock must already be correct when it boots the `SeedImage` ISO. The platform's cross-node requirement is a unified time zone on every cluster node and a time synchronization error between nodes of no more than 10 seconds; see <ExternalSiteLink name="acp" href="/install/prepare/node_preprocessing.html#node_checks" children="Node Checks" />. That requirement describes the cluster's nodes, so it applies here, but nothing on this path verifies it for you: the quick-configuration script and node checks on that page target traditional-operating-system machines that the platform joins over SSH, and they never run against an Alauda OS host installed by `elemental-operator`.
+Every host that will become a cluster node — control plane and worker alike — must already carry the correct time when it boots the `SeedImage` ISO. The platform's cross-node requirement is a unified time zone on every cluster node and a time synchronization error between nodes of no more than 10 seconds; see <ExternalSiteLink name="acp" href="/install/prepare/node_preprocessing.html#node_checks" children="Node Checks" />. That requirement describes the cluster's nodes, so it applies here, but nothing on this path verifies it for you: the quick-configuration script and node checks on that page target traditional-operating-system machines that the platform joins over SSH, and they never run against an Alauda OS host installed by `elemental-operator`.
 
 Treat time synchronization as a gate before [Step 1](#step-1-machineregistration-seedimage):
 
-- Make the site NTP servers reachable from the host subnet and have machine operations synchronize each host against them before the ISO boot. A production cluster should not depend on public NTP.
-- Verify each host instead of assuming that the live ISO corrects the clock. Run `date -u` from the host console and compare the result with the site reference clock. Across the hosts that will form the same control plane, the spread must stay within the 10-second requirement.
-- After the nodes reach `Ready`, confirm that an ongoing time source is in use — `chronyc tracking` or `timedatectl` on the node.
+- Make the site NTP servers reachable from the host subnet, and open UDP `123` as listed in [Network Connectivity](#network-connectivity). A production cluster should not depend on public NTP.
+- Set the clock **from firmware**, not from an operating system. At this point the install disk has been wiped as described in [Host Disk and Boot Preparation](#host-disk-and-boot-preparation), so there is no OS on the host to run a command in. Correct the time in the BIOS/UEFI setup or through the BMC, and keep the hardware clock on UTC so that the time zone is applied consistently once Alauda OS is installed.
+- Compare the hosts against each other, not only against a reference. Across all hosts intended for the same cluster, the spread must stay inside the 10-second requirement before any of them boots the ISO.
+- After the nodes reach `Ready`, confirm the result on each node with `timedatectl` — it reports both the time zone and whether the clock is synchronized — and `chronyc tracking` for the source and current offset.
 
-The control-plane hosts generate the cluster PKI and form etcd during the same provisioning pass, which is why the check belongs here rather than after the cluster exists. `kubeadm` issues the cluster certificates using the clock of the host it runs on: if that clock is ahead of the others, the certificates carry a `notBefore` timestamp that the remaining nodes still treat as being in the future and reject, and if it is behind, the certificates expire earlier than expected. etcd members also depend on agreeing about time for leases and elections. Both failures surface at control-plane bring-up, long after the registration step where the wrong clock was introduced.
+The whole cluster PKI inherits the clock of the host that runs `kubeadm init`. kubeadm sets the certificate authority's `NotBefore` from that host's current time, every leaf certificate inherits that `NotBefore`, and each certificate's `NotAfter` is derived from it. A host running ahead therefore issues a PKI that the other nodes and any client treat as not yet valid until their own clocks catch up, and a host running behind issues one that expires earlier than the configured validity period implies. A server whose hardware clock has never been synchronized is typically wrong by minutes or hours rather than seconds, so the consequence is a control plane that will not come up at all — and it surfaces at control-plane bring-up, long after the registration step where the wrong clock was introduced.
 
 :::warning
 **A Day-2 chrony `MachineConfig` does not replace this**
 
-[Configuring the Chrony Time Service](../machine-configuration/managing.mdx) writes `/etc/chrony.conf` to nodes that are already running and joined. It is the correct way to point a cluster at the site NTP servers for ongoing operation, and it is a different requirement from this one: it cannot correct the clock of a host that is still installing Alauda OS or running `kubeadm`. Deferring to it leaves the install and join window unprotected.
+[Configuring the Chrony Time Service](../machine-configuration/managing.mdx#configuring-the-chrony-time-service) writes `/etc/chrony.conf` to nodes that are already running and joined. It is the correct way to point a cluster at the site NTP servers for ongoing operation, and it is a different requirement from this one: it cannot correct the clock of a host that is still installing Alauda OS or running `kubeadm`. Deferring to it leaves the install and join window unprotected.
 :::
 
 ### 5. TPM Decision
@@ -121,7 +131,7 @@ Set `MachineRegistration.spec.config.elemental.registration.emulate-tpm` from wh
 
 `public-registry-credential` is **not** required to create a bare-metal cluster. It only becomes necessary when later platform components on the new workload cluster need to pull from a credentialed public registry. If your test scope ends at cluster + node Ready, you can ignore this prerequisite.
 
-### 7. Host Disk and Boot Preparation
+### 7. Host Disk and Boot Preparation \{#host-disk-and-boot-preparation}
 
 Classify **every** disk and virtual disk (VD) on each host before you boot the `SeedImage` ISO. Record which device is the OS install target and which devices, if any, must retain application data:
 

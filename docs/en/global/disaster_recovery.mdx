@@ -69,14 +69,14 @@ This section is the Bare Metal DR procedure for ACP 4.4.0 and later. It covers a
 
 Bare Metal keeps physical hosts and their plan Secrets in MachineInventory objects. DR therefore separates Global hosts from workload hosts.
 
-### Endpoint and Identity
+### Endpoint and Identity \{#endpoint-and-identity}
 
 | Host | Endpoint | Identity | Sync |
 | --- | --- | --- | --- |
 | Local `Cluster/global` host | `https://<local-control-plane-vip>:6443` | `baremetal-global-system-agent` | Local only |
 | Non-`global` workload host | `https://<platform-domain>/kubernetes/global` | `baremetal-system-agent` | Primary to standby |
 
-This table is the DR-specific, split-identity form of the standard Bare Metal registration paths. For the stage-by-stage network requirements that apply to every Bare Metal delivery, DR or not, see [Network Connectivity](../create-cluster/bare-metal.mdx#network-connectivity).
+The Global row is specific to DR and to the post-handoff Global registration described below. The workload row is the standard Bare Metal registration path; for the stage-by-stage network requirements of the workload-cluster path — including DNS, NTP, the registry, and cluster-internal traffic — see [Network Connectivity](../create-cluster/bare-metal.mdx#network-connectivity).
 
 Set `elemental.systemAgent.splitAuthEnabled: true` on both Bare Metal provider releases. The active Global uses `sharedAuthReadOnly: false`; the standby uses `sharedAuthReadOnly: true` while it receives data. Keep the standard ServiceAccount, Secret, Role, and RoleBinding names. Never grant namespace-wide Secret access.
 
