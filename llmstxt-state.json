@@ -785,9 +785,16 @@
     "docs/en/machine-configuration/index.mdx": {
       "sha256": "c23b548347e97a7165f001a6570bf92105328d29bbb9bf471e56664bd6350fbc",
       "size": 108,
-      "description": "Top-level index page for the Machine Configuration section, rendering the auto-generated overview of child pages (overview, managing node configuration, node disruption policies).",
+      "description": "Top-level index page for the Machine Configuration section, rendering the auto-generated overview of child pages (overview, release notes, installation, managing node configuration, node disruption policies, firewall ports, sysctl tuning).",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-28T16:18:15Z"
+    },
+    "docs/en/machine-configuration/install.mdx": {
+      "description": "How to install the Machine Configuration cluster plugin (**Alauda Container Platform Machine Configuration**, module name `machine-config`), which is not present in a cluster by default and is released independently of ACP. Covers prerequisites (Immutable Infrastructure nodes, the `node-role.kubernetes.io/control-plane` and `node-role.kubernetes.io/worker` labels the default pools select on, and `global`-cluster access), downloading from Customer Portal, uploading the package, and installing once per cluster - `global` and workload alike, since the plugin declares no cluster affinity - from the console or with a `ModuleInfo` created on the `global` cluster with `spec.config` left empty. Verification covers `moduleinfo` reaching `Running`, the `machine-config-controller` Deployment and `machine-config-daemon` DaemonSet in `cpaas-system`, and the `master`/`worker` pools plus `00-master`/`00-worker` configs the operator creates at startup. Upgrades run as standalone `Agnostic` life-cycle plugin upgrades from Marketplace.",
+      "sha256": "5bf9a0fa250fc3824453b28f491c7b8134867ddbf434dbb4ca41e437f9b50f48",
+      "size": 6682,
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-08-28T16:18:15Z"
     },
     "docs/en/machine-configuration/managing.mdx": {
       "sha256": "06e86572dc8e248eac4f2ea05280548fbe5c1abeabfbc073ac334e1261c77347",
@@ -804,11 +811,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/machine-configuration/overview.mdx": {
-      "sha256": "6428d6c7924525ce5bd64dfc1669008d3ad7f12a1aa797fecd6c806eae770130",
-      "size": 7239,
-      "description": "Conceptual reference for Machine Configuration, defining the `MachineConfig` and `MachineConfigPool` CRDs, the auto-created `master`/`worker` pools and `00-master`/`00-worker` configs, custom worker pool inheritance, the rendered `render-<pool>-<hash>` config flow, the cordon/drain/apply/reboot/uncordon update sequence executed by `machine-config-daemon`, drift detection that marks nodes `Degraded`, the status inspection queries, and a link to the release notes.",
+      "sha256": "56f339d80574b80cc52b6b85ea2740179affbc60eb3fe8ed988ae514fe91ce1b",
+      "size": 7394,
+      "description": "Conceptual reference for Machine Configuration, defining the `MachineConfig` and `MachineConfigPool` CRDs, the `master`/`worker` pools and `00-master`/`00-worker` configs the Machine Configuration Operator creates when it first starts after the cluster plugin is installed, custom worker pool inheritance, the rendered `render-<pool>-<hash>` config flow, the cordon/drain/apply/reboot/uncordon update sequence executed by `machine-config-daemon`, drift detection that marks nodes `Degraded`, the status inspection queries, and links to the installation page and the release notes.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-08-28T16:18:15Z"
     },
     "docs/en/machine-configuration/sysctl.mdx": {
       "sha256": "911f1114aad8781a755045cf74f2c4ee9e9f7fd02a4f7602c77c194f0d9fe0be",
