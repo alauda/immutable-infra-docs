@@ -72,7 +72,7 @@ spec:
 
 The path is intentionally absent when the Live ISO starts. A filesystem label, GPT `PARTLABEL`, or `/dev/disk/by-label/*` path is not an alternative: these identify partitions, while Elemental requires a whole-disk install target.
 
-Create a `SeedImage` that references this MachineRegistration, or rebuild the existing SeedImage after changing the install device.
+Create a `SeedImage` that references this MachineRegistration, or rebuild the existing SeedImage after changing the install device. That `SeedImage` must also carry the `state` partition sizing described in [Size COS_STATE before the first install](../create-cluster/bare-metal.mdx#size-cos-state) — the Elemental default of 8 GiB is too small once a host is upgraded to a different image, and the size cannot be changed without reinstalling the host.
 
 :::warning
 The MachineRegistration settings are embedded in the generated ISO. Patching the MachineRegistration does not change an ISO that was already built and downloaded. Rebuild the SeedImage, wait until it is ready, download the new ISO, and verify its checksum before booting hosts from it.
