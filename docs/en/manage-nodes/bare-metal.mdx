@@ -58,6 +58,8 @@ kubectl -n cpaas-system get machineinventorypools.infrastructure.cluster.x-k8s.i
 
 `status.available` must be at least the target replica count. If you need additional capacity, register more hosts (boot the `SeedImage` ISO on them — see [Create Cluster → Step 1](../create-cluster/bare-metal.mdx#step-1-machineregistration-seedimage)), prepare any managed storage while each inventory is still unallocated, and then add their names to `spec.machineInventories`.
 
+A host added this way goes through the same first boot as the original nodes, so it has to meet the same prerequisites: the network paths in [Network Connectivity](../create-cluster/bare-metal.mdx#network-connectivity) and the clock gate in [Host Time Synchronization](../create-cluster/bare-metal.mdx#host-time-synchronization). Confirm both for the new host rather than assuming the approval obtained at delivery time covers its subnet and its hardware clock.
+
 ### Step 2: Configure the Worker `BaremetalMachineTemplate`
 
 ```yaml
