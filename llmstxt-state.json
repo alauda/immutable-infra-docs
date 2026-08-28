@@ -601,11 +601,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "f731bc45b2fa3bf56106fe60de43be8eea2b45dceed47ad510e90784ebb9f22e",
-      "size": 118555,
-      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers provider-package delivery, Registry address formats and optional authentication, provider-specific Cluster API manifests, External versus Bare Metal Internal endpoint selection, installer requests, verification, provider-resource handoff, optional DR inputs, and the final gates required before decommissioning the bootstrap cluster.",
+      "sha256": "7b1afcb3e881d1f61e0f4ac3e7967e6ffcba0a69590fa0fed053208102a68a2e",
+      "size": 156840,
+      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers bootstrap host hardware, operating system, and network requirements, provider-package delivery, Registry address formats and optional authentication, provider-specific Cluster API manifests, External versus Bare Metal Internal endpoint selection, installer requests, verification, provider-resource handoff, optional DR inputs, and the final gates required before decommissioning the bootstrap cluster.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-13T13:09:02Z"
+      "updated_at": "2026-08-27T09:35:56Z"
     },
     "docs/en/global/upgrade.mdx": {
       "sha256": "51b4c7bfb190066f09aba4f67f9ea43b92c806ac140c4f156b59a33533b750b4",

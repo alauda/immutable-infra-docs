@@ -8,6 +8,9 @@ queries:
   - install global cluster on vmware vsphere immutable infrastructure
   - immutable os global install
   - global cluster naming convention prefix dr failover
+  - bootstrap host requirements cpu memory disk immutable install
+  - how big should the bootstrap host be for global install
+  - bootstrap host network ports static ip registry 11443
 ---
 
 # Installing the global Cluster
@@ -30,11 +33,11 @@ For traditional operating systems such as Ubuntu or RHEL, use <ExternalSiteLink 
 
 The following prerequisites apply to every provider:
 
-- A bootstrap host that meets the minimum hardware and network requirements. See the [Overview](../overview/index.mdx) for sizing guidance.
+- A bootstrap host that meets the [Bootstrap Host Requirements](#bootstrap-host-requirements).
 - The Core Package from the Customer Portal.
 - The Alauda Container Platform Kubeadm Provider package.
 - The infrastructure provider package for your target platform.
-- Network reachability between the bootstrap host and the target IaaS platform API endpoint.
+- Network reachability between the bootstrap host and the target IaaS platform API endpoint. See [Network](#bootstrap-host-network).
 - IP and hostname planning for the `global` control plane and worker nodes. See [Infrastructure Resources](../infrastructure/index.mdx) for the resource model used by each provider.
 - A stable Kubernetes API endpoint for the `global` cluster. Select and validate the provider-specific endpoint mode in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx) before you create the cluster.
 - A platform access address, registry address, and Pod and Service CIDR ranges.
@@ -47,6 +50,51 @@ The following prerequisites apply to every provider:
   - Every other CAPI resource (`KubeadmControlPlane`, `KubeadmConfigTemplate`, `MachineDeployment`) and every other provider infrastructure resource (machine templates, IP/hostname pools, machine config pools, and any other per-provider resource) **must** use a name with the `global-` prefix. The DR (failover) mechanism uses this prefix to identify resources owned by the `global` cluster. **A `global` cluster resource without the `global-` prefix is invisible to DR and causes the standby cluster's machines to be deleted at failover time** — the cluster will provision and run normally, then lose nodes the first time DR is exercised. This is a hard requirement, not a stylistic convention.
   - `Cluster.spec.controlPlaneRef.name` and any other cross-references must match the prefixed names exactly.
 </Directive>
+
+## Bootstrap Host Requirements \{#bootstrap-host-requirements}
+
+The bootstrap host is a temporary machine that runs `setup.sh` from the Core Package. For the duration of the installation it carries the KIND-based `minialauda` management cluster, the embedded platform registry, the Cluster API bootstrap and infrastructure providers, and `cpaas-installer`. It never joins the `global` cluster, and it is removed after handoff — see [Decommission the Bootstrap Cluster](#decommission-bootstrap-cluster).
+
+Size it for the image payload it serves rather than for steady-state load: while the cluster is being provisioned, every `global` node pulls the platform image set from this host.
+
+### Hardware \{#bootstrap-host-hardware}
+
+| Resource | Requirement |
+|---|---|
+| CPU | 8 cores |
+| Memory | 16 GB |
+| Disk | 300 GB or more, available to both the extraction directory (`/root/cpaas-install`) and `/var/cpaas` |
+
+Disk is the resource that most often stalls a bootstrap. Budget it in three parts:
+
+| Consumer | Space |
+|---|---|
+| Extracted Core Package | At least 100 GB after extraction. See <ExternalSiteLink name="acp" href="/install/installing.html" children="Installing" /> |
+| Embedded registry data under `/var/cpaas` | The platform image payload for the target release, plus the Aligned Extension packages you copy into `plugins/` |
+| Provider packages and OS artifacts staged for upload | The Kubeadm and infrastructure provider packages, plus one Alauda OS image or VM template artifact per node architecture |
+
+On arm64, provision more CPU and memory than the x86_64 figures above, following the resource-planning convention in <ExternalSiteLink name="acp" href="/install/prepare/prerequisites.html" children="Prerequisites" />.
+
+### Operating System \{#bootstrap-host-os}
+
+The bootstrap host runs a traditional operating system, not Alauda OS. Use a distribution and kernel from the validated set in <ExternalSiteLink name="acp" href="/install/prepare/node_preprocessing.html#supported_os_and_kernels" children="Supported OS and Kernel Versions" />. The host needs Bash and enough privilege to run `setup.sh` as `root`.
+
+<Directive type="info" title="The x86-64-v2 baseline applies to cluster nodes, not to the bootstrap host">
+  The `x86-64-v2` ISA baseline in [OS Support Matrix](../overview/os-support-matrix.mdx) applies to cluster nodes created from ACP-provided Alauda OS images. The platform does not impose that baseline on x86_64 machines running a user-provided traditional operating system, so it is not a requirement for the bootstrap host itself. See <ExternalSiteLink name="acp" href="/install/prepare/node_preprocessing.html" children="Node Preprocessing" />.
+
+  If the bootstrap host is a virtual machine on the same infrastructure that will back the cluster nodes, inspecting its CPU flags can surface a missing baseline early. It is not a substitute for verifying `x86-64-v2` on the hosts that will actually run the Alauda OS nodes, because the flags a guest sees depend on the hypervisor CPU model.
+</Directive>
+
+### Network \{#bootstrap-host-network}
+
+The bootstrap host needs a **static IP address** that does not change for the lifetime of the installation. `HOST_IP` is written into the `cpaas.io/registry-address` annotation that provisioned nodes use to pull images, and, for Bare Metal, into the registration endpoint and the SAN of its serving certificate. An address change part-way through the installation breaks node provisioning.
+
+| From | To | Port | Purpose |
+|---|---|---|---|
+| Bootstrap host | Target IaaS platform API | Provider-specific: DCS VRM `TCP/7443` and DCS physical host MGMT (typically `TCP/8443`); vCenter `TCP/443`; the HCS API and IAM endpoints | The Cluster API providers run inside `minialauda` and reconcile machines through the IaaS API. For DCS this path also carries the Ignition ISO upload; see [Creating a Cluster on Huawei DCS](../create-cluster/huawei-dcs.mdx) |
+| Bootstrap host | `global` control plane endpoint | `TCP/6443` | Cluster API must reach the endpoint while the control plane is created. See [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx) |
+| `global` nodes being provisioned | Bootstrap host registry | `TCP/11443` | Nodes pull platform images from `NODE_REGISTRY_ADDRESS` until the `global` cluster's own registry takes over |
+| `global` hosts, Bare Metal only | Bootstrap host | `TCP/12443` | Elemental registration endpoint used during the bootstrap phase |
 
 ## Compatibility and Version Inputs
 
