@@ -59,11 +59,15 @@ Size it for the image payload it serves rather than for steady-state load: while
 
 ### Hardware \{#bootstrap-host-hardware}
 
-| Resource | Requirement |
+| Resource | Minimum (x86_64) |
 |---|---|
 | CPU | 8 cores |
 | Memory | 16 GB |
 | Disk | 300 GB or more, available to both the extraction directory (`/root/cpaas-install`) and `/var/cpaas` |
+
+The CPU and memory minimums match the documented per-node minimum for a control plane node in <ExternalSiteLink name="acp" href="/install/prepare/prerequisites.html" children="Prerequisites" />. On the traditional install path the machine that runs `setup.sh` becomes the first control plane node and has to meet that figure; the bootstrap host on this path does comparable work — it extracts the Core Package, serves the platform registry, and runs the bootstrap control plane — so it is sized to the same minimum.
+
+On arm64, apply the platform's ARM convention from the same page: at least 1.5x and preferably 2x the x86_64 figures, which gives **12 cores / 24 GB** as the minimum and **16 cores / 32 GB** as the recommended configuration.
 
 Disk is the resource that most often stalls a bootstrap. Budget it in three parts:
 
@@ -72,8 +76,6 @@ Disk is the resource that most often stalls a bootstrap. Budget it in three part
 | Extracted Core Package | At least 100 GB after extraction. See <ExternalSiteLink name="acp" href="/install/installing.html" children="Installing" /> |
 | Embedded registry data under `/var/cpaas` | The platform image payload for the target release, plus the Aligned Extension packages you copy into `plugins/` |
 | Provider packages and OS artifacts staged for upload | The Kubeadm and infrastructure provider packages, plus one Alauda OS image or VM template artifact per node architecture |
-
-On arm64, provision more CPU and memory than the x86_64 figures above, following the resource-planning convention in <ExternalSiteLink name="acp" href="/install/prepare/prerequisites.html" children="Prerequisites" />.
 
 ### Operating System \{#bootstrap-host-os}
 
