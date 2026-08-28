@@ -102,6 +102,25 @@ kubectl -n cpaas-system get hcsmachinetemplate \
   -o custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.imageName
 ```
 
+### 4. Workload Cluster Image Registry
+
+Decide which registry this cluster pulls platform images from — CoreDNS, kube-proxy, and Kube-OVN during bootstrap, and every platform component installed afterwards.
+
+| Option | What you configure | When to use it |
+|---|---|---|
+| Registry of the `global` cluster | Nothing. The cluster inherits it, and the wizard fills in the address for you. | Workload nodes reach the registry the `global` cluster uses with acceptable throughput. |
+| Dedicated registry | A RegistryCredential Secret in `cpaas-system`, referenced from the `Cluster` by the `cpaas.io/registry-reference` label. | Workload nodes sit in a different region or network segment and should pull from a registry close to them. |
+
+Either way, the registry must already hold the platform payload for the target version, and every workload cluster node must reach its address.
+
+For the dedicated-registry procedure and its constraints, see [Choose the Image Registry for a Workload Cluster](../how-to/workload-cluster-image-registry.mdx).
+
+:::warning
+A dedicated registry is configured through YAML only. The web UI wizard always uses the registry of the `global` cluster: it reads that address from the `global` cluster and writes it into the new cluster for you, and it does not offer a registry credential to select. Use [Using YAML](#using-yaml) when this cluster needs its own registry.
+
+The binding is also read only when the cluster is first created. Changing or removing `cpaas.io/registry-reference` on an existing `Cluster` does not move that cluster to another registry.
+:::
+
 ## Using the Web UI \{#using-the-web-ui}
 
 **Version requirement**: This workflow requires Fleet Essentials `1.0.2` or later and the Alauda Container Platform HCS Infrastructure Provider `v1.0.3` or later. If the provider version is earlier than `v1.0.3`, create clusters with the YAML manifests described in [Using YAML](#using-yaml).

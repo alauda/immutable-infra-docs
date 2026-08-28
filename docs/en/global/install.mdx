@@ -163,7 +163,7 @@ spec:
           - global-registry-auth
 ```
 
-If the Registry is anonymous, do not create a placeholder Secret and do not add these fields. The bootstrap Secret is also not a credential-transfer mechanism: workload clusters receive their Registry pull Secret from the `global` cluster's `public-registry-credential` flow. Do not copy the bootstrap `global-registry-auth` Secret into a workload cluster.
+If the Registry is anonymous, do not create a placeholder Secret and do not add these fields. The bootstrap Secret is also not a credential-transfer mechanism: by default, workload clusters receive their Registry pull Secret from the `global` cluster's `public-registry-credential` flow, and a workload cluster can instead be bound to a dedicated registry as described in [Choose the Image Registry for a Workload Cluster](../how-to/workload-cluster-image-registry.mdx). Do not copy the bootstrap `global-registry-auth` Secret into a workload cluster.
 
 <Directive type="info" title="Why cluster.type is Baremetal for every provider">
   The AppRelease values in the tabs below all set `global.cluster.type: Baremetal`. This is a chart-internal classifier, not the IaaS provider name. Keep `Baremetal` for the Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal `global` installations. The value drives how the platform configures node-level components; it does not select the infrastructure provider.
