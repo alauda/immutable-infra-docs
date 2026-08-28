@@ -77,7 +77,11 @@ On arm64, provision more CPU and memory than the x86_64 figures above, following
 
 ### Operating System \{#bootstrap-host-os}
 
-The bootstrap host runs a traditional operating system, not Alauda OS. Use a distribution and kernel from the validated set in <ExternalSiteLink name="acp" href="/install/prepare/node_preprocessing.html#supported_os_and_kernels" children="Supported OS and Kernel Versions" />. The host needs Bash and enough privilege to run `setup.sh` as `root`.
+The bootstrap host runs a traditional operating system, not Alauda OS. It needs a 64-bit Linux distribution with Bash and `root` privilege, so that `setup.sh` can bring up the bootstrap cluster described in Step 2.
+
+The requirements in <ExternalSiteLink name="acp" href="/install/prepare/node_preprocessing.html" children="Node Preprocessing" /> — the validated OS and kernel list, the SSH user, and the `sshd_config` settings — do **not** apply to the bootstrap host on this install path. They govern traditional-OS machines that the platform joins to a cluster over SSH, and the bootstrap host never joins the `global` cluster. This differs from <ExternalSiteLink name="acp" href="/install/installing.html" children="the traditional install path" />, where the machine that runs `setup.sh` becomes the first control plane node and must therefore meet them.
+
+When no other constraint applies, choosing a distribution from that validated list is still a safe default.
 
 <Directive type="info" title="The x86-64-v2 baseline applies to cluster nodes, not to the bootstrap host">
   The `x86-64-v2` ISA baseline in [OS Support Matrix](../overview/os-support-matrix.mdx) applies to cluster nodes created from ACP-provided Alauda OS images. The platform does not impose that baseline on x86_64 machines running a user-provided traditional operating system, so it is not a requirement for the bootstrap host itself. See <ExternalSiteLink name="acp" href="/install/prepare/node_preprocessing.html" children="Node Preprocessing" />.
