@@ -7,6 +7,8 @@ queries:
   - vmware vsphere cluster parameter checklist
   - prepare values for capv cluster
   - vsphere cluster prerequisites
+  - vsphere self-built vip prerequisites
+  - vsphere persistent disk sizing and unit number
 ---
 
 # VMware vSphere Infrastructure Preparation
@@ -225,7 +227,7 @@ This section covers the external LoadBalancer endpoint, which the baseline clust
 | Cluster Registry address | `<registry_address>` | Yes | Permanent Registry address reachable from workload nodes. Use `<host>:<port>` only for `cpaas.io/registry-address`; do not use the retired bootstrap Registry and do not append `/v2/`. | `registry.example.local:11443` | - |
 | `kube-ovn` version | `<kube_ovn_version>` | Yes | Must match the platform network plugin requirements. | `v4.4.1` | - |
 | `kube-ovn-join-cidr` | `<kube_ovn_join_cidr>` | Yes | Must not overlap with other networks. | `100.64.0.0/16` | - |
-| CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag approved for the Kubernetes version. Keep the `-v<acp>` suffix: the provider derives `dns.imageRepository` from it, so a tag without the suffix leaves the repository undefined. | `1.14.3-v4.4.6` | - |
+| CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag published for the target ACP release, copied verbatim with its `-v<acp>` suffix: at ACP `v4.4` and later, the tag staged under `acp/coredns`; below `v4.4`, the one under `tkestack/coredns`. The provider reads the suffix to select that repository, so a tag without it resolves to `tkestack/coredns` and fails to pull on ACP `v4.4` or later. Leave `dns.imageRepository` unset; see [Provider-managed fields on your manifests](../create-cluster/vmware-vsphere.mdx#provider-managed-fields). | `1.14.3-v4.4.6` | - |
 | etcd image tag | `<etcd_image_tag>` | Yes | Use the tag approved for the Kubernetes version. Take it from the same [OS Support Matrix](../overview/os-support-matrix.mdx) row as the other version values. | `v3.6.13-acp.0` | - |
 | Encryption provider secret | `<encryption_provider_secret>` | Yes | Base64-encoded AES key for secret encryption at rest. Generate with `head -c 32 /dev/urandom \| base64`. Do not reuse example values. | *(generated)* | - |
 
@@ -244,18 +246,19 @@ The Secret command verifies existence only and does not print credential data. E
 ```bash
 export CLUSTER_REGISTRY_ADDRESS="<registry_address>"
 export IMAGE_REGISTRY_ADDRESS="<image_registry>"
-# Kube-OVN chart. Use the repository that matches the target chart version:
-#   v4.4 and later    -> acp/chart-kube-ovn
-#   earlier than v4.4 -> acp/chart-cpaas-kube-ovn
-curl -sk "https://${CLUSTER_REGISTRY_ADDRESS}/v2/acp/chart-kube-ovn/tags/list"
+# Repository names depend on the target version. The values below are the
+# ACP v4.4 and later ones; for an earlier target, change them to:
+#   Kube-OVN chart -> acp/chart-cpaas-kube-ovn
+#   CoreDNS        -> tkestack/coredns
+export KUBE_OVN_CHART_REPO="acp/chart-kube-ovn"
+export COREDNS_REPO="acp/coredns"
 
-# CoreDNS. Use the repository that matches the target ACP version:
-#   ACP v4.4 and later -> acp/coredns
-#   earlier            -> tkestack/coredns
-curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/acp/coredns/tags/list"
-
+curl -sk "https://${CLUSTER_REGISTRY_ADDRESS}/v2/${KUBE_OVN_CHART_REPO}/tags/list"
+curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/${COREDNS_REPO}/tags/list"
 curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/ait/cloud-provider-vsphere/tags/list"
 ```
+
+A `NAME_UNKNOWN` response means the repository name does not match the target version; correct `KUBE_OVN_CHART_REPO` or `COREDNS_REPO` from the mapping above and retry, rather than reading it as a missing tag.
 
 The authoritative chart-name boundary is in [Upgrade Kube-OVN Before the Control Plane](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane).
 

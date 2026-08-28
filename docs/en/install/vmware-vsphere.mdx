@@ -9,6 +9,7 @@ queries:
   - verify vmware provider installation
   - verify vsphere provider webhooks
   - vsphere provider standby global cluster
+  - upgrade vsphere provider disk status migration
 ---
 
 # VMware vSphere Provider Installation
@@ -134,7 +135,7 @@ kubectl -n <namespace> get vspheremachineconfigpool <pool_name> \
   -o jsonpath='{range .status.persistentDiskStatuses[*]}{.hostname}{" "}{.name}{" "}{.phase}{"\n"}{end}'
 ```
 
-Every disk that the pool had before the upgrade appears with a phase, and `status.configStatuses[].reclaimStatus` is gone.
+Each disk that was already provisioned before the upgrade appears with a phase, and `status.configStatuses[].reclaimStatus` is gone. A disk on a slot that no Machine has ever allocated has no VMDK yet, so it has no record; that is expected rather than an incomplete migration.
 
 ## Standby Management Clusters \{#standby-management-cluster}
 

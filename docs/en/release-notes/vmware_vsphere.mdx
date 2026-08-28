@@ -29,7 +29,7 @@ For the current full capability list and installation steps, see [VMware vSphere
 - **Rollout rules enforced by admission** — For a `KubeadmControlPlane` or `MachineDeployment` whose infrastructure template sets `machineConfigPoolRef`, `maxSurge` must be `0`, `KubeadmControlPlane.spec.replicas` must be `3` or more, and `MachineDeployment.spec.strategy.rollingUpdate.maxUnavailable` must be `1` or more. These values were already required by the fixed-IP slot model; they are now checked before the object is accepted. See [Check the manifests against the admission rules](../upgrade-cluster/vmware-vsphere.mdx#preflight-admission-rules).
 - **Pool safety validation** — Hostnames and primary IP addresses must be unique across the pools bound to one `Cluster`; a slot that is `InUse` or `Released` can no longer have its address, disk set, or disk geometry changed; and deleting a pool that still owns `InUse` slots is refused up front rather than leaving the object in `Terminating`.
 - **Pod log directory on the data disk** — When a slot mounts a disk at `/var/lib/containerd`, `/var/log/pods` is relocated onto that disk. Existing machines are not retrofitted; the change is picked up when nodes are replaced.
-- **Deterministic persistent-disk matching** — Disks are matched by path and name rather than by capacity, and `ownerMachineName` and `ownerMachineUID` persist across VM replacement so a rolling upgrade reattaches the same disks.
+- **Deterministic persistent-disk matching** — Disks are matched by VMDK path, then by SCSI unit number, rather than by capacity, and `ownerMachineName` and `ownerMachineUID` persist across VM replacement so a rolling upgrade reattaches the same disks.
 
 ### Fixed Issues
 

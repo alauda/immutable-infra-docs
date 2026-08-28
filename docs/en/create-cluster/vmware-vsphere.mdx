@@ -85,8 +85,6 @@ Every cluster reaches its API server through a stable endpoint. Select the mode 
 The Self-built VIP exists from provider `v1.0.17` and is available only to clusters **created** with it. An existing cluster cannot adopt it, and neither can a cluster whose provider was upgraded to `v1.0.17` from an earlier release: the VIP is injected while the first control-plane node bootstraps, and Alive then takes it over, so there is no in-place migration path. Those clusters keep their external LoadBalancer, and moving one onto a Self-built VIP means creating a new cluster. See [Upgrading the Provider](../install/vmware-vsphere.mdx#upgrade-the-provider).
 </Directive>
 
-### Choose the endpoint mode \{#choose-the-endpoint-mode}
-
 | `spec.controlPlaneLoadBalancer` | Who owns the endpoint |
 |---|---|
 | Absent (the baseline on this page) | You do. Provision an external Layer 4 TCP LoadBalancer and write `spec.controlPlaneEndpoint` yourself. |
@@ -97,85 +95,7 @@ None of the three can be changed once the cluster exists. The field is write-onc
 
 **Recommendation**: for an external LoadBalancer, leave the field out rather than writing `type: external`. An absent field already means an external LoadBalancer, and writing it only to record that intent pins the endpoint to a frozen second copy of the same address.
 
-### Self-built VIP prerequisites \{#self-built-vip-prerequisites}
-
-Complete all of the following before you select `type: internal`.
-
-- The VIP is IPv4, is currently unclaimed, and lives in the same Layer-2 broadcast domain as the control-plane node IPs. IPv6 and dual-stack endpoints are not accepted.
-- The VIP is not one of the slot addresses (`network.primary.ip` or `network.additional[].ip`) declared in this cluster's `VSphereMachineConfigPool` objects, and it falls outside every external IPAM pool range. The provider checks the slot addresses; it cannot read external IPAM pools and will not detect that conflict.
-- The `vrid` is unique in that Layer-2 domain.
-- The network path allows VRRP (IP protocol `112`, multicast `224.0.0.18`) and gratuitous ARP between the control-plane nodes. Confirm that the dvPortGroup security policy and any NSX-T distributed firewall rule do not block them.
-- The VM template exposes the Linux IPVS subsystem (the `ip_vs` module family is loadable) and allows Alive to set `net.ipv4.conf.all.arp_accept=1` and `net.ipv4.vs.conntrack=1`.
-- The `alive` cluster plugin is present and deployable on the `global` cluster.
-
-The provider does not carry Alive itself. It creates a `ModuleInfo` on the `global` cluster, and the platform renders the workload `cpaas-system/alive` `AppRelease` from it. Confirm the plugin on the `global` cluster:
-
-```bash
-kubectl get clustermodule global -o jsonpath='{.spec.version}{"\n"}'
-kubectl get moduleplugin alive -o jsonpath='{.status.targetClusterVersions}{"\n"}'
-kubectl get moduleplugin alive -o jsonpath='{.status.latestVersion}{"\n"}'
-kubectl get moduleconfig alive-<alive_version> -o jsonpath='{.status.readyForDeploy}{"\n"}'
-```
-
-The provider resolves `<alive_version>` in this order: the `--plugin-alive-version` override on the provider deployment when it is set, then the `ModulePlugin/alive` entry `status.targetClusterVersions[<ClusterModule spec.version>].version`, and only then `status.latestVersion`. Read the `targetClusterVersions` entry that matches the version printed by the first command first; `latestVersion` applies only when the map has no entry for it.
-
-The workload cluster's own `ClusterModule` does not exist until the cluster is created, so at planning time read the `global` cluster's version as the planning value. It is the closest available proxy, not a guarantee: once the cluster exists, read its own version with `kubectl get clustermodule <cluster_name>` and repeat the `readyForDeploy` check against the `alive` version that this version resolves to. Do that before the control plane finishes bootstrapping, because `type: internal` cannot be changed afterwards. When you are creating the `global` cluster itself, confirm the component version and the presence of the `alive` plugin from the installation package instead.
-
-The last command must print `true` for the version that resolution selects. If `ModulePlugin/alive` is absent, or the matching `ModuleConfig` is missing or reports `false`, the Self-built VIP cannot be installed in this environment. Create the cluster with an external LoadBalancer instead, and leave `spec.controlPlaneLoadBalancer` absent. Contact Alauda technical support for the plugin package that matches your platform release.
-
-### `controlPlaneLoadBalancer` fields \{#control-plane-load-balancer-fields}
-
-| Parameter | Type | Description | Required |
-|---|---|---|---|
-| `.spec.controlPlaneLoadBalancer.type` | string (`internal` / `external`) | `internal` installs Alive and manages the VIP. `external` skips Alive and requires a pre-provisioned Layer 4 TCP LoadBalancer. The values are lowercase; other providers use different spelling. | No (defaults to `external`) |
-| `.spec.controlPlaneLoadBalancer.host` | string | Control plane endpoint address. For `internal`, the Self-built VIP, which must be IPv4. For `external`, the load balancer frontend address. | Yes |
-| `.spec.controlPlaneLoadBalancer.port` | int (1–65535) | Control plane port. Typically `6443`. | Yes |
-| `.spec.controlPlaneLoadBalancer.vrid` | int | Keepalived `virtual_router_id`, `1`–`255`, unique in the control-plane Layer-2 domain. | When `type: internal` |
-| `.spec.controlPlaneLoadBalancer.interface` | string (max 15 characters) | Host interface that carries the VIP. Leave empty to let the provider match the interface holding the node's primary IP. | No, but see the warning below |
-
-<Directive type="warning" title="controlPlaneLoadBalancer is write-once">
-The provider accepts `spec.controlPlaneLoadBalancer` only when the cluster is created. After that, `type`, `host`, `port`, `vrid`, and `interface` are all frozen, the field cannot be cleared, and a cluster created without it cannot have it added. Correcting a mistake requires rebuilding the cluster.
-
-Two consequences follow. On multi-NIC nodes, set `interface` explicitly at creation — a wrong auto-detected interface cannot be patched afterwards. And `host` and `port` must describe the same address as `spec.controlPlaneEndpoint`; a mismatch is not accepted.
-
-The `vrid` range is checked by the provider's admission webhook, not by the CRD schema, so `kubectl apply --dry-run=client` does not catch an out-of-range value.
-</Directive>
-
-### Enable the Self-built VIP in `10-cluster.yaml` \{#enable-self-built-vip}
-
-For `type: internal`, add the following block to the `VSphereCluster` object in [Create the `Cluster` and `VSphereCluster` objects](#create-cluster-objects). Everything else in the baseline manifest is unchanged.
-
-```yaml
-spec:
-  controlPlaneLoadBalancer:
-    type: internal
-    host: "<vip>"           # must equal spec.controlPlaneEndpoint.host
-    port: <api_server_port> # must equal spec.controlPlaneEndpoint.port
-    vrid: <vrid>
-    interface: "<vip_interface>" # set explicitly on multi-NIC nodes
-```
-
-The provider also reconciles the workload cluster's `kube-system/kube-proxy` configuration for you, setting `ipvs.strictARP: true` and adding `<vip>/32` to `ipvs.excludeCIDRs`, then rolling the kube-proxy DaemonSet. Do not revert those values by hand; the provider reapplies them and rolls the DaemonSet again.
-
-### Verify the Self-built VIP \{#verify-self-built-vip}
-
-```bash
-kubectl -n <namespace> get vspherecluster <cluster_name> \
-  -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}){"\n"}{end}'
-kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig -n kube-system get pods -l app=alive -o wide
-kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig -n cpaas-system get apprelease alive
-kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get --raw='/version'
-```
-
-Expect `SelfBuiltLoadBalancerReady=True`, one Alive pod per control-plane node, and a successful API response through the VIP without disabling TLS verification.
-
-The Alive pods run in `kube-system`, not in `cpaas-system`; `cpaas-system` holds the `alive` `AppRelease` the platform renders from the provider's `ModuleInfo`. `SelfBuiltLoadBalancerReady` covers the whole chain, the `AppRelease` and the pods, so check both namespaces when it is `False`.
-
-<Directive type="info">
-`SelfBuiltLoadBalancerReady` reports the VIP chain only. It does not gate `VSphereCluster.status.ready`, so the infrastructure cluster can report ready while the VIP is still converging. The condition reasons are `SelfBuiltLoadBalancerReady`, `SelfBuiltLoadBalancerReconciling`, `SelfBuiltLoadBalancerNotReady`, and `InvalidSelfBuiltLoadBalancerConfiguration`.
-
-While the VIP is not ready, the provider also defers the workload-cluster CoreDNS and kube-proxy repository reconciliation described in [Provider-managed fields on your manifests](#provider-managed-fields).
-</Directive>
+For `type: internal`, the prerequisites, the field reference, the manifest block, and the verification commands are in [Use a Self-built VIP](#use-self-built-vip).
 
 ## Key Objects
 
@@ -207,7 +127,7 @@ The vSphere CPI component is delivered to the workload cluster through `ClusterR
 Some fields on the objects you apply are owned by the provider after creation. Knowing which ones prevents a repository fight during upgrades.
 
 - The provider patches your `KubeadmControlPlane` after you apply it. Expect the CoreDNS and kube-proxy skip annotations set to `"true"`, and `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageRepository` set by the controller.
-- **Set `dns.imageTag` yourself and leave `dns.imageRepository` unset.** The provider derives the repository from the `-v<acp>` suffix in the CoreDNS tag: `acp` at ACP `v4.4` and later, `tkestack` below it.
+- **Set `dns.imageTag` yourself and leave `dns.imageRepository` unset.** Provide the CoreDNS tag published for the target ACP release: at ACP `v4.4` and later, the tag staged under `acp/coredns`; below `v4.4`, the one under `tkestack/coredns`. The provider reads the `-v<acp>` suffix in the tag to select that repository, so a tag without the suffix resolves to `tkestack/coredns` — on ACP `v4.4` or later that repository does not carry the tag, and the CoreDNS pods stay in `ImagePullBackOff`.
 - The kube-proxy repository is derived from the Kubernetes version: `acp/k8s` at `v1.35` and later, `tkestack` below it. The Kube-OVN chart is `acp/chart-kube-ovn` at chart `v4.4` and later, `acp/chart-cpaas-kube-ovn` below it.
 - The registry prefix for all three comes from the `Cluster` annotation `cpaas.io/registry-address`.
 - The workload cluster's `kube-system/kube-proxy` DaemonSet and `kube-system/coredns` Deployment image repositories are reconciled as well, but **only after the control-plane rollout completes**. A lag between the `KubeadmControlPlane` reaching the target version and those workloads changing repository is expected.
@@ -312,18 +232,19 @@ Export the permanent platform Registry address returned by the `Cluster` annotat
 ```bash
 export CLUSTER_REGISTRY_ADDRESS="<registry_address>"
 export IMAGE_REGISTRY_ADDRESS="<image_registry>"
-# Kube-OVN chart. Use the repository that matches the target chart version:
-#   v4.4 and later    -> acp/chart-kube-ovn
-#   earlier than v4.4 -> acp/chart-cpaas-kube-ovn
-curl -sk "https://${CLUSTER_REGISTRY_ADDRESS}/v2/acp/chart-kube-ovn/tags/list"
+# Repository names depend on the target version. The values below are the
+# ACP v4.4 and later ones; for an earlier target, change them to:
+#   Kube-OVN chart -> acp/chart-cpaas-kube-ovn
+#   CoreDNS        -> tkestack/coredns
+export KUBE_OVN_CHART_REPO="acp/chart-kube-ovn"
+export COREDNS_REPO="acp/coredns"
 
-# CoreDNS. Use the repository that matches the target ACP version:
-#   ACP v4.4 and later -> acp/coredns
-#   earlier            -> tkestack/coredns
-curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/acp/coredns/tags/list"
-
+curl -sk "https://${CLUSTER_REGISTRY_ADDRESS}/v2/${KUBE_OVN_CHART_REPO}/tags/list"
+curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/${COREDNS_REPO}/tags/list"
 curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/ait/cloud-provider-vsphere/tags/list"
 ```
+
+A `NAME_UNKNOWN` response means the repository name does not match the target version; correct `KUBE_OVN_CHART_REPO` or `COREDNS_REPO` from the mapping above and retry, rather than reading it as a missing tag.
 
 The repository boundaries above are the same ones the provider applies at runtime; see [Provider-managed fields on your manifests](#provider-managed-fields) for the selection rules, and [Upgrade Kube-OVN Before the Control Plane](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane) for the authoritative chart-name table.
 
@@ -388,6 +309,8 @@ kubectl apply -f 01-vsphere-credentials-secret.yaml
 ### Create the `Cluster` and `VSphereCluster` objects \{#create-cluster-objects}
 
 Create the base cluster manifest with the workload cluster network settings, the control plane endpoint, and the vCenter connection settings. Set `cpaas.io/registry-address` to the permanent platform Registry in the form `<registry_address>` (`<host>:<port>` only).
+
+The manifest below uses an external LoadBalancer, which is the baseline on this page. For a Self-built VIP, add the `spec.controlPlaneLoadBalancer` block from [Enable the Self-built VIP in `10-cluster.yaml`](#enable-self-built-vip) to the `VSphereCluster` object.
 
 ```yaml title="10-cluster.yaml"
 apiVersion: cluster.x-k8s.io/v1beta1
@@ -1539,7 +1462,7 @@ An `apply` or `edit` can be rejected before anything is created. Match a fragmen
 | `maxUnavailable must be at least 1 when the infrastructure template references a machineConfigPoolRef` | Set `MachineDeployment.spec.strategy.rollingUpdate.maxUnavailable` to `1` or more. The Cluster API default `0` deadlocks against `maxSurge: 0`. |
 | `unit number 7 is reserved for the SCSI controller` | Choose another `unitNumber` between `0` and `15`. |
 | `also used by pool` | A hostname or primary IP collides with a slot in another pool bound to the same `Cluster` in this namespace. |
-| `is immutable for allocated slot` | The slot is `InUse` or `Released`. See [Allocated slots are immutable](#create-the-machine-config-pools). |
+| `allocated slot` | The slot is `InUse` or `Released`. The message names what is frozen — the primary IP or IPv6, or a disk's `sizeGiB`, `mountPath`, or `unitNumber` — or reports that the slot or one of its persistent disks cannot be removed. See [Allocated slots are immutable](#create-the-machine-config-pools). |
 | `cannot delete pool while` | The pool still owns `InUse` slots. Delete the Machines that hold them first. |
 | `is already referenced by` or `is bound to` | Two controllers reference one pool. Give each `KubeadmControlPlane` and `MachineDeployment` its own pool. |
 | `cannot change clusterRef while consumerRef is set` | The pool is already bound to a controller. Create a new pool instead of retargeting this one. |
@@ -1549,7 +1472,91 @@ An `apply` or `edit` can be rejected before anything is created. Match a fragmen
 
 ## Creation-Time Topology Variants \{#creation-time-topology-variants}
 
-The baseline manifest intentionally starts with one datacenter and one NIC. Before you create the cluster, use the following variants when the initial topology requires additional NICs, multiple datacenters, failure domains, or extra data disks. Apply one variant at a time and validate the complete manifest set before combining them.
+The baseline manifest intentionally starts with one datacenter and one NIC. Before you create the cluster, use the following variants when the initial topology requires a Self-built control plane VIP, additional NICs, multiple datacenters, failure domains, or extra data disks. Apply one variant at a time and validate the complete manifest set before combining them.
+
+### Use a Self-built VIP \{#use-self-built-vip}
+
+Use this variant when the cluster is created with `VSphereCluster.spec.controlPlaneLoadBalancer.type: internal` instead of an external LoadBalancer. Decide the mode first in [Control Plane Endpoint Modes](#control-plane-endpoint-modes); it cannot be changed after the cluster exists.
+
+#### Self-built VIP prerequisites \{#self-built-vip-prerequisites}
+
+Complete all of the following before you select `type: internal`.
+
+- The VIP is IPv4, is currently unclaimed, and lives in the same Layer-2 broadcast domain as the control-plane node IPs. IPv6 and dual-stack endpoints are not accepted.
+- The VIP is not one of the slot addresses (`network.primary.ip` or `network.additional[].ip`) declared in this cluster's `VSphereMachineConfigPool` objects, and it falls outside every external IPAM pool range. The provider checks the slot addresses; it cannot read external IPAM pools and will not detect that conflict.
+- The `vrid` is unique in that Layer-2 domain.
+- The network path allows VRRP (IP protocol `112`, multicast `224.0.0.18`) and gratuitous ARP between the control-plane nodes. Confirm that the dvPortGroup security policy and any NSX-T distributed firewall rule do not block them.
+- The VM template exposes the Linux IPVS subsystem (the `ip_vs` module family is loadable) and allows Alive to set `net.ipv4.conf.all.arp_accept=1` and `net.ipv4.vs.conntrack=1`.
+- The `alive` cluster plugin is present and deployable on the `global` cluster.
+
+The provider does not carry Alive itself. It creates a `ModuleInfo` on the `global` cluster, and the platform renders the workload `cpaas-system/alive` `AppRelease` from it. Confirm the plugin on the `global` cluster:
+
+```bash
+kubectl get clustermodule global -o jsonpath='{.spec.version}{"\n"}'
+kubectl get moduleplugin alive -o jsonpath='{.status.targetClusterVersions}{"\n"}'
+kubectl get moduleplugin alive -o jsonpath='{.status.latestVersion}{"\n"}'
+kubectl get moduleconfig alive-<alive_version> -o jsonpath='{.status.readyForDeploy}{"\n"}'
+```
+
+The provider resolves `<alive_version>` in this order: the `--plugin-alive-version` override on the provider deployment when it is set, then the `ModulePlugin/alive` entry `status.targetClusterVersions[<ClusterModule spec.version>].version`, and only then `status.latestVersion`. Read the `targetClusterVersions` entry that matches the version printed by the first command first; `latestVersion` applies only when the map has no entry for it.
+
+The workload cluster's own `ClusterModule` does not exist until the cluster is created, so at planning time read the `global` cluster's version as the planning value. It is the closest available proxy, not a guarantee: once the cluster exists, read its own version with `kubectl get clustermodule <cluster_name>` and repeat the `readyForDeploy` check against the `alive` version that this version resolves to. Do that before the control plane finishes bootstrapping, because `type: internal` cannot be changed afterwards. When you are creating the `global` cluster itself, confirm the component version and the presence of the `alive` plugin from the installation package instead.
+
+The last command must print `true` for the version that resolution selects. If `ModulePlugin/alive` is absent, or the matching `ModuleConfig` is missing or reports `false`, the Self-built VIP cannot be installed in this environment. Create the cluster with an external LoadBalancer instead, and leave `spec.controlPlaneLoadBalancer` absent. Contact Alauda technical support for the plugin package that matches your platform release.
+
+#### `controlPlaneLoadBalancer` fields \{#control-plane-load-balancer-fields}
+
+| Parameter | Type | Description | Required |
+|---|---|---|---|
+| `.spec.controlPlaneLoadBalancer.type` | string (`internal` / `external`) | `internal` installs Alive and manages the VIP. `external` skips Alive and requires a pre-provisioned Layer 4 TCP LoadBalancer. The values are lowercase; other providers use different spelling. | No (defaults to `external`) |
+| `.spec.controlPlaneLoadBalancer.host` | string | Control plane endpoint address. For `internal`, the Self-built VIP, which must be IPv4. For `external`, the load balancer frontend address. | Yes |
+| `.spec.controlPlaneLoadBalancer.port` | int (1–65535) | Control plane port. Typically `6443`. | Yes |
+| `.spec.controlPlaneLoadBalancer.vrid` | int | Keepalived `virtual_router_id`, `1`–`255`, unique in the control-plane Layer-2 domain. | When `type: internal` |
+| `.spec.controlPlaneLoadBalancer.interface` | string (max 15 characters) | Host interface that carries the VIP. Leave empty to let the provider match the interface holding the node's primary IP. | No, but see the warning below |
+
+<Directive type="warning" title="controlPlaneLoadBalancer is write-once">
+The provider accepts `spec.controlPlaneLoadBalancer` only when the cluster is created. After that, `type`, `host`, `port`, `vrid`, and `interface` are all frozen, the field cannot be cleared, and a cluster created without it cannot have it added. Correcting a mistake requires rebuilding the cluster.
+
+Two consequences follow. On multi-NIC nodes, set `interface` explicitly at creation — a wrong auto-detected interface cannot be patched afterwards. And `host` and `port` must describe the same address as `spec.controlPlaneEndpoint`; a mismatch is not accepted.
+
+The `vrid` range is enforced by the provider's admission webhook rather than by the CRD schema. A client-side dry run contacts no server, so it catches neither this nor the schema rules; use `kubectl apply --dry-run=server` to see the rejection without creating the object.
+</Directive>
+
+#### Enable the Self-built VIP in `10-cluster.yaml` \{#enable-self-built-vip}
+
+For `type: internal`, add the following block to the `VSphereCluster` object in [Create the `Cluster` and `VSphereCluster` objects](#create-cluster-objects). Everything else in the baseline manifest is unchanged.
+
+```yaml
+spec:
+  controlPlaneLoadBalancer:
+    type: internal
+    host: "<vip>"           # must equal spec.controlPlaneEndpoint.host
+    port: <api_server_port> # must equal spec.controlPlaneEndpoint.port
+    vrid: <vrid>
+    interface: "<vip_interface>" # set explicitly on multi-NIC nodes
+```
+
+The provider also reconciles the workload cluster's `kube-system/kube-proxy` configuration for you, setting `ipvs.strictARP: true` and adding `<vip>/32` to `ipvs.excludeCIDRs`, then rolling the kube-proxy DaemonSet. Do not revert those values by hand; the provider reapplies them and rolls the DaemonSet again.
+
+#### Verify the Self-built VIP \{#verify-self-built-vip}
+
+```bash
+kubectl -n <namespace> get vspherecluster <cluster_name> \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}){"\n"}{end}'
+kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig -n kube-system get pods -l app=alive -o wide
+kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig -n cpaas-system get apprelease alive
+kubectl --kubeconfig=/tmp/<cluster_name>.kubeconfig get --raw='/version'
+```
+
+Expect `SelfBuiltLoadBalancerReady=True`, one Alive pod per control-plane node, and a successful API response through the VIP without disabling TLS verification.
+
+The Alive pods run in `kube-system`, not in `cpaas-system`; `cpaas-system` holds the `alive` `AppRelease` the platform renders from the provider's `ModuleInfo`. `SelfBuiltLoadBalancerReady` covers the whole chain, the `AppRelease` and the pods, so check both namespaces when it is `False`.
+
+<Directive type="info">
+`SelfBuiltLoadBalancerReady` reports the VIP chain only. It does not gate `VSphereCluster.status.ready`, so the infrastructure cluster can report ready while the VIP is still converging. The condition reasons are `SelfBuiltLoadBalancerReady`, `SelfBuiltLoadBalancerReconciling`, `SelfBuiltLoadBalancerNotReady`, and `InvalidSelfBuiltLoadBalancerConfiguration`.
+
+While the VIP is not ready, the provider also defers the workload-cluster CoreDNS and kube-proxy repository reconciliation described in [Provider-managed fields on your manifests](#provider-managed-fields).
+</Directive>
 
 ### Add a second NIC
 
