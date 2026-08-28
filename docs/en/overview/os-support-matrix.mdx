@@ -17,7 +17,7 @@ This requirement applies when you create or upgrade cluster nodes with ACP-provi
 
 Download the Alauda OS image for your ACP release from the OS download page in Customer Portal. That page is the authoritative list of the images published for each ACP release; image file names are not reproduced here.
 
-An ACP release can publish more than one image — one per architecture, and from ACP v4.4.0 more than one OS variant. Every image published for the same ACP release contains the component versions listed in that release's row below, so select the image by your node architecture and by the file format your provider requires. See [Image Format by Provider](#image-format-by-provider).
+An ACP release can publish more than one image — one per architecture, and from ACP v4.4.0 more than one OS variant. Every image published for the same ACP release contains the component versions listed in that release's row below, so select the download by your node architecture and by the artifact format your provider requires. See [Image Format by Provider](#image-format-by-provider).
 
 ## Version Mapping
 
@@ -57,13 +57,22 @@ Chart versions earlier than `v4.4` use `acp/chart-cpaas-kube-ovn`; chart `v4.4` 
 
 ## Image Format by Provider \{#image-format-by-provider}
 
-An Alauda OS image is published in different file formats. Choose the format that matches your infrastructure provider when you download the image and upload it to the target platform:
+An Alauda OS image is published in different formats. Choose the format that matches your infrastructure provider when you download the image and upload it to the target platform:
 
 | Provider | Image format |
 | :--- | :--- |
 | Huawei DCS | `qcow2` |
 | Huawei Cloud Stack (HCS) | `qcow2` |
 | VMware vSphere | `ova` |
-| Bare metal | `iso` |
+| Bare metal | Compressed archive of two OCI images |
 
-The format does not change the OS content — it only changes the packaging for the target platform. Select the entry on the download page that matches your provider.
+For the virtual-machine providers, the format does not change the OS content — it only changes the packaging for the target platform. Select the entry on the download page that matches your provider.
+
+Bare metal is packaged differently. Its download is a compressed archive that holds two saved OCI images rather than a single bootable OS file. Load both images from the archive and import them into the target platform registry:
+
+| Image | Used by | Purpose |
+| :--- | :--- | :--- |
+| OS image (`base-image`) | `elemental-image-catalog` | Reprovisions a registered host with the Kubernetes-specific root filesystem. |
+| OS ISO image (`base-image-iso`) | `SeedImage.spec.baseImage` | Builds the live ISO used for initial host installation and registration. |
+
+The ISO that each host boots from is built on site by `elemental-operator` from `base-image-iso`, and is not part of the download. See [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx).
