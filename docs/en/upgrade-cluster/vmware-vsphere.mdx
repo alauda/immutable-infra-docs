@@ -80,11 +80,13 @@ Upgrades rely on Cluster API's rolling replacement mechanism. Each cluster has f
 |---|---|---|---|
 | System disk (root volume) | The VM template used for `spec.template.spec.template` | ❌ Never | OS + kubelet/kubeadm/containerd. Rebuilt from the new template every replacement. |
 | Template-local disks | `VSphereMachineTemplate.spec.template.spec.*` (additional disks declared in the template) | ❌ Never | Ephemeral cache. Destroyed with the old VM. |
-| Pool-managed ephemeral disks | `VSphereMachineConfigPool.spec.configs[].ephemeralDisks[]` | ❌ Never — the VMDK is deleted with the VM and a new empty disk is created for the replacement | Rebuildable scratch space that should not sit on the system disk. |
+| Pool-managed ephemeral disks | `VSphereMachineConfigPool.spec.configs[].ephemeralDisks[]` | ❌ Never — the VMDK is deleted with the VM and a new empty disk is created for the replacement | Rebuildable node-local data that should not sit on the system disk, including the standard `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/lib/etcd` disks. |
 | Pool-managed persistent disks | `VSphereMachineConfigPool.spec.configs[].persistentDisks[]` | ✅ Detached from old VM and reattached to the new VM at the same slot | Platform state such as `/var/cpaas`. |
 | External CSI volumes (vSphere CSI, etc.) | Workload PVCs / CSI driver | ✅ Unrelated to node lifecycle | Application data. |
 
 Unlike pool-managed persistent disks, ephemeral disks take no part in reclaim and never hold a slot release, so they never delay a rollout. See [Choose persistent or ephemeral](../create-cluster/vmware-vsphere.mdx#choose-persistent-or-ephemeral).
+
+**Which class your disks are in is fixed at cluster creation.** `ephemeralDisks[]` is new in provider `v1.0.17`. A cluster created on an earlier provider declares `/var/cpaas`, `/var/lib/containerd`, and `/var/lib/etcd` as persistent disks, with `wipeFilesystem: true` on the etcd disk, and an upgrade does not change that: the provider migrates no disk, and an allocated slot rejects the removal or the reshaping of a disk in either list, so a disk cannot be moved from one list to the other. Do not restructure the pool's disk lists as part of an upgrade — the standard persistent-plus-ephemeral split applies to newly created clusters only.
 
 **"Preserved" means the same disk identity is reattached** — it does not mean the disk's contents are time-traveled. Anything written to a pool-managed disk during the upgrade window stays after the upgrade and stays after a rollback.
 :::
@@ -104,7 +106,7 @@ Fleet Essentials 1.0.4 and later can request the ACP 4.3-and-later Distribution 
 :::warning
 **An upgraded cluster cannot use the Self-built VIP**
 
-The Self-built VIP is available only to clusters created with provider `v1.0.17` or later. A cluster that was created on an earlier provider keeps its external LoadBalancer after the provider is upgraded, and cannot be moved onto a Self-built VIP: the provider injects the VIP while the first control-plane node bootstraps, and there is no in-place migration for a running control plane. See [Control Plane Endpoint Modes](../create-cluster/vmware-vsphere.mdx#control-plane-endpoint-modes).
+The Self-built VIP is available only to clusters created with provider `v1.0.17` or later on ACP `v4.4` or later. A cluster that was created on an earlier provider keeps its external LoadBalancer after the provider is upgraded, and cannot be moved onto a Self-built VIP: the provider injects the VIP while the first control-plane node bootstraps, and there is no in-place migration for a running control plane. See [Control Plane Endpoint Modes](../create-cluster/vmware-vsphere.mdx#control-plane-endpoint-modes).
 
 The endpoint itself does not move, and an upgrade is not an opportunity to change it. The control plane endpoint — the mode and the VIP or LoadBalancer address — is chosen when the cluster is deployed and is fixed from then on; it cannot be adjusted while the cluster runs or during an upgrade. An existing cluster needs no action and gets none: `spec.controlPlaneLoadBalancer` stays unset, which is exactly what an external LoadBalancer looks like, and writing it now is rejected. The field is optional for this reason — a cluster created before the Self-built VIP existed keeps its endpoint configuration untouched across the upgrade. See [Upgrading the Provider](../install/vmware-vsphere.mdx#upgrade-the-provider).
 :::
@@ -376,7 +378,7 @@ Confirm the following results:
 | The `kubectl edit` or `kubectl patch` on `KubeadmControlPlane` or `MachineDeployment` is rejected | Run [the pre-flight check](#preflight-admission-rules). For the full message-to-cause map, see [Admission rejections](../create-cluster/vmware-vsphere.mdx#admission-rejections). |
 | The rollout stalls after the first machine is deleted | Usually the attachment-safety hold rather than a defect. See [Rollout Holds That Are Not Failures](#rollout-holds). |
 | The pool reports `Ready=True` but `SlotAvailable=False` | Normal on a fully allocated pool during a `maxSurge: 0` rollout. `SlotAvailable` is excluded from the `Ready` summary. |
-| A replaced node's disks are empty | Confirm the disk is declared in `persistentDisks[]` rather than `ephemeralDisks[]`, and check `wipeFilesystem`. The `/var/lib/etcd` disk is wiped by design. |
+| A replaced node's disks are empty | Confirm which list the disk is declared in. On a cluster created on `v1.0.17` or later, `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/lib/etcd` are ephemeral by design and start empty on every replacement. On an older cluster they are persistent disks, so also check `wipeFilesystem`, which is `true` on the etcd disk by design. |
 | Nothing reconciles, no conditions change, and no error appears | The management cluster may be a disaster-recovery standby. See [Standby Management Clusters](../install/vmware-vsphere.mdx#standby-management-cluster). |
 | A workload node is powered off and does not come back | Expected once `InitialPowerOnCompleted` has latched. Power it on in vCenter. See [Rollout Holds That Are Not Failures](#rollout-holds). |
 | A new control-plane machine never bootstraps | Read the `BootstrapReady` condition on `VSphereVM` and `VSphereMachine`; the reasons are `BootstrapSecretGetFailed` and `BootstrapSecretContentInvalid`. |

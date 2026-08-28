@@ -9,6 +9,7 @@ queries:
   - verify vmware provider installation
   - verify vsphere provider webhooks
   - vsphere provider standby global cluster
+  - upgrade vsphere provider disk status migration
 ---
 
 # VMware vSphere Provider Installation
@@ -122,9 +123,10 @@ The upgrade also updates the provider CRDs. Some fields move between releases, b
 - The migration never overwrites a value that is already set, so it is safe to repeat. The disk part is status-only bookkeeping and runs before vCenter is contacted, so it completes even while vCenter is unreachable.
 - It covers the provider's own resources only. The rollout values the admission webhooks require on the Cluster API objects — `maxSurge`, `replicas`, `maxUnavailable` — are validated, never rewritten, so an existing `KubeadmControlPlane` or `MachineDeployment` that does not carry them still has to be corrected by hand. See [Check the manifests against the admission rules](../upgrade-cluster/vmware-vsphere.mdx#preflight-admission-rules).
 
-Nothing in the workload cluster is touched, and no VM is replaced. Two consequences are worth knowing before you upgrade:
+Nothing in the workload cluster is touched, and no VM is replaced. Three consequences are worth knowing before you upgrade:
 
 - A cluster created on an earlier provider keeps its external LoadBalancer and cannot adopt the Self-built VIP. The endpoint is a deploy-time choice: it cannot be adjusted while the cluster runs, and an upgrade is not an opportunity to change it — filling in `spec.controlPlaneLoadBalancer` on a running cluster is rejected. See [Control Plane Endpoint Modes](../create-cluster/vmware-vsphere.mdx#control-plane-endpoint-modes).
+- A pool keeps the disk lists it was created with. `spec.configs[].ephemeralDisks[]` is new in this release, but the upgrade moves no existing disk into it: a cluster created on an earlier provider keeps `/var/cpaas`, `/var/lib/containerd`, and `/var/lib/etcd` as persistent disks, and a slot that is `InUse` or `Released` rejects the removal or the reshaping of a disk in either list. The persistent-plus-ephemeral split documented for new clusters is a creation-time layout. See [Standard data disks](../infrastructure/vmware-vsphere.mdx#standard-data-disks).
 - Guest-side changes delivered through `guestinfo` user data, such as the pod-log relocation, reach a node only when it is replaced. See [Relocating the pod log directory](../create-cluster/vmware-vsphere.mdx#pod-log-relocation).
 
 Confirm the result with the checks in [Verify the installation](#verify-the-installation), then read one pool back:
@@ -134,7 +136,7 @@ kubectl -n <namespace> get vspheremachineconfigpool <pool_name> \
   -o jsonpath='{range .status.persistentDiskStatuses[*]}{.hostname}{" "}{.name}{" "}{.phase}{"\n"}{end}'
 ```
 
-Every disk that the pool had before the upgrade appears with a phase, and `status.configStatuses[].reclaimStatus` is gone.
+Each disk that was already provisioned before the upgrade appears with a phase, and `status.configStatuses[].reclaimStatus` is gone. A disk on a slot that no Machine has ever allocated has no VMDK yet, so it has no record; that is expected rather than an incomplete migration.
 
 ## Standby Management Clusters \{#standby-management-cluster}
 
