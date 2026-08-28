@@ -601,11 +601,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "f731bc45b2fa3bf56106fe60de43be8eea2b45dceed47ad510e90784ebb9f22e",
-      "size": 118555,
-      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers provider-package delivery, Registry address formats and optional authentication, provider-specific Cluster API manifests, External versus Bare Metal Internal endpoint selection, installer requests, verification, provider-resource handoff, optional DR inputs, and the final gates required before decommissioning the bootstrap cluster.",
+      "sha256": "7713eb6952b45605190d57f949634d0318064e74c4edb582d3bec59cced4f8b8",
+      "size": 157998,
+      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers bootstrap host hardware, operating system, and network requirements, provider-package delivery, Registry address formats and optional authentication, provider-specific Cluster API manifests, External versus Bare Metal Internal endpoint selection, installer requests, verification, provider-resource handoff, optional DR inputs, and the final gates required before decommissioning the bootstrap cluster.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-13T13:09:02Z"
+      "updated_at": "2026-08-28T04:36:35Z"
     },
     "docs/en/global/upgrade.mdx": {
       "sha256": "51b4c7bfb190066f09aba4f67f9ea43b92c806ac140c4f156b59a33533b750b4",
@@ -874,11 +874,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/overview/os-support-matrix.mdx": {
-      "sha256": "c92d0982bd5c6c7b50b8b328d65db62cf10a4d70e8eec0aed13a821a9eb3ebeb",
-      "size": 4493,
-      "description": "Maps each ACP release (`v4.0.9` through `v4.4.0`) to the component versions carried by its Alauda OS image: Kubernetes (`v1.31.14-2` through `v1.35.6-acp.1`), containerd, coredns, etcd, pause `3.10`, and the release-line kube-ovn Helm chart version (explicitly the chart, not the Kube-OVN binary version). Also documents the `x86-64-v2` ISA CPU baseline on x86_64, image download from Customer Portal (one image per architecture and, from v4.4.0, per OS variant), the image format required per provider (`qcow2` for DCS and HCS, `ova` for vSphere, `iso` for bare metal), and the DCS Provider `v1.0.21` pairing rule for ACP `v4.3.2` and later.",
+      "sha256": "a83f40401766ab99636083ef6a9cc3970df8d9a0b40274ee2bd9381af4d5a392",
+      "size": 5325,
+      "description": "Maps each ACP release (`v4.0.9` through `v4.4.0`) to the component versions carried by its Alauda OS image: Kubernetes (`v1.31.14-2` through `v1.35.6-acp.1`), containerd, coredns, etcd, pause `3.10`, and the release-line kube-ovn Helm chart version (explicitly the chart, not the Kube-OVN binary version). Also documents the `x86-64-v2` ISA CPU baseline on x86_64, image download from Customer Portal (one image per architecture and, from v4.4.0, per OS variant), the image format required per provider (`qcow2` for DCS and HCS, `ova` for vSphere, and for bare metal a compressed archive of the two OCI images `base-image` and `base-image-iso`), and the DCS Provider `v1.0.21` pairing rule for ACP `v4.3.2` and later.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-08-28T09:41:20Z"
     },
     "docs/en/overview/providers/bare-metal.mdx": {
       "sha256": "4a40ea157dd978f2386c533f7d4faaf7cf47cfe6c1a58494db1555980dd50828",
