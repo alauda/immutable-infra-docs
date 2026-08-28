@@ -74,9 +74,13 @@ Set `MachineRegistration.spec.config.elemental.registration.emulate-tpm` from wh
 - `emulate-tpm: false` (or omit the field) — only when the host has a working hardware TPM, so `elemental-register` can use it for `auth: tpm`.
 - `emulate-tpm: true` with `emulated-tpm-seed: -1` — for any host **without** a hardware TPM. This includes both virtual machines and physical servers that ship without a TPM module (for example a Dell R620). On such a host, `auth: tpm` combined with `emulate-tpm: false` makes `elemental-register` fail TPM attestation and never send the registration request, so `elemental-operator` records zero registration POSTs.
 
-### 5. Public Registry Credential (Only When Installing Platform Components Later)
+### 5. Workload Cluster Image Registry (Only When Installing Platform Components Later)
 
-`public-registry-credential` is **not** required to create a bare-metal cluster. It only becomes necessary when later platform components on the new workload cluster need to pull from a credentialed public registry. If your test scope ends at cluster + node Ready, you can ignore this prerequisite.
+A registry credential is **not** required to create a bare-metal cluster. It only becomes necessary when later platform components on the new workload cluster need to pull from a credentialed registry. If your test scope ends at cluster + node Ready, you can ignore this prerequisite.
+
+When you do install platform components, the cluster inherits the registry of the `global` cluster, backed by the `public-registry-credential` Secret when that registry is authenticated. To have this cluster pull platform images from a dedicated registry instead, decide before you create it and follow [Choose the Image Registry for a Workload Cluster](../how-to/workload-cluster-image-registry.mdx) — the binding is read only at cluster creation and cannot be changed afterwards.
+
+This choice does not affect the OS images described above. Hosts pull `base-image` and `base-image-iso` from the platform registry during `elemental install` and every reprovision, before any cluster-level registry binding exists.
 
 ### 6. Host Disk and Boot Preparation
 

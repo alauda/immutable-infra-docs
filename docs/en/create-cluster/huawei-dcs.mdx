@@ -79,11 +79,22 @@ Configure a stable Kubernetes API endpoint before creating the cluster. For DCS 
 
 Follow [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx) for the external LoadBalancer contract. DCS Provider `v1.0.21` does not support `type: internal`; do not use ACP version alone to infer provider capability. For a single-control-plane deployment that has no load balancer in front of the API server, see [Single-Control-Plane (No External LB) Layout](#single-control-plane-layout).
 
-### 6. Public Registry Configuration
+### 6. Workload Cluster Image Registry
 
-Configure the public registry credentials. This includes:
-- Registry repository address configuration
-- Proper authentication credentials setup
+Decide which registry this cluster pulls platform images from — CoreDNS, kube-proxy, and Kube-OVN during bootstrap, and every platform component installed afterwards.
+
+| Option | What you configure | When to use it |
+|---|---|---|
+| Registry of the `global` cluster | Nothing. The cluster inherits it. | Workload nodes reach the registry the `global` cluster uses with acceptable throughput. |
+| Dedicated registry | A RegistryCredential Secret in `cpaas-system`, referenced from the `Cluster` by the `cpaas.io/registry-reference` label. | Workload nodes sit in a different region or network segment and should pull from a registry close to them. |
+
+Either way, the registry must already hold the platform payload for the target version, and every workload cluster node must reach its address.
+
+For the dedicated-registry procedure and its constraints, see [Choose the Image Registry for a Workload Cluster](../how-to/workload-cluster-image-registry.mdx).
+
+:::warning
+The registry binding is read only when the cluster is first created. Changing or removing `cpaas.io/registry-reference` on an existing `Cluster` does not move that cluster to another registry. A dedicated registry is configured through YAML only; the web UI workflow always uses the registry of the `global` cluster.
+:::
 
 ---
 
@@ -464,6 +475,9 @@ metadata:
     cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>
   labels:
     cluster-type: DCS
+    # Optional. Bind this cluster to a dedicated image registry instead of the
+    # registry of the `global` cluster. Read only at cluster creation.
+    # cpaas.io/registry-reference: <registry-credential-name>
   name: <cluster-name>
   namespace: cpaas-system
 spec:
@@ -504,10 +518,17 @@ The example above shows three annotations, but a complete `Cluster` resource car
 | `capi.cpaas.io/kubernetes` | Yes | Same value as `KubeadmControlPlane.spec.version` and `MachineDeployment.spec.template.spec.version`. | Display label, also consumed by some upgrade and inventory tooling. Source-of-truth is the `cpaas.io/dcs-vm-template` ConfigMap's `kubernetesVersion`. |
 | `cpaas.io/kube-ovn-join-cidr` | Yes | Operator-chosen `/16` CIDR, must not overlap with pod / service CIDRs or any other cluster's join CIDR. | Kube-OVN inter-node tunnel network. |
 | `cpaas.io/kube-ovn-version` | Yes | The kube-ovn release the `global` cluster ships with. Read it from the `cpaas.io/kube-ovn-version` annotation on the `global` CAPI `Cluster` (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/kube-ovn-version}'`). The same value lives on every healthy workload cluster on the same `global` cluster, so you can also read it from any of those if they exist. | Pin the kube-ovn version installed into the workload cluster. |
-| `cpaas.io/registry-address` | Yes | The image registry the `global` cluster uses (typically `<registry-host>:11443`). Read it from the `cpaas.io/registry-address` annotation on the `global` CAPI `Cluster` (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'`). | Workload cluster pulls platform images (CoreDNS, kube-proxy, kube-ovn) from this registry. |
+| `cpaas.io/registry-address` | Yes | The image registry the `global` cluster uses (typically `<registry-host>:11443`). Read it from the `cpaas.io/registry-address` annotation on the `global` CAPI `Cluster` (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'`). | Lets day-2 reconcilers resolve images while the cluster is being provisioned. This annotation does not select a registry credential: to pull platform images from a dedicated registry, use the `cpaas.io/registry-reference` label described below. |
 | `cpaas.io/nodes-mode` | Yes | Literal `self-managed` for clusters that DCS Provider provisions. | Marks the cluster as having its node lifecycle managed by CAPI + this provider. |
 
 ACP controllers may write additional read-only annotations (`cpaas.io/cpu-cores-number`, `cpaas.io/memories`, `cpaas.io/nodes-number`, and so on) after the cluster is up — these are computed and **must not** be pre-set in the YAML you apply.
+
+**Cluster Labels**:
+
+| Label | Required | Value source | Purpose |
+|---|---|---|---|
+| `cluster-type` | Yes | Literal `DCS`. | Marks the cluster as provisioned by DCS Provider. |
+| `cpaas.io/registry-reference` | No | Name of a RegistryCredential Secret in `cpaas-system`. | Binds this cluster to a dedicated image registry. Omit it to inherit the registry of the `global` cluster. Read only at cluster creation — see [Choose the Image Registry for a Workload Cluster](../how-to/workload-cluster-image-registry.mdx). |
 
 ### Deploying Nodes
 

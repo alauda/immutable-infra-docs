@@ -1,0 +1,182 @@
+---
+weight: 16
+title: Choose the Image Registry for a Workload Cluster
+queries:
+  - workload cluster image registry
+  - dedicated image registry for a workload cluster
+  - registry credential for a workload cluster
+  - pull platform images from a regional registry
+  - registry reference label
+---
+
+# Choose the Image Registry for a Workload Cluster
+
+A workload cluster pulls platform images — CoreDNS, kube-proxy, and Kube-OVN during bootstrap, and every platform component installed afterwards — from an image registry. By default it uses the same registry as the `global` cluster.
+
+You can instead bind a workload cluster to a registry of its own. The common reason is distance: when the `global` cluster and the workload cluster sit in different regions, pulling every platform image across that link is slow and fragile. A registry close to the workload cluster removes that dependency.
+
+Decide before you create the cluster. The binding is read only while the cluster is being created, and an existing cluster cannot be moved to another registry.
+
+## Options \{#options}
+
+| Option | What you configure | When to use it |
+| --- | --- | --- |
+| Registry of the `global` cluster | Nothing. Every workload cluster inherits it. | The workload cluster reaches the registry the `global` cluster uses with acceptable throughput and availability. |
+| Dedicated registry | A RegistryCredential Secret in `cpaas-system`, referenced from the `Cluster` by the `cpaas.io/registry-reference` label. | The workload cluster is in a different region or network segment and should pull from a registry close to it. |
+
+Both options are available on every infrastructure provider. Neither is exposed in the web console: a dedicated registry is configured through YAML only, so use the YAML workflow of your provider's cluster creation guide when you need one.
+
+## What the Binding Covers \{#coverage}
+
+The registry binding applies to the platform components that the platform installs and manages on the workload cluster.
+
+It does **not** apply to:
+
+- **kubeadm static control plane images** — the kube-apiserver, kube-controller-manager, kube-scheduler, etcd, and pause images. These resolve from `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.imageRepository`. Set that field if these images must also come from another registry.
+- **Bare-metal operating system images** — hosts pull the OS image from the platform registry during `elemental install` and every reprovision, before any cluster binding exists.
+- **Application workload images** — a binding configures the platform image source only. Application Pods keep using whatever image references and pull Secrets their own workloads declare.
+
+## Inherit the Registry of the global Cluster \{#default}
+
+This is the default and needs no configuration. Create the cluster without a `cpaas.io/registry-reference` label and it uses the same registry as the `global` cluster.
+
+How the address and credentials reach the workload cluster depends on whether the platform registry requires authentication:
+
+- **Authenticated registry** — the platform stores the address and credentials in the `public-registry-credential` Secret in `cpaas-system` on the `global` cluster. Every workload cluster created without an explicit reference resolves its registry from that Secret. Despite its name, this Secret holds the registry the platform itself uses; it is not limited to an internet-facing registry.
+- **Anonymous registry** — no credential Secret is populated, and platform components fall back to the platform-wide registry address recorded at installation time.
+
+In both cases the operator does not configure anything per cluster.
+
+## Bind a Workload Cluster to Its Own Registry \{#dedicated}
+
+### Before You Start \{#before-you-start}
+
+- You can create Secrets in the `cpaas-system` namespace of the `global` cluster.
+- The dedicated registry is reachable from every workload cluster node, and from the `global` cluster if you want to verify it from there.
+- The dedicated registry already holds the platform payload for the target version. See [Prepare the Registry](#prepare-the-registry).
+
+### Step 1 — Prepare the Registry \{#prepare-the-registry}
+
+The platform never copies images into a dedicated registry. Populate it before you create the cluster; a cluster that points at an empty registry cannot finish bootstrapping.
+
+Upload the platform payload for the target version to the dedicated registry using the same Core Package procedure that prepares an external platform image registry, with the dedicated registry as the target address. The payload must match the version and CPU architecture of the cluster you are about to create.
+
+Then confirm from a node in the target network that the registry answers and holds the payload:
+
+```bash
+export DEDICATED_REGISTRY="<registry-host>:<port>"
+curl -sk "https://${DEDICATED_REGISTRY}/v2/" -o /dev/null -w '%{http_code}\n'
+```
+
+The `/v2/` segment belongs only to Registry HTTP API requests. Do not include it — or a scheme — in the Secret or in any cluster field.
+
+:::warning
+Verify the payload before you create the cluster. A missing image surfaces later as Pods stuck in `ImagePullBackOff` on a cluster that already reports its control plane as ready, which is considerably harder to diagnose than a registry check that fails up front.
+:::
+
+### Step 2 — Create the RegistryCredential Secret \{#create-the-secret}
+
+Create the Secret in the `cpaas-system` namespace of the `global` cluster. The reference on a cluster carries only a name, so only this namespace is consulted; a Secret with the same name in another namespace is ignored.
+
+```yaml title="registry-credential.yaml"
+apiVersion: v1
+kind: Secret
+metadata:
+  name: <registry-credential-name>
+  namespace: cpaas-system
+  labels:
+    capi.cpaas.io/provider: registry-credential
+    cpaas.io/registry-credential-format: direct
+  annotations:
+    cpaas.io/display-name: <display-name>
+type: Opaque
+stringData:
+  registry: <registry-host>:<port>
+  username: <username>
+  password: <password>
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `metadata.namespace` | Yes | Must be `cpaas-system`. |
+| `capi.cpaas.io/provider` label | Yes | Must be `registry-credential`. Without it the platform does not treat the Secret as a registry credential. |
+| `cpaas.io/registry-credential-format` label | Yes | Use `direct` for a credential you author. Omitting the label selects the legacy encrypted format, which expects an uploaded authentication file instead of these fields. |
+| `cpaas.io/display-name` annotation | No | Shown wherever the platform lists credentials. Set it so the entry is recognizable. |
+| `stringData.registry` | Yes | `<host>[:<port>]` only. No scheme, no path. |
+| `stringData.username`, `stringData.password` | Together | Set both or neither. Omit both for an anonymous registry. Setting only one is rejected. |
+
+Apply it:
+
+```bash
+kubectl apply -f registry-credential.yaml
+```
+
+### Step 3 — Reference the Credential When You Create the Cluster \{#reference-the-credential}
+
+Add the `cpaas.io/registry-reference` label to the `Cluster` resource, with the Secret name as its value:
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: <cluster-name>
+  namespace: cpaas-system
+  labels:
+    cpaas.io/registry-reference: <registry-credential-name>
+```
+
+Apply the rest of the cluster manifests as described in your provider's cluster creation guide. The label is a reference only: the platform does not read or validate the Secret at this point, and the Secret does not have to exist yet. It must exist before the workload cluster starts pulling platform images.
+
+:::warning
+The label is read only when the cluster is first created. Adding, changing, or removing it on an existing `Cluster` has no effect on that cluster. To move an existing cluster to another registry, you must recreate the cluster.
+:::
+
+### Step 4 — Verify the Binding \{#verify}
+
+Run these checks on the `global` cluster. Confirm the reference reached the platform cluster record:
+
+```bash
+export CLUSTER_NAME="<cluster-name>"
+kubectl get cluster.platform.tkestack.io "${CLUSTER_NAME}" \
+  -o jsonpath='{.metadata.labels.cpaas\.io/registry-reference}{"\n"}'
+```
+
+Confirm the platform resolved the registry address from the credential. The platform writes this annotation; do not set it yourself:
+
+```bash
+kubectl get cluster.platform.tkestack.io "${CLUSTER_NAME}" \
+  -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}{"\n"}'
+```
+
+The value must be the address from the Secret. If it is empty or still shows another registry, see [Troubleshooting](#troubleshooting).
+
+Finally, confirm on the workload cluster that platform Pods pull from the expected registry:
+
+```bash
+kubectl --kubeconfig <workload-cluster-kubeconfig> get pods -A \
+  -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' \
+  | sort -u
+```
+
+Platform component images use the dedicated registry. kubeadm static control plane images do not — see [What the Binding Covers](#coverage).
+
+## Operate an Existing Binding \{#operate}
+
+| Task | Supported | How |
+| --- | --- | --- |
+| Rotate the registry password or switch to another account | Yes | Update `username` and `password` in the Secret. The platform propagates the change to every cluster that references it, without a cluster restart. |
+| Correct the registry address in a credential | Yes, with care | Updating `registry` repoints every cluster that references this Secret. Verify that all of them can reach the new address and that it holds the payload for each of their versions. |
+| Move an existing cluster to a different registry | No | The reference is fixed at creation. Recreate the cluster with the intended reference. |
+| Share one credential across clusters | Yes | Reference the same Secret from any number of clusters. A single update reaches all of them. Different Secrets never affect each other. |
+| Delete a credential | Only when unreferenced | The platform rejects deletion while any cluster still references the Secret, and the error names those clusters. Delete or recreate the clusters first. |
+
+## Troubleshooting \{#troubleshooting}
+
+| Symptom | Likely cause | Action |
+| --- | --- | --- |
+| `cpaas.io/registry-address` on the platform cluster record stays empty | The Secret does not exist, is outside `cpaas-system`, or is missing the `capi.cpaas.io/provider: registry-credential` label. | Confirm the name, the namespace, and both labels. |
+| The Secret is rejected on create or update | `registry` is empty, or only one of `username` and `password` is set. | Set `registry`, and set the credential pair together or leave both out. |
+| The Secret is rejected with an unsupported-format message | `cpaas.io/registry-credential-format` carries a value other than `direct` or `encrypted`, including an empty value. | Use `direct` for a credential you author, or remove the label to use the legacy encrypted format. |
+| The cluster reports its control plane as ready, but platform Pods stay in `ImagePullBackOff` | The dedicated registry does not hold the payload for this version, or the nodes cannot authenticate to it. | Repeat [Step 1](#prepare-the-registry) from a workload cluster node and confirm the credential in the Secret. |
+| Deleting a credential is rejected | One or more clusters still reference it. | Read the cluster names from the error, then delete or recreate those clusters first. |
+| A new label value on an existing `Cluster` changes nothing | The reference is read only at cluster creation. | Recreate the cluster with the intended reference. |
