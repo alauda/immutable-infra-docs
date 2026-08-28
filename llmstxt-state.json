@@ -482,11 +482,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/apis/providers/vmware-vsphere/index.mdx": {
-      "sha256": "82e8492ab7823a14260cc5bb03bc6174b55a81fe0eb273857bcc95fe321effa7",
-      "size": 1881,
-      "description": "Landing page indexing the VMware vSphere Infrastructure Provider's nine CRDs under `infrastructure.cluster.x-k8s.io/v1beta1`, including `VSphereCluster`, `VSphereClusterIdentity`, `VSphereMachine`, low-level `VSphereVM`, `VSphereMachineTemplate`, `VSphereMachineConfigPool` (pre-defined node slots with static IPs and persistent disks), `VSphereFailureDomain`, `VSphereDeploymentZone`, and `VSphereClusterTemplate` for ClusterClass-driven managed topologies.",
+      "sha256": "943ee8820eba2ce020016ed14b54d01c1cd301dbe8d409e2451ccf69835a2590",
+      "size": 1909,
+      "description": "Landing page indexing the VMware vSphere Infrastructure Provider's nine CRDs under `infrastructure.cluster.x-k8s.io/v1beta1`, including `VSphereCluster`, `VSphereClusterIdentity`, `VSphereMachine`, low-level `VSphereVM`, `VSphereMachineTemplate`, `VSphereMachineConfigPool` (pre-defined node slots with static IPs and per-slot persistent and ephemeral data disks), `VSphereFailureDomain`, `VSphereDeploymentZone`, and `VSphereClusterTemplate` for ClusterClass-driven managed topologies.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-09-15T10:14:16Z"
     },
     "docs/en/apis/providers/vmware-vsphere/vspherecluster.mdx": {
       "sha256": "2030af7224d47545816fea124cb6d538be9d61da7484f1af493e07a718007d60",
@@ -580,11 +580,11 @@
       "updated_at": "2026-08-12T13:52:29Z"
     },
     "docs/en/create-cluster/vmware-vsphere.mdx": {
-      "sha256": "92bb58f7929088061bbd7c75c35c708105449239cd38109277719659fc6e3bd5",
-      "size": 71327,
-      "description": "End-to-end YAML workflow for creating a VMware vSphere workload cluster from the ACP `global` cluster, validated against provider `v1.0.17`. Opens with a Provider Requirements section listing the fixed-IP admission rules that the install and upgrade pages both link to. Documents the two control plane endpoint modes: an external LoadBalancer, which the baseline uses by leaving `spec.controlPlaneLoadBalancer` absent, and the provider-managed Self-built VIP (`type: internal`, Alive with keepalived and IPVS) including its write-once field, `vrid`, `interface`, VIP-collision rules, and the rule that only a cluster created on `v1.0.17` can use it. Then walks the numbered manifest set from `00-namespace.yaml` to `30-workers-md-0.yaml`, covering the vCenter credential Secret, `ClusterResourceSet`-delivered vSphere CPI, machine config pools, `KubeadmControlPlane` and `MachineDeployment`, plus provider-managed fields on your manifests, verification, an admission-rejection message map, and creation-time topology variants for a second NIC, failure domains, persistent versus ephemeral disks, SCSI unit pinning, and pod-log relocation.",
+      "sha256": "b880552bf0fbcf0e14153d7c7be76bcdd18ad58b0a06280beaac997ba500a2c9",
+      "size": 102542,
+      "description": "End-to-end YAML workflow for creating a VMware vSphere workload cluster from the ACP `global` cluster, validated against provider `v1.0.17`. Opens with a Provider Requirements section listing the fixed-IP admission rules that the install and upgrade pages both link to. Documents the two control plane endpoint modes: an external LoadBalancer, which the baseline uses by leaving `spec.controlPlaneLoadBalancer` absent, and the provider-managed Self-built VIP (`type: internal`, Alive with keepalived and IPVS) including its write-once field, `vrid`, `interface`, VIP-collision rules, and the rule that only a cluster created on `v1.0.17` can use it. Then walks the numbered manifest set from `00-namespace.yaml` to `30-workers-md-0.yaml`, covering the vCenter credential Secret, `ClusterResourceSet`-delivered vSphere CPI, machine config pools, `KubeadmControlPlane` and `MachineDeployment`, plus provider-managed fields on your manifests, verification, an admission-rejection message map, and creation-time topology variants for the Self-built VIP, a second NIC, failure domains, persistent versus ephemeral disks, SCSI unit pinning, and pod-log relocation.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-02T11:04:57Z"
+      "updated_at": "2026-09-15T10:59:36Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
       "sha256": "895bf0399d1863bff771cea1f55fe7af3e0453942b05f9da5a45e33445354293",
@@ -601,11 +601,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "321dceb7f0469e7c932eb4f2bf99c91c34829a0966fa2fa4d6c4b049bd7d1fb6",
-      "size": 172756,
+      "sha256": "e8583e55654609fc029c47747c206c95d0a38600d682f18821168daff6a5fc70",
+      "size": 174010,
       "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers bootstrap host hardware, operating system, network requirements, provider-package delivery, Bare Metal OS image import and image catalog preparation, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification, provider-resource handoff, optional DR inputs, and final decommissioning gates.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-15T07:01:08Z"
+      "updated_at": "2026-09-15T09:57:16Z"
     },
     "docs/en/global/upgrade.mdx": {
       "sha256": "31f29703232fb8de969d32a9f2519efde28e3c181867990ab1e76485cf2a2337",
@@ -622,11 +622,11 @@
       "updated_at": "2026-08-31T05:54:15Z"
     },
     "docs/en/how-to/control-plane-endpoint.mdx": {
-      "sha256": "22180d357da94ada2deca077d5e8b28c6b4965148da75051bf915bae672e53f2",
-      "size": 5413,
+      "sha256": "85b53570c6481aa09645b1634a2c42781563a4b72535e313a88aff31664bd82f",
+      "size": 7485,
       "description": "Provider-version-aware contract for planning the Kubernetes API control-plane endpoint. Defines the external LoadBalancer listener, frontend, backend, health-check, reachability, ownership, DNS, and certificate requirements; gives validation commands and endpoint-change cautions; and gates Self-built VIP guidance by released provider capability. Documents DCS `v1.0.22+` with ACP `v4.4+` Self-built VIP and DCS `v1.0.21` external-only behavior, Bare Metal's Internal/External model, HCS's provider-managed ELB path, and VMware vSphere `v1.0.17` as the release that adds an `internal` Self-built VIP - with its webhook-checked `vrid` range, creation-time-only availability, write-once immutability, VIP-versus-slot-address collision rule, explicit `interface` on multi-NIC nodes, and a `SelfBuiltLoadBalancerReady` condition that does not gate readiness.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-31T05:54:15Z"
+      "updated_at": "2026-09-15T09:57:16Z"
     },
     "docs/en/how-to/dcs_persistent_disk_upgrade.mdx": {
       "sha256": "b4a4ba892709df1b825133beafb4983bf69d84fadd3cc46fddf4d6ee500a1795",
@@ -741,11 +741,11 @@
       "updated_at": "2026-08-13T13:09:02Z"
     },
     "docs/en/infrastructure/vmware-vsphere.mdx": {
-      "sha256": "45fcabe2228b681fff26f781d490860eb9ee20d155faa7499943c4df3fa42f5c",
-      "size": 40838,
-      "description": "Preparation and parameter checklist for VMware vSphere workload clusters. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template requirements including `<clone_mode>` (`linkedClone`/`fullClone`) and `<power_off_mode>` (`hard`/`soft`/`trySoft`), an executable disposable-VM check for locally preloaded kubeadm and containerd sandbox image references, control-plane endpoint readiness for either an external LoadBalancer or the provider-managed Self-built VIP, permanent Registry readiness for Kube-OVN, CoreDNS, and vSphere CPI with the version-conditional repository names, CIDRs, VM folder and node-slot layout, machine sizing, CPI inputs, and persistent disks (`sizeGiB`, `mountPath`, `mountOptions`, `fsFormat`, `wipeFilesystem`, `unitNumber`, `datastore`, `storagePolicy`). Links optional parameters to the canonical creation-time topology variants, records the Kubernetes 1.35 kubelet-patch rule, and explains same-pool disk reuse, `releaseDelayHours`, provider-managed reclaim read from `persistentDiskStatuses[].phase`, and datastore-capacity checks.",
+      "sha256": "bad3b52d24e180fe6fd8808a7a7c09db966f400327f4be14dfc0628481a4a519",
+      "size": 46994,
+      "description": "Preparation and parameter checklist for VMware vSphere workload clusters. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template requirements including `<clone_mode>` (`linkedClone`/`fullClone`) and `<power_off_mode>` (`hard`/`soft`/`trySoft`), an executable disposable-VM check for locally preloaded kubeadm and containerd sandbox image references, control-plane endpoint readiness for either an external LoadBalancer or the provider-managed Self-built VIP, permanent Registry readiness for Kube-OVN, CoreDNS, and vSphere CPI with the version-conditional repository names, CIDRs, VM folder and node-slot layout, machine sizing, CPI inputs, and the standard data-disk split, where `/var/cpaas` is a slot-bound persistent disk while `/var/lib/containerd` and `/var/lib/etcd` are ephemeral disks recreated with every VM (`sizeGiB`, `mountPath`, `mountOptions`, `fsFormat`, `wipeFilesystem`, `unitNumber`, `datastore`, `storagePolicy`). Links optional parameters to the canonical creation-time topology variants, records the Kubernetes 1.35 kubelet-patch rule, and explains same-pool disk reuse, `releaseDelayHours`, provider-managed reclaim read from `persistentDiskStatuses[].phase`, and datastore-capacity checks.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-09-15T10:59:36Z"
     },
     "docs/en/install/bare-metal.mdx": {
       "sha256": "a9dedc68dd0f1d1d09785118604be013703c8807606723e74c451550de97e8ea",
@@ -776,11 +776,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/install/vmware-vsphere.mdx": {
-      "sha256": "d79577ced270f94e444fd0b6bd54bd40497fd704c8ff0004040c457d203738ae",
-      "size": 2452,
-      "description": "How-to for installing the Alauda Container Platform VMware vSphere Infrastructure Provider (CAPV) alongside the Kubeadm Provider on the `global` cluster, validated against provider `v1.0.17`. Covers installing both plugin packages as cluster plugins, and a three-part verification: module state via `kubectl get minfo`, the nine expected `vsphere*.infrastructure.cluster.x-k8s.io` CRDs, and the registered validating webhooks that enforce the fixed-IP rollout rules. Adds a provider-upgrade section: the upgrade updates the CRDs and the controller migrates existing resources itself - the deprecated persistent-disk fields move into `status.persistentDiskStatuses[]`, while the control plane endpoint is left untouched and an existing cluster keeps its external LoadBalancer - so no manual YAML edit is needed or accepted; Cluster API rollout values are validated, never rewritten. Records the vCenter Custom Fields privilege prerequisite, the extra management-cluster RBAC the provider chart grants, and a standby-management-cluster section explaining that while `kube-public/etcd-sync` exists the reconcilers silently no-op on non-`global` objects.",
+      "sha256": "6eee562ed2284138a5c6e340186f27acbdcc75f8686f6141c32484f9583e6b8f",
+      "size": 11191,
+      "description": "How-to for installing the Alauda Container Platform VMware vSphere Infrastructure Provider (CAPV) alongside the Kubeadm Provider on the `global` cluster, validated against provider `v1.0.17`. Covers installing both plugin packages as cluster plugins, and a three-part verification: module state via `kubectl get minfo`, the nine expected `vsphere*.infrastructure.cluster.x-k8s.io` CRDs, and the registered validating webhooks that enforce the fixed-IP rollout rules. Adds a provider-upgrade section: the upgrade updates the CRDs and the controller migrates existing resources itself - the deprecated persistent-disk fields move into `status.persistentDiskStatuses[]`, while the control plane endpoint and the pool's disk lists are untouched, so an existing cluster keeps its external LoadBalancer and its all-persistent disks - so no manual YAML edit is accepted; Cluster API rollout values are validated, never rewritten. Records the vCenter Custom Fields privilege prerequisite, the extra management-cluster RBAC the provider chart grants, and the standby-management-cluster rule that reconcilers no-op on non-`global` objects while `kube-public/etcd-sync` exists.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-13T13:09:02Z"
+      "updated_at": "2026-09-15T10:59:36Z"
     },
     "docs/en/machine-configuration/firewall.mdx": {
       "sha256": "8a5945d85bdd351fea080d7f71597a6200f29dd4219294204cb04228bba33f25",
@@ -867,11 +867,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/manage-nodes/vmware-vsphere.mdx": {
-      "sha256": "a1848b8f4ef8ab8a47169d8adc82f186effeda905ac07ef45bc192335f0ec706",
-      "size": 11691,
-      "description": "Day-2 guide for VMware vSphere worker nodes managed through `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment`. Covers scale-out by adding slots before replicas, immutable infrastructure-template and bootstrap-template replacement, rollout monitoring and rollback, and runtime topology changes for NICs, failure domains, and persistent disks. Preserves the existing pool identity when slots or VMDKs must be reused, explains that differently named pools do not share disks and that `releaseDelayHours` is an unused-slot reclaim grace period rather than a replacement wait, and provides checks for pool readiness, Machines, `VSphereMachine`, `VSphereVM`, and Nodes. Flags the provider `v1.0.17` admission rules that can reject a Day-2 apply: an archived `MachineDeployment` manifest that omits `maxSurge: 0` or a `maxUnavailable` of `1` or more, and any edit that removes or reshapes a persistent disk on an `InUse` or `Released` slot, which accepts additions only.",
+      "sha256": "e7ff0c892699bbe90ec401393974e33cc154e6ec7389a9590a7f5ee339753d4c",
+      "size": 14612,
+      "description": "Day-2 guide for VMware vSphere worker nodes managed through `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment`. Covers scale-out by adding slots before replicas, immutable infrastructure-template and bootstrap-template replacement, rollout monitoring and rollback, and runtime topology changes for NICs, failure domains, and persistent disks. Preserves the existing pool identity when slots or VMDKs must be reused, explains that differently named pools do not share disks and that `releaseDelayHours` is an unused-slot reclaim grace period rather than a replacement wait, and provides checks for pool readiness, Machines, `VSphereMachine`, `VSphereVM`, and Nodes. Flags the provider `v1.0.17` admission rules that can reject a Day-2 apply: an archived `MachineDeployment` manifest that omits `maxSurge: 0` or a `maxUnavailable` of `1` or more, and any edit that removes or reshapes a persistent disk on an `InUse` or `Released` slot, which accepts additions to either disk list and nothing else.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-13T07:33:12Z"
+      "updated_at": "2026-09-15T11:01:46Z"
     },
     "docs/en/overview/architecture.mdx": {
       "sha256": "be3dace31f1830bb79de4afd63206f29d3edd82d560e8b47e6596454bd0e3c28",
@@ -923,18 +923,18 @@
       "updated_at": "2026-08-31T05:54:15Z"
     },
     "docs/en/overview/providers/index.mdx": {
-      "sha256": "8feb391688f244bca5aca4cd9eb7c59dcd21c811cce5b680e757a472d78ab891",
-      "size": 5919,
-      "description": "Lists the four pluggable infrastructure providers - Huawei DCS, Huawei Cloud Stack, VMware vSphere, and Bare Metal (available, YAML only) - and compares how each supplies the control plane endpoint for `kube-apiserver` on port `6443`: HCS creates an ELB automatically, DCS requires an operator-provisioned external load balancer, and Bare Metal and VMware vSphere (from provider `v1.0.17`) choose between the in-cluster `alive` chart (`keepalived` + IPVS) and an external appliance. Also covers the Fleet Essentials shared web UI framework with per-provider extension status, the Infrastructure / Kubeadm Bootstrap / Kubeadm Control Plane component split, and independent provider versioning.",
+      "sha256": "ab15db1e89322ae3d78d40bec085c8c6fc3212ccf17e4965a4578ed2bfdc3ef4",
+      "size": 6203,
+      "description": "Lists the pluggable infrastructure providers and compares control-plane endpoint ownership. HCS creates an ELB, DCS supports an operator-provisioned external load balancer or provider-managed `type: internal` Self-built VIP on `v1.0.22+` with ACP `v4.4+`, vSphere supports an external load balancer or a provider-managed `type: internal` Self-built VIP from `v1.0.17`, and Bare Metal supports internal or external modes.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-31T05:54:15Z"
+      "updated_at": "2026-09-15T09:57:16Z"
     },
     "docs/en/overview/providers/vmware-vsphere.mdx": {
-      "sha256": "9c4228841ed609cbf61d0bf592e4d79c51a24c892366ef5582fe1ec8049b68ad",
-      "size": 4538,
-      "description": "Overview of the VMware vSphere Infrastructure Provider built on Cluster API Provider vSphere (CAPV), validated against provider `v1.0.17`: vCenter template cloning and placement, two control plane endpoint modes (an external LoadBalancer, or a provider-managed Self-built VIP using Alive with keepalived and IPVS, available only to clusters created on `v1.0.17`), `VSphereMachineConfigPool` node slots with fixed hostnames, static IPs and persistent-disk layouts, multi-NIC support where the primary NIC drives the kubelet `node-ip`, multi-datacenter failure domains via `VSphereFailureDomain`/`VSphereDeploymentZone`, raw-device disks exposed at `/dev/disk/by-capv/<name>`, and the provider-managed `InUse` to `Released` to reuse-or-reclaim disk lifecycle. Lists the primary user-facing CRDs exercised by the documented workflows.",
+      "sha256": "aa5d0a5bf3f226e0448e86e17726d51b6ed8e3d6176565d78da68a1815149569",
+      "size": 5260,
+      "description": "Overview of the VMware vSphere Infrastructure Provider built on Cluster API Provider vSphere (CAPV), validated against provider `v1.0.17`: vCenter template cloning and placement, two control plane endpoint modes (an external LoadBalancer, or a provider-managed Self-built VIP using Alive with keepalived and IPVS, available only to clusters created on `v1.0.17`), `VSphereMachineConfigPool` node slots with fixed hostnames, static IPs and per-slot persistent and ephemeral data-disk layouts, multi-NIC support where the primary NIC drives the kubelet `node-ip`, multi-datacenter failure domains via `VSphereFailureDomain`/`VSphereDeploymentZone`, raw-device disks exposed at `/dev/disk/by-capv/<name>`, and the provider-managed `InUse` to `Released` to reuse-or-reclaim disk lifecycle. Lists the primary user-facing CRDs exercised by the documented workflows.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-09-15T09:57:16Z"
     },
     "docs/en/overview/release_notes.mdx": {
       "sha256": "a5286469e9dba38abbfa45d89835923b1d3523bd1d0b551c662dd7080946a853",
@@ -977,11 +977,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/release-notes/vmware_vsphere.mdx": {
-      "sha256": "202beac633450469bee71dc9b7dd68907fab9794f6af45b98043aa6f298478d6",
-      "size": 8184,
-      "description": "Release notes for the Alauda Container Platform VMware vSphere Infrastructure Provider packaging releases, newest first from `v1.0.17` back to `v1.0.0`. The `v1.0.17` entry records the Self-built control plane VIP (`controlPlaneLoadBalancer`), ephemeral data disks, per-disk and per-slot pool status, new pool and bootstrap conditions, rollout rules enforced by admission, pod-log relocation onto the containerd data disk, the breaking change that a VM powered off in vCenter stays off, and the deprecation of `reclaimStatus` and the persistent-disk `spec` backing fields. Earlier entries cover ACP 4.4 system component repositories, DR standby reconciliation, persistent-disk slot-reuse safety, the `VSphereResourcePool` to `VSphereMachineConfigPool` rename, and the initial CRD set.",
+      "sha256": "5484e1882715fa53621979de194f0c71d5c412b2ee43af9ac2daa44d63cd5d14",
+      "size": 14590,
+      "description": "Release notes for the Alauda Container Platform VMware vSphere Infrastructure Provider packaging releases, newest first from `v1.0.17` back to `v1.0.0`. The `v1.0.17` entry records the Self-built control plane VIP (`controlPlaneLoadBalancer`), ephemeral data disks as a creation-time layout, per-disk and per-slot pool status, new pool and bootstrap conditions, rollout rules enforced by admission, pod-log relocation onto the containerd data disk, the breaking change that a VM powered off in vCenter stays off, and the deprecation of `reclaimStatus` and the persistent-disk `spec` backing fields. Earlier entries cover ACP 4.4 system component repositories, DR standby reconciliation, persistent-disk slot-reuse safety, the `VSphereResourcePool` to `VSphereMachineConfigPool` rename, and the initial CRD set.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-09-15T10:59:36Z"
     },
     "docs/en/upgrade-cluster/bare-metal.mdx": {
       "sha256": "fef7deddb917321e734c951030727ac6b5bd507e35f2961dde87da7052e9314a",
@@ -1005,18 +1005,18 @@
       "updated_at": "2026-08-31T05:54:15Z"
     },
     "docs/en/upgrade-cluster/index.mdx": {
-      "sha256": "9e8c4d1982c34d5410e85ae6669ef7ebe560e9292595039340aa209b277b7681",
-      "size": 22326,
-      "description": "Owner page for the two-phase cluster upgrade model: Phase 1 moves ACP Core and the Distribution Version through CVO (procedure owned by the ACP product documentation; Fleet Essentials `1.0.4`+ can request it), and Phase 2 replaces nodes with the Alauda OS image carrying the target Kubernetes version. Holds the shared Kube-OVN-first procedure - set `cpaas.io/kube-ovn-version` on the CAPI `Cluster`, respect the provider boundaries (DCS `v1.0.22`+, HCS `v1.0.4`+, vSphere `v1.0.16`+, Bare Metal `v0.0.1`+) and the chart-name change from `acp/chart-cpaas-kube-ovn` to `acp/chart-kube-ovn` at chart `v4.4`, then verify the `cni-kube-ovn` `AppRelease` - plus stage-1 Kube-OVN restore, the Kubernetes 1.35 `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch, and cross-version preparation with `upgrade.sh --only-sync-image` and staged intermediate OS images.",
+      "sha256": "221934d7607be194ff4214e520fdabe08035624578acdba157d215b9bb45a8d6",
+      "size": 22370,
+      "description": "Owner page for the two-phase cluster upgrade model: Phase 1 moves ACP Core and the Distribution Version through CVO (procedure owned by the ACP product documentation; Fleet Essentials `1.0.4`+ can request it), and Phase 2 replaces nodes with the Alauda OS image carrying the target Kubernetes version. Holds the shared Kube-OVN-first procedure - set `cpaas.io/kube-ovn-version` on the CAPI `Cluster`, respect the provider boundaries (DCS `v1.0.22`+, HCS `v1.0.4`+, vSphere `v1.0.16`+, Bare Metal `v1.0.0`+) and the chart-name change from `acp/chart-cpaas-kube-ovn` to `acp/chart-kube-ovn` at chart `v4.4`, then verify the `cni-kube-ovn` `AppRelease` - plus stage-1 Kube-OVN restore, the Kubernetes 1.35 `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch, and cross-version preparation with `upgrade.sh --only-sync-image` and staged intermediate OS images.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-31T05:54:15Z"
+      "updated_at": "2026-09-15T09:57:16Z"
     },
     "docs/en/upgrade-cluster/vmware-vsphere.mdx": {
-      "sha256": "4fb5efe2a2f088c57070d77d5192996d9dccd9a4d5ce5e99795a43db94f0eed7",
-      "size": 17146,
-      "description": "Phase 2 Kubernetes upgrade procedure for VMware vSphere clusters, validated against provider `v1.0.17`. Starts with a pre-flight check of the `KubeadmControlPlane` and `MachineDeployment` rollout values (`maxSurge: 0`, `replicas` 3+, `maxUnavailable` 1+), which can reject the first edit of an existing cluster. Covers the five-class disk preservation model including pool-managed ephemeral disks, immutable machine templates, the Kube-OVN-first ordering, the control-plane and worker rollouts with values read from the OS Support Matrix, an OS-image-only rollout that changes no Kubernetes version, rollout holds that are not failures (persistent-disk attachment safety, `Reclaimed` tombstones, `SlotAvailable=False`, the `InitialPowerOnCompleted` power-on latch), staged recovery from a failed upgrade, verification, and a troubleshooting table. States that the provider migrates its own resources on upgrade with no manual YAML change, and that the control plane endpoint is a deploy-time choice, so an upgraded cluster keeps its external LoadBalancer and cannot adopt the Self-built VIP.",
+      "sha256": "e297c8d0d6fa91c491e569c95e96c3dbbd148febd0a47329c4b2ab58f6ed49b5",
+      "size": 33863,
+      "description": "Phase 2 Kubernetes upgrade procedure for VMware vSphere clusters, validated against provider `v1.0.17`. Starts with a pre-flight check of the `KubeadmControlPlane` and `MachineDeployment` rollout values (`maxSurge: 0`, `replicas` 3+, `maxUnavailable` 1+), which can reject the first edit of an existing cluster. Covers the five-class disk preservation model including pool-managed ephemeral disks, a creation-time layout upgrades never introduce, immutable machine templates, the Kube-OVN-first ordering, the control-plane and worker rollouts with values read from the OS Support Matrix, an OS-image-only rollout that changes no Kubernetes version, rollout holds that are not failures (persistent-disk attachment safety, `Reclaimed` tombstones, `SlotAvailable=False`, the `InitialPowerOnCompleted` power-on latch), staged recovery from a failed upgrade, verification, and a troubleshooting table. States that the provider migrates its own resources on upgrade with no manual YAML change, and that the control plane endpoint is a deploy-time choice, so an upgraded cluster keeps its external LoadBalancer and cannot adopt the Self-built VIP.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-09-15T10:59:36Z"
     }
   }
 }
