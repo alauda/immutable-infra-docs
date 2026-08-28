@@ -81,7 +81,7 @@ Follow [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx) f
 
 ### 6. Workload Cluster Image Registry
 
-Decide which registry this cluster pulls platform images from — CoreDNS, kube-proxy, and Kube-OVN during bootstrap, and every platform component installed afterwards.
+Decide which registry this cluster pulls its platform components from — Kube-OVN and the platform modules that Alauda Container Platform installs on the cluster. This choice does not affect the images kubeadm manages, which come from `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.imageRepository`.
 
 | Option | What you configure | When to use it |
 |---|---|---|
