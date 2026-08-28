@@ -874,11 +874,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/overview/os-support-matrix.mdx": {
-      "sha256": "c92d0982bd5c6c7b50b8b328d65db62cf10a4d70e8eec0aed13a821a9eb3ebeb",
-      "size": 4493,
-      "description": "Maps each ACP release (`v4.0.9` through `v4.4.0`) to the component versions carried by its Alauda OS image: Kubernetes (`v1.31.14-2` through `v1.35.6-acp.1`), containerd, coredns, etcd, pause `3.10`, and the release-line kube-ovn Helm chart version (explicitly the chart, not the Kube-OVN binary version). Also documents the `x86-64-v2` ISA CPU baseline on x86_64, image download from Customer Portal (one image per architecture and, from v4.4.0, per OS variant), the image format required per provider (`qcow2` for DCS and HCS, `ova` for vSphere, `iso` for bare metal), and the DCS Provider `v1.0.21` pairing rule for ACP `v4.3.2` and later.",
+      "sha256": "a83f40401766ab99636083ef6a9cc3970df8d9a0b40274ee2bd9381af4d5a392",
+      "size": 5325,
+      "description": "Maps each ACP release (`v4.0.9` through `v4.4.0`) to the component versions carried by its Alauda OS image: Kubernetes (`v1.31.14-2` through `v1.35.6-acp.1`), containerd, coredns, etcd, pause `3.10`, and the release-line kube-ovn Helm chart version (explicitly the chart, not the Kube-OVN binary version). Also documents the `x86-64-v2` ISA CPU baseline on x86_64, image download from Customer Portal (one image per architecture and, from v4.4.0, per OS variant), the image format required per provider (`qcow2` for DCS and HCS, `ova` for vSphere, and for bare metal a compressed archive of the two OCI images `base-image` and `base-image-iso`), and the DCS Provider `v1.0.21` pairing rule for ACP `v4.3.2` and later.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-08-28T09:41:20Z"
     },
     "docs/en/overview/providers/bare-metal.mdx": {
       "sha256": "4a40ea157dd978f2386c533f7d4faaf7cf47cfe6c1a58494db1555980dd50828",
