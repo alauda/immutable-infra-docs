@@ -11,7 +11,7 @@ queries:
 
 # Choose the Image Registry for a Workload Cluster
 
-A workload cluster pulls platform images — CoreDNS, kube-proxy, and Kube-OVN during bootstrap, and every platform component installed afterwards — from an image registry. By default it uses the same registry as the `global` cluster.
+Alauda Container Platform installs and manages a set of platform components on every workload cluster — Kube-OVN and the platform modules delivered after the cluster is up. Their images come from an image registry, and by default that is the same registry the `global` cluster uses.
 
 You can instead bind a workload cluster to a registry of its own. The common reason is distance: when the `global` cluster and the workload cluster sit in different regions, pulling every platform image across that link is slow and fragile. A registry close to the workload cluster removes that dependency.
 
@@ -24,17 +24,20 @@ Decide before you create the cluster. The binding is read only while the cluster
 | Registry of the `global` cluster | Nothing. Every workload cluster inherits it. | The workload cluster reaches the registry the `global` cluster uses with acceptable throughput and availability. |
 | Dedicated registry | A RegistryCredential Secret in `cpaas-system`, referenced from the `Cluster` by the `cpaas.io/registry-reference` label. | The workload cluster is in a different region or network segment and should pull from a registry close to it. |
 
-Both options are available on every infrastructure provider. Neither is exposed in the web console: a dedicated registry is configured through YAML only, so use the YAML workflow of your provider's cluster creation guide when you need one.
+Both options are available on every infrastructure provider, but only through YAML. The cluster creation wizards do not offer a registry credential to select, so use the YAML workflow of your provider's cluster creation guide when a cluster needs a dedicated registry.
 
 ## What the Binding Covers \{#coverage}
 
-The registry binding applies to the platform components that the platform installs and manages on the workload cluster.
+The binding applies to the platform components that Alauda Container Platform installs and manages on the workload cluster, such as Kube-OVN and the platform modules delivered to it.
 
-It does **not** apply to:
+It does **not** apply to the following. Each is configured elsewhere, and pointing a cluster at a dedicated registry leaves all of them unchanged.
 
-- **kubeadm static control plane images** — the kube-apiserver, kube-controller-manager, kube-scheduler, etcd, and pause images. These resolve from `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.imageRepository`. Set that field if these images must also come from another registry.
-- **Bare-metal operating system images** — hosts pull the OS image from the platform registry during `elemental install` and every reprovision, before any cluster binding exists.
-- **Application workload images** — a binding configures the platform image source only. Application Pods keep using whatever image references and pull Secrets their own workloads declare.
+| Not covered | Where it comes from instead |
+| --- | --- |
+| Images kubeadm manages: kube-apiserver, kube-controller-manager, kube-scheduler, etcd, CoreDNS, and kube-proxy | `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.imageRepository`, which each provider guide sets independently. On Huawei DCS and Bare Metal it is `cloud.alauda.io/alauda`, matching the images preloaded in the operating system image. Change that field if these must come from another registry, and make sure the references still match what the node has locally. |
+| The pause (sandbox) image | The container runtime configuration on the node. The supported operating system images set it in containerd; it is not resolved through any Kubernetes object. |
+| Bare-metal operating system images | Hosts pull `base-image` and `base-image-iso` from the platform registry during `elemental install` and every reprovision, before any cluster-level binding exists. |
+| Application workload images | The image references and pull Secrets that each workload declares. A binding configures the platform image source only. |
 
 ## Inherit the Registry of the global Cluster \{#default}
 
@@ -158,7 +161,7 @@ kubectl --kubeconfig <workload-cluster-kubeconfig> get pods -A \
   | sort -u
 ```
 
-Platform component images use the dedicated registry. kubeadm static control plane images do not — see [What the Binding Covers](#coverage).
+Platform component images use the dedicated registry. Images kubeadm manages, and the pause image, do not — see [What the Binding Covers](#coverage). Some images still resolving to another registry is expected; every platform component image resolving to the old one is not.
 
 ## Operate an Existing Binding \{#operate}
 
