@@ -10,9 +10,45 @@ queries:
 
 ## Overview
 
-This page tracks release notes for the Alauda Container Platform VMware vSphere Infrastructure Provider. The version number you see on the platform (for example, `v1.0.10`) refers to the packaging release of the vSphere provider, which bundles the Cluster API Provider vSphere (CAPV) controller image, the vSphere Cloud Provider Interface (CPI) image, and the Helm chart used to deploy them on the Alauda Container Platform.
+This page tracks release notes for the Alauda Container Platform VMware vSphere Infrastructure Provider. The version number you see on the platform (for example, `v1.0.17`) refers to the packaging release of the vSphere provider, which bundles the Cluster API Provider vSphere (CAPV) controller image, the vSphere Cloud Provider Interface (CPI) image, the admission webhooks, and the Helm chart used to deploy them on the Alauda Container Platform.
 
 For the current full capability list and installation steps, see [VMware vSphere Provider Installation](../install/vmware-vsphere.mdx).
+
+## v1.0.17 \{#v1-0-17}
+
+### New Features
+
+- **Self-built control plane VIP** — `VSphereCluster.spec.controlPlaneLoadBalancer` selects the control plane endpoint mode. `type: internal` makes the provider install Alive (keepalived and IPVS) on the control-plane nodes through a `ModuleInfo`, inject a bootstrap VIP on the first `kubeadm init` node, hand the VIP over to Alive, and keep the workload cluster's kube-proxy IPVS settings aligned with it. `type: external`, and an absent field, keep the existing behavior. The field is accepted once and is frozen afterwards. The Self-built VIP is available only to clusters created with this release or later: an upgraded cluster keeps its external LoadBalancer and cannot adopt the VIP. The endpoint is chosen when the cluster is deployed and cannot be adjusted at runtime or during an upgrade. An upgraded cluster leaves the field unset, which already means an external LoadBalancer, and setting it on a running cluster is rejected. See [Upgrading the Provider](../install/vmware-vsphere.mdx#upgrade-the-provider). See [Control Plane Endpoint Modes](../create-cluster/vmware-vsphere.mdx#control-plane-endpoint-modes).
+- **Ephemeral data disks** — `VSphereMachineConfigPool.spec.configs[].ephemeralDisks[]` declares per-slot disks that are deleted with the VM and recreated empty on the replacement. They take no part in reclaim and never hold a slot release. See [Choose persistent or ephemeral](../create-cluster/vmware-vsphere.mdx#choose-persistent-or-ephemeral).
+- **Per-disk and per-slot pool status** — `VSphereMachineConfigPool` now reports `status.persistentDiskStatuses[]` with a `phase` of `Creating`, `Attached`, `Available`, `Reclaiming`, `Reclaimed`, or `Error`, plus `status.ephemeralDiskStatuses[]` and the slot counters `status.total`, `status.available`, and `status.allocated`, which also appear as printer columns.
+- **Pool health conditions** — The pool reports `Ready`, `MembersValid`, `MembersUnique`, `SlotAvailable`, and `PersistentDisksReady` alongside the existing `ClusterRefReady` and `VCenterAvailable`. `SlotAvailable` is deliberately excluded from the `Ready` summary, so a fully allocated pool still reports `Ready=True`.
+- **Bootstrap and endpoint conditions** — `BootstrapReady` on `VSphereVM` and `VSphereMachine` distinguishes a missing or unreadable bootstrap Secret from invalid content, and `KubeOvnAppReleaseReady` and `SelfBuiltLoadBalancerReady` on `VSphereCluster` report those subsystems without gating `status.ready`.
+
+### Enhancements
+
+- **Rollout rules enforced by admission** — For a `KubeadmControlPlane` or `MachineDeployment` whose infrastructure template sets `machineConfigPoolRef`, `maxSurge` must be `0`, `KubeadmControlPlane.spec.replicas` must be `3` or more, and `MachineDeployment.spec.strategy.rollingUpdate.maxUnavailable` must be `1` or more. These values were already required by the fixed-IP slot model; they are now checked before the object is accepted. See [Check the manifests against the admission rules](../upgrade-cluster/vmware-vsphere.mdx#preflight-admission-rules).
+- **Pool safety validation** — Hostnames and primary IP addresses must be unique across the pools bound to one `Cluster`; a slot that is `InUse` or `Released` can no longer have its address, disk set, or disk geometry changed; and deleting a pool that still owns `InUse` slots is refused up front rather than leaving the object in `Terminating`.
+- **Pod log directory on the data disk** — When a slot mounts a disk at `/var/lib/containerd`, `/var/log/pods` is relocated onto that disk. Existing machines are not retrofitted; the change is picked up when nodes are replaced.
+- **Deterministic persistent-disk matching** — Disks are matched by VMDK path, then by SCSI unit number, rather than by capacity, and `ownerMachineName` and `ownerMachineUID` persist across VM replacement so a rolling upgrade reattaches the same disks.
+
+### Fixed Issues
+
+- **VM status handling** — `VSphereMachine` clears `Ready` while the backing `VSphereVM`, its `providerID`, or its network information is unavailable, and out-of-band power changes made in vCenter are now observed instead of being hidden.
+- **Slot-owner lookup errors** — Errors while resolving the owner of a slot propagate instead of being swallowed, and slot validation covers `network.additional` entries and normalized guest mount paths.
+- **Security updates** — Dependencies were updated to address reported CVEs.
+
+### Breaking Changes
+
+- **A VM powered off in vCenter stays powered off.** After a VM's first successful power-on, `VSphereVM` latches `InitialPowerOnCompleted` and the controller no longer forces it back on. `PoweredOn=False` propagates into `VSphereVM.Ready` and `VSphereMachine.Ready`. A replacement VM created by a rollout has an unset latch, so its first boot is unaffected.
+
+### Deprecations
+
+- `VSphereMachineConfigPool.status.configStatuses[].reclaimStatus` and `spec.configs[].persistentDisks[].volumePath` and `.diskUUID` are frozen in this release and scheduled for removal. Read `status.persistentDiskStatuses[]` instead. Existing pools need no manual edit: the controller folds the old records into `status.persistentDiskStatuses[]` on its first reconcile after the upgrade, carries an in-flight reclaim across, and clears `reclaimStatus`. See [Upgrading the Provider](../install/vmware-vsphere.mdx#upgrade-the-provider). A `phase: Reclaimed` entry is a tombstone and must not be deleted by hand.
+
+### Notes
+
+- **New management-cluster permissions** — The provider chart grants read access to `clustermodules`, `moduleconfigs`, and `moduleplugins`, write access to `moduleinfoes`, read access to `clusters` in `clusterregistry.k8s.io` and `platform.tkestack.io`, and `patch` and `update` on `kubeadmcontrolplanes`. See [Verify the installation](../install/vmware-vsphere.mdx#verify-the-installation).
+- **vCenter Custom Fields privilege** — Required whenever a `VSphereCluster` or its CAPI `Cluster` carries a `vsphere.cluster.x-k8s.io/*` annotation. A missing privilege fails VM reconciliation rather than skipping the metadata write.
 
 ## v1.0.16 (2026-08-05) \{#v1-0-16}
 

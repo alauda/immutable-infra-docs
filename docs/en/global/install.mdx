@@ -1050,7 +1050,9 @@ Prepare the vSphere input values by using [VMware vSphere Infrastructure Prepara
 - Keep the VMware vSphere annotations required by the platform controllers, including the network and CPI annotations from the VMware vSphere create-cluster guide.
 - Set `VSphereMachineTemplate.spec.template.spec.folder` to `/<datacenter>/vm/global` so operators can identify the `global` cluster VMs in vCenter. In a DR deployment, use distinct child folders such as `/<datacenter>/vm/global/primary` and `/<datacenter>/vm/global/standby` for the primary and standby clusters.
 - Set `VSphereCluster.spec.identityRef.name` to `global-vsphere-credentials`. This fixed Secret name is required only for the VMware vSphere `global` installation path; non-`global` VMware vSphere clusters follow the generic create-cluster guide.
-- With VMware vSphere Provider `v1.0.16`, provision the external LoadBalancer before applying the manifest. Use the contract in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx); this provider release does not deploy a Self-built VIP.
+- Select the control plane endpoint mode before you apply the manifest; it cannot be changed afterwards. For an external LoadBalancer, provision and validate it first by using the contract in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). With VMware vSphere Provider `v1.0.17` or later, the `global` cluster can instead use an `internal` Self-built VIP: complete [Self-built VIP prerequisites](../create-cluster/vmware-vsphere.mdx#self-built-vip-prerequisites), then add the `spec.controlPlaneLoadBalancer` block from [Enable the Self-built VIP](../create-cluster/vmware-vsphere.mdx#enable-self-built-vip) to the `global` `VSphereCluster`. With `v1.0.16` or earlier, only the external LoadBalancer is available.
+
+  The Self-built VIP prerequisite commands read `ModulePlugin/alive` from a running `global` cluster, which does not exist yet during the bootstrap installation. Confirm from the installation package instead that it carries the `alive` plugin.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-config`, or leave the field unset when the provider defaults this API field to `cloud-config`. `cloud-init` is the guest software that processes the data; it is not a valid value for this field.
 - Keep the release manifest's kubeadm files, including the VMware vSphere `/etc/kubernetes/encryption-provider.conf` file entry, kubelet patches, audit policy, and installer RBAC entries. VMware vSphere delivers this file through `KubeadmControlPlane.spec.kubeadmConfigSpec.files`; do not follow the DCS `DCSCluster.spec.encryptionProviderConfigRef` pattern.
 
@@ -1664,10 +1666,10 @@ Create the provider-specific installer configuration JSON file on the current bo
 | Field | Huawei DCS | VMware vSphere | Huawei Cloud Stack | Bare Metal |
 |-------|------------|----------------|--------------------|------------|
 | Endpoint path | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` |
-| `console.host` | Local `global` HA VIP list | Empty list, `[]` | Empty list, `[]` | Local `global` control-plane VIP list |
+| `console.host` | Local `global` HA VIP list | Local `global` control-plane VIP list | Empty list, `[]` | Local `global` control-plane VIP list |
 | `console.globalHost` | Platform access address | Platform access address | Platform access address | Platform access address |
 | `cluster.clusterCIDR` and `cluster.serviceCIDR` | Required | Not set; cluster CIDRs are declared in the VMware vSphere `Cluster` manifest | Not set | Required |
-| `cluster.features.ha` | Required, points to the local HA VIP with `isThirdParty: true` | Not set; the control plane endpoint is declared in `VSphereCluster.spec.controlPlaneEndpoint.host` | Not set; HCS ELB is declared in `HCSCluster` | Required, points to the bare-metal control-plane VIP with `isThirdParty: true` |
+| `cluster.features.ha` | Required, points to the local HA VIP with `isThirdParty: true` | Required, points to the local control-plane VIP with `isThirdParty: true` | Not set; HCS ELB is declared in `HCSCluster` | Required, points to the bare-metal control-plane VIP with `isThirdParty: true` |
 | `hostIP` | Current bootstrap host IP | Current bootstrap host IP | Current bootstrap host IP | Current bootstrap host IP |
 
 <Tabs>
@@ -1731,7 +1733,7 @@ Set `console.host` and `cluster.features.ha.vip` to the local `global` HA VIP. D
   </Tab>
   <Tab label="VMware vSphere">
 
-VMware vSphere uses the same installer endpoint path as DCS, but its request body does not include `cluster.features.ha`. The control plane endpoint is declared in `VSphereCluster.spec.controlPlaneEndpoint.host`, and the cluster CIDRs are declared in the VMware vSphere `Cluster` manifest.
+VMware vSphere uses the same installer endpoint path as DCS. The request body carries the control plane VIP in `console.host` and `cluster.features.ha`, the same way for an external LoadBalancer and for a Self-built VIP; the same address is also declared in `VSphereCluster.spec.controlPlaneEndpoint.host`. The cluster CIDRs are not sent here — they are declared in the VMware vSphere `Cluster` manifest.
 
 ```shell
 mkdir -p /root/yamls
@@ -1749,12 +1751,23 @@ cat > "${INSTALLER_CONFIG_JSON}" <<EOF
     "password": "<base64-registry-password>"
   },
   "console": {
-    "host": [],
+    "host": [
+      "${CONTROL_PLANE_VIP}"
+    ],
     "globalHost": "${PLATFORM_HOST}",
     "httpPort": 80,
     "httpsPort": 443,
     "cert": {
       "selfSigned": {}
+    }
+  },
+  "cluster": {
+    "features": {
+      "ha": {
+        "vip": "${CONTROL_PLANE_VIP}",
+        "vport": 6443,
+        "isThirdParty": true
+      }
     }
   },
   "product": [
@@ -1771,7 +1784,7 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   -d @"${INSTALLER_CONFIG_JSON}"
 ```
 
-Keep `console.host` as an empty list because the VMware vSphere control plane endpoint is already set in the `global` manifest. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address.
+Set `console.host` and `cluster.features.ha.vip` to the same control plane VIP that the `global` manifest declares in `VSphereCluster.spec.controlPlaneEndpoint.host`, whether that address is served by an external LoadBalancer or by the Self-built VIP. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address.
 
   </Tab>
   <Tab label="Huawei Cloud Stack">
@@ -2307,13 +2320,13 @@ Use the provider-specific installer configuration differences for both sides:
 | Provider | Primary installation | Standby installation |
 |----------|----------------------|----------------------|
 | Huawei DCS | Set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name`. | Set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name`. |
-| VMware vSphere | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the primary HA VIP used by the primary manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the standby HA VIP used by the standby manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. |
+| VMware vSphere | Set `console.host`, `cluster.features.ha.vip`, and `VSphereCluster.spec.controlPlaneEndpoint.host` to the primary HA VIP used by the primary manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. | Set `console.host`, `cluster.features.ha.vip`, and `VSphereCluster.spec.controlPlaneEndpoint.host` to the standby HA VIP used by the standby manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. |
 | Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
 | Bare Metal | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the primary control-plane VIP. Set `handoffHook.directAPIServer: true`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.sharedAuthReadOnly: false`. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the standby control-plane VIP. Set `handoffHook.directAPIServer: true`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.sharedAuthReadOnly: true`. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. |
 
-For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB. For Bare Metal, set both the manifest VIP and the installer VIP fields to the primary control-plane VIP.
+For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set `console.host`, `cluster.features.ha.vip`, and the primary manifest's `VSphereCluster.spec.controlPlaneEndpoint.host` to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB. For Bare Metal, set both the manifest VIP and the installer VIP fields to the primary control-plane VIP.
 
-After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` at `${PLATFORM_HOST}:11443` — the same value the primary installation used. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
+After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set `console.host`, `cluster.features.ha.vip`, and the standby manifest's `VSphereCluster.spec.controlPlaneEndpoint.host` to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` at `${PLATFORM_HOST}:11443` — the same value the primary installation used. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
 
 #### Bare Metal: Verify Before Decommissioning Either Bootstrap Cluster \{#bare-metal-dr-verification}
 
