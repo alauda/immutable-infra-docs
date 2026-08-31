@@ -136,7 +136,7 @@ Confirm with the cluster's platform owner that the Alauda OS image published for
 
 Follow [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane) and select the Huawei DCS procedure that matches the **installed** DCS provider version. That shared procedure owns the provider version boundary, the Kube-OVN chart-name migration at `v4.4`, legacy behavior, and the required `AppRelease` health checks.
 
-Do not use the legacy direct `targetRevision` patch for a Kube-OVN `v4.4+` target. Upgrade the DCS provider to `v1.0.22` or later first so it can reconcile the complete source and the related component repository changes.
+Do not use the legacy direct `targetRevision` patch for a Kube-OVN `v4.4+` target. Upgrade the DCS provider to `v1.0.22` or later first so it can reconcile the complete source and the related CoreDNS and kube-proxy repository changes. This provider upgrade does not migrate an existing external control-plane endpoint to Self-built VIP; endpoint mode remains unchanged during a routine Kubernetes upgrade.
 
 ### Upgrade Control Plane Infrastructure
 
