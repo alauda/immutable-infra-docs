@@ -38,7 +38,8 @@ commits while holding identical content.
 The authoritative parity check is the content diff:
 
 ```bash
-git diff origin/release-1.0 origin/master -- docs/   # must be empty
+git diff origin/release-1.0 origin/master -- \
+  docs/ llms.txt llmstxt-state.json AGENTS.md   # must be empty
 ```
 
 Run it in both directions of reasoning: the `+` side shows what `master` has and
@@ -71,7 +72,7 @@ with real free space rather than a size-constrained workspace mount.
 | Filenames | `kebab-case` for new pages. Some existing pages use snake_case (`release-notes/huawei_dcs.mdx`, `how-to/dcs_persistent_disk_upgrade.mdx`) — leave them alone, the filename is the published URL |
 | Frontmatter `weight` | Required on every page; controls sidebar order |
 | Frontmatter `title` | Optional, defaults to the H1 |
-| Frontmatter `queries` | Repo convention (used on 105 of 136 pages): natural-language questions the page answers. Not read by the doom build |
+| Frontmatter `queries` | Repo convention (used on 107 of 138 pages): natural-language questions the page answers. Not read by the doom build |
 | Directory `index.mdx` | Must render `<Overview overviewHeaders={[]} />` |
 | Assets | Sibling `assets/` directory, referenced by relative path (`./assets/diagram.svg`) |
 | Product name | `<Term name="product" />`, never a hardcoded product string |
@@ -80,7 +81,7 @@ with real free space rather than a size-constrained workspace mount.
 
 - **Explicit anchors.** Every internal link `[text](#some-id)` needs the target
   heading to declare the id: `## Some Heading \{#some-id}`. Doom does not derive
-  a lint-acceptable id from heading text. The tree currently carries 174
+  a lint-acceptable id from heading text. The tree currently carries 203
   explicit anchors — follow the same pattern.
 - **No HTML comments.** `<!-- ... -->` is invalid in MDX. Use `{/* ... */}` or
   delete the comment. The tree currently has zero HTML comments.
@@ -116,6 +117,38 @@ stale index is worse than no index: an agent reads a summary that no longer
 matches the page, or never learns the page exists. Keep the copies on `master`
 and `release-1.0` identical for as long as the documentation content is
 identical.
+
+**A page's description must be byte-identical in `llms.txt` and in
+`llmstxt-state.json`.** Editing one without the other is the failure mode this
+rule exists to prevent, and it does not heal on its own: the generator decides
+whether to re-describe a page from the stored `sha256`, so once that hash is
+current the two descriptions stay divergent through every later run. Eleven
+entries had drifted this way before the check below was adopted. It exits
+non-zero on any problem, so it can be wired into a hook or a CI step:
+
+```bash
+node -e '
+const fs = require("fs");
+const state = JSON.parse(fs.readFileSync("llmstxt-state.json", "utf8")).files;
+const listed = new Map();
+const problems = [];
+for (const line of fs.readFileSync("llms.txt", "utf8").split("\n")) {
+  const m = line.match(/^- \[[^\]]*\]\(([^)]+)\): (.+)$/);
+  if (!m) continue;
+  if (listed.has(m[1])) problems.push(`listed twice in llms.txt: ${m[1]}`);
+  listed.set(m[1], m[2]);
+}
+for (const path of Object.keys(state))
+  if (!listed.has(path)) problems.push(`in llmstxt-state.json but not llms.txt: ${path}`);
+for (const path of listed.keys())
+  if (!(path in state)) problems.push(`in llms.txt but not llmstxt-state.json: ${path}`);
+for (const [path, entry] of Object.entries(state))
+  if (listed.has(path) && listed.get(path) !== entry.description)
+    problems.push(`description differs: ${path}`);
+if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
+console.log("index descriptions are in sync");
+'
+```
 
 ## 6. CI
 
