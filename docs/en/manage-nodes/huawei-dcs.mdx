@@ -39,6 +39,8 @@ The IP-Hostname Pool defines the network configuration for worker node virtual m
 
 On Huawei DCS, the IP pool is also where you declare persistent disks that must survive VM replacement. Use `persistentDisk` for the platform-required `/var/cpaas` disk and for any other worker-node disk that must be preserved during delete-recreate operations. This workflow requires DCS provider `v1.0.16` or later.
 
+When a node template declares a dedicated data disk at `/var/lib/containerd`, the DCS provider's bootstrap configuration stores pod logs under `/var/lib/containerd/pods` and links `/var/log/pods` to that path. Keep the disk mounted at `/var/lib/containerd` when replacing the node if you need the pod-log data to remain on the containerd data disk.
+
 :::warning
 **Pool Size Requirement**
 The pool must include at least as many entries as the number of worker nodes you plan to deploy. Insufficient entries will prevent node deployment.
