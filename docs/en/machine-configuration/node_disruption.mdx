@@ -11,7 +11,7 @@ By default, when you make certain changes to the `systemd` units section of a `M
 
 Once defined, the Machine Configuration Operator validates the policy to detect issues such as invalid formatting. Then, it populates the policy into the `status.nodeDisruptionPolicyStatus` field of the `MachineConfiguration` object. These user-defined policies override the cluster's default disruption settings.
 
-A default `MachineConfiguration` custom resource named `cluster` is installed with the cluster. You can configure node disruption behavior on this resource.
+The Machine Configuration Operator creates this resource when it first starts, with the default policy shown below.
 
 :::warning
 Because the default action for file changes is `None`, a `MachineConfig` object that only writes or updates a file is applied to disk but does **not** restart the affected service—so the change may not take effect. When a file change requires a service to reload or restart (for example, kubelet or firewalld configuration), define a node disruption policy for that file path, and confirm it appears in `status.nodeDisruptionPolicyStatus` **before** applying the `MachineConfig`.
@@ -34,6 +34,7 @@ Each change is evaluated against the node disruption policy, which can trigger o
 * `Reboot`: Drain and reboot the node.
 * `None`: No disruption is triggered; the change is applied silently.
 * `Drain`: Drain the node without rebooting.
+* `Reload`: Reload the specified `systemd` service without restarting it.
 * `Restart`: Restart the specified `systemd` service.
 * `DaemonReload`: Reload all `systemd` unit configurations.
 
