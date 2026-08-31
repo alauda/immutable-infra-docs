@@ -117,6 +117,24 @@ matches the page, or never learns the page exists. Keep the copies on `master`
 and `release-1.0` identical for as long as the documentation content is
 identical.
 
+**A page's description must be byte-identical in `llms.txt` and in
+`llmstxt-state.json`.** Editing one without the other is the failure mode this
+rule exists to prevent, and it does not heal on its own: the generator decides
+whether to re-describe a page from the stored `sha256`, so once that hash is
+current the two descriptions stay divergent through every later run. Eleven
+entries had drifted this way before the check below was adopted. Verify with:
+
+```bash
+python3 - <<'EOF'
+import json, re, pathlib
+st = json.loads(pathlib.Path('llmstxt-state.json').read_text())['files']
+ld = dict(re.findall(r'^- \[([^\]]+)\]\(\1\): (.+)$',
+                     pathlib.Path('llms.txt').read_text(), re.M))
+bad = [p for p, e in st.items() if p in ld and e['description'] != ld[p]]
+print('description mismatches:', bad or 'none')
+EOF
+```
+
 ## 6. CI
 
 Continuous integration is **Tekton Pipelines-as-Code** (`.tekton/`), not GitHub
