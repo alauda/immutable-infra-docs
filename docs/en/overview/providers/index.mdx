@@ -17,12 +17,12 @@ Immutable Infrastructure supports multiple infrastructure platforms through plug
 
 ## Supported Providers
 
-| Provider | Description | Status |
-|----------|-------------|--------|
-| [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
-| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
-| [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | ✅ Available |
-| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | ✅ Available (YAML only) |
+| Provider | Description |
+|----------|-------------|
+| [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution |
+| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack |
+| [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform |
+| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization |
 
 ## Control Plane Endpoint
 
@@ -53,7 +53,7 @@ Fleet Essentials works with Infrastructure Providers to deliver platform-specifi
 **Provider Extensions**:
 - **DCS Provider**: Alauda Container Platform DCS Infrastructure Provider `1.0.13` and later adds DCS-specific UI pages and workflows on Huawei DCS. Pool-managed persistent-disk scenarios require DCS provider `v1.0.16` or later, and in `v1.0.16` the `DCSIpHostnamePool.spec.pool[].persistentDisk` configuration remains YAML-only
 - **HCS Provider**: Provides YAML-based cluster lifecycle management on Huawei Cloud Stack. HCS provider `v1.0.1` and later supports pool-managed persistent disks through `HCSMachineConfigPool.spec.configs[].persistentDisks[]`
-- **vSphere Provider**: The VMware vSphere infrastructure provider is generally available; its Fleet Essentials UI extension for cluster creation and management is coming soon
+- **vSphere Provider**: Provides YAML-based cluster lifecycle management on VMware vSphere. There is no Fleet Essentials UI extension for vSphere cluster creation and management
 - **Bare Metal Provider**: Provides YAML-only cluster lifecycle management on physical servers. There is no Fleet Essentials UI for bare-metal clusters; every workflow is driven by `kubectl apply` against `BaremetalCluster`, `BaremetalMachineTemplate`, `MachineInventoryPool`, and the upstream CAPI resources
 
 ## Provider Architecture
