@@ -804,11 +804,11 @@
       "updated_at": "2026-08-28T14:49:02Z"
     },
     "docs/en/machine-configuration/node_disruption.mdx": {
-      "sha256": "04c302c67d06e6608e944d3b1891892a62a2e828219869ee64b824b09e5bf6cb",
-      "size": 5078,
+      "sha256": "57209a0268c774261c3a2f9c601b7ab9d8eb30a171f2e44024d31d1449d38e5c",
+      "size": 5111,
       "description": "Explains how to author `nodeDisruptionPolicy` and `defaultNodeDisruptionPolicySpecAction` fields on the cluster-scoped singleton `MachineConfiguration` CR (kind `MachineConfiguration`, name `cluster`) to control what happens when files, systemd units, or SSH keys change, and how the validated policy is echoed into `status.nodeDisruptionPolicyStatus`. Enumerates the available actions (`Reboot`, `None`, `Drain`, `Restart`, `DaemonReload`), shows the installed defaults (no action for files, drain+reboot for units, no action for sshkey) and warns that a file-only `MachineConfig` therefore lands on disk without restarting the affected service, and gives examples for switching all file changes to `Reboot` or routing a specific path such as `/usr/local/bin/myapp.sh` to `DaemonReload` plus a targeted `Restart` of `myapp.service` without rebooting.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-31T05:54:15Z"
+      "updated_at": "2026-08-31T06:17:57Z"
     },
     "docs/en/machine-configuration/overview.mdx": {
       "sha256": "56f339d80574b80cc52b6b85ea2740179affbc60eb3fe8ed988ae514fe91ce1b",
@@ -883,9 +883,9 @@
     "docs/en/overview/os-support-matrix.mdx": {
       "sha256": "936c6422ecb64e570ca886fc3088c8d82cb48d31d782b51a03ee6c33d165d324",
       "size": 5423,
-      "description": "Maps each ACP release (`v4.0.9` through `v4.4.0`) to the Kubernetes, containerd, CoreDNS, etcd, pause `3.10`, and Kube-OVN chart versions carried by its Alauda OS image. Also documents the `x86-64-v2` CPU baseline, image-format requirements, DCS Provider `v1.0.21+` pairing for ACP `v4.3.2+`, and the additional DCS Self-built VIP requirement of provider `v1.0.22+` with ACP `v4.4+`.",
+      "description": "Maps 19 listed ACP releases between `v4.0.9` and `v4.4.0` — the range is not continuous — to the Kubernetes, containerd, CoreDNS, etcd, pause `3.10`, and Kube-OVN chart versions carried by its Alauda OS image. Also documents the `x86-64-v2` CPU baseline, image-format requirements, DCS Provider `v1.0.21+` pairing for ACP `v4.3.2+`, and the additional DCS Self-built VIP requirement of provider `v1.0.22+` with ACP `v4.4+`.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-31T05:54:15Z"
+      "updated_at": "2026-08-31T06:17:57Z"
     },
     "docs/en/overview/providers/bare-metal.mdx": {
       "sha256": "4a40ea157dd978f2386c533f7d4faaf7cf47cfe6c1a58494db1555980dd50828",
