@@ -60,7 +60,7 @@ The following example raises the ARP/neighbor table garbage-collection threshold
 
    The `role` label selects which nodes the file is applied to. To target only a subset of nodes, create a custom `MachineConfigPool` and set the label to that pool's role.
 
-4. Configure a node disruption policy that re-applies `sysctl` settings when this file changes. Because the default action for file changes is `None`, the file would otherwise be written to disk without taking effect. Add the following to the `cluster` `MachineConfiguration` object in the `cpaas-system` namespace, and confirm it is reflected in `status.nodeDisruptionPolicyStatus` **before** applying the `MachineConfig`:
+4. Configure a node disruption policy that re-applies `sysctl` settings when this file changes. Because the default action for file changes is `None`, the file would otherwise be written to disk without taking effect. Add the following to the cluster-scoped `MachineConfiguration` singleton named `cluster`, and confirm it is reflected in `status.nodeDisruptionPolicyStatus` **before** applying the `MachineConfig`:
 
    ```yaml
    apiVersion: machineconfiguration.alauda.io/v1alpha1
