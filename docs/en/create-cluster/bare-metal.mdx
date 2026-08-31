@@ -414,12 +414,12 @@ Size the control-plane pool to at least `KubeadmControlPlane.spec.replicas`. Siz
 
 Create the `BaremetalCluster` (declares the selected control-plane endpoint mode), the control-plane `BaremetalMachineTemplate` (points at the control-plane pool), the `KubeadmControlPlane` (replicas + kubeadm config), and the CAPI `Cluster`.
 
-The pre-GA Bare Metal API supports both endpoint modes in the same workflow:
+The Bare Metal API supports both endpoint modes in the same workflow:
 
 - `Internal`: the provider deploys Alive and reconciles the VIP and control-plane backend membership.
 - `External`: the provider skips Alive; the load balancer owner maintains the listener, health check, and backend membership.
 
-There is no legacy provider-version tab because Bare Metal has not had an earlier GA release. Select the mode with `<control-plane-load-balancer-type>` in the manifest below.
+There is no legacy provider-version tab because Bare Metal has no earlier provider release to preserve. Select the mode with `<control-plane-load-balancer-type>` in the manifest below.
 
 :::warning
 **Use the Kubernetes images built into the OS image**
