@@ -18,14 +18,12 @@ Endpoint capabilities are provider-version specific. An ACP minor version alone 
 
 | Provider | Last verified provider release | Documented endpoint modes |
 |---|---|---|
-| Huawei DCS | `v1.0.21` | External LoadBalancer. A single control-plane node can use its own IP only for development or PoC. `type: internal` is not supported by this release. |
+| Huawei DCS | `v1.0.22` | External LoadBalancer, or `type: internal` Self-built VIP when paired with ACP `v4.4+`. A single control-plane node can use its own IP only for development or PoC. |
 | VMware vSphere | `v1.0.16` | External LoadBalancer. The provider does not deploy a Self-built VIP component. |
 | Bare Metal | Pre-GA provider API | `Internal` Self-built VIP and `External` LoadBalancer. Because there is no earlier GA release to preserve, the Bare Metal guide documents both modes without a legacy-version workflow. |
 | Huawei Cloud Stack | Provider-managed HCS ELB | Use the endpoint fields and ELB workflow in [Creating Clusters on Huawei Cloud Stack](../create-cluster/huawei-cloud-stack.mdx). |
 
-Do not configure an internal or Self-built VIP mode for DCS or vSphere until the provider release notes and this documentation name the exact provider version that supports it.
-
-The DCS `v1.0.22 and later` boundary in [Upgrade Kube-OVN Before the Control Plane](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane) describes full-source Kube-OVN reconciliation only, and applies only when such a provider version is installed. It does not state that `v1.0.22` is available as a formal provider package or that the release supports Self-built VIP. For endpoint planning, `v1.0.21` remains the last verified DCS release and External LoadBalancer remains the documented mode until the provider release notes and package define a new endpoint-capability boundary.
+For DCS, `type: internal` requires DCS Provider `v1.0.22+` and ACP `v4.4+`. DCS Provider `v1.0.21` and earlier support only the external LoadBalancer path. Do not use ACP version alone to infer provider capability.
 
 ## External LoadBalancer Contract \{#external-loadbalancer-contract}
 
@@ -69,14 +67,14 @@ The expected response is `ok` with HTTP status `200`.
 
 ## Self-built VIP Contract
 
-Use this contract only when the exact provider release supports a Self-built VIP mode. In the current documented set, this applies to the pre-GA Bare Metal provider API.
+For Huawei DCS, use this contract only with DCS Provider `v1.0.22+` and ACP `v4.4+`. For Bare Metal, follow the provider-specific guide.
 
 - Reserve an unused IPv4 address in the same Layer-2 network as the control-plane interface that will hold the VIP.
 - Use a VRID that is unique in that Layer-2 domain.
 - Allow VRRP traffic and gratuitous ARP updates between the control-plane nodes and the surrounding network.
 - Use at least three control-plane nodes for high availability.
-- Ensure the node image exposes the Linux IPVS subsystem and allows Alive to set `net.ipv4.conf.all.arp_accept=1` and `net.ipv4.vs.conntrack=1`.
+- Ensure the node image and the supported `alive` package provide the required VIP runtime and IPVS configuration.
 - Use an IP address, not a domain name, for the Self-built VIP.
 - Let the provider and Alive reconcile the VIP and backend membership when control-plane nodes are replaced. Do not maintain a second manual backend list for the same VIP.
 
-For Bare Metal manifests and verification, see [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx#step-3-control-plane).
+For DCS manifests and verification, see [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx#self-built-vip). For Bare Metal manifests, see [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx#step-3-control-plane).

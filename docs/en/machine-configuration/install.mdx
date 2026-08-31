@@ -1,0 +1,134 @@
+---
+weight: 12
+title: Installing Machine Configuration
+queries:
+  - how to install the machine configuration plugin
+  - install the machine-config cluster plugin on a cluster
+  - why are the master and worker MachineConfigPools missing
+  - upgrade the machine configuration plugin
+---
+
+# Installing Machine Configuration
+
+Machine Configuration is not part of a cluster by default. It ships as a cluster plugin named **Alauda Container Platform Machine Configuration** (module name `machine-config`), is released on its own cadence rather than with the <Term name="product" /> release stream, and must be installed once on every cluster whose node configuration you want to manage.
+
+Until the plugin is installed on a cluster, none of the objects described in [Overview](./overview.mdx) exist on it: the `MachineConfig`, `MachineConfigPool`, and `MachineConfiguration` APIs are not registered, and the `master` and `worker` pools, the empty `00-master` and `00-worker` configurations, and the singleton `cluster` `MachineConfiguration` are absent. The Machine Configuration Operator creates them the first time it starts.
+
+## Prerequisites \{#prerequisites}
+
+- The target cluster runs on Immutable Infrastructure. Machine Configuration manages an immutable node operating system and is not supported on traditional operating systems.
+- The target cluster's nodes are `Ready`, and control plane nodes carry the `node-role.kubernetes.io/control-plane` label while worker nodes carry `node-role.kubernetes.io/worker`. The default pools select nodes by those labels.
+- Access to the `global` cluster with permission to create `ModuleInfo` resources.
+- Access to Customer Portal for downloading the plugin package.
+
+## Downloading \{#downloading}
+
+Download the **Alauda Container Platform Machine Configuration** package from Customer Portal.
+
+Install the same version on every cluster in one environment. For the published versions and what changed in each, see [Release Notes](./release-note.md).
+
+## Uploading \{#uploading}
+
+Upload the downloaded package to <Term name="product" textCase="capitalize" /> with `violet push`. For the detailed upload procedure, including how to obtain the `violet` tool, refer to <ExternalSiteLink name="acp" href="/extend/upload_package.html#upload-packages" children="Upload Packages" />.
+
+After the upload finishes, the platform needs a few minutes to synchronize the package before the version becomes selectable.
+
+## Installing \{#installing}
+
+Install Machine Configuration once per cluster — on the `global` cluster and on every workload cluster whose nodes you want to manage. The plugin declares no cluster affinity, so both cluster scopes are valid targets.
+
+For the general cluster-plugin procedure, including installation from the web console, refer to <ExternalSiteLink name="acp" href="/extend/cluster_plugin.html#cluster-plugin" children="Cluster Plugin" />.
+
+To install with YAML, first confirm on the `global` cluster that the plugin is published, and note the version:
+
+```bash
+kubectl get moduleplugins machine-config
+kubectl get moduleconfigs -l cpaas.io/module-name=machine-config
+```
+
+Then create a `ModuleInfo`. Apply it **on the `global` cluster** even when the target is a workload cluster:
+
+```yaml
+apiVersion: cluster.alauda.io/v1alpha1
+kind: ModuleInfo
+metadata:
+  labels:
+    cpaas.io/cluster-name: <target-cluster>
+    cpaas.io/module-name: machine-config
+    cpaas.io/module-type: plugin
+  name: <target-cluster>-temporary-name
+spec:
+  config: {}
+  version: <version>
+```
+
+- Machine Configuration takes no configuration parameters, so `spec.config` stays empty.
+- `spec.version` must match the `.spec.version` of the published `ModuleConfig`.
+- `metadata.name` is temporary; the platform renames the object to `<cluster-name>-<hash>` after creation.
+
+Repeat the installation for each remaining target cluster, changing `cpaas.io/cluster-name` and the temporary name.
+
+## Verifying the Installation \{#verifying}
+
+On the `global` cluster, wait for the plugin to report `Running` for each cluster it was installed on:
+
+```bash
+kubectl get moduleinfo -l cpaas.io/module-name=machine-config
+```
+
+Then, against the target cluster, confirm that both components are up. The controller runs on control plane nodes; the daemon runs on every node:
+
+```bash
+kubectl -n cpaas-system get deployment machine-config-controller
+kubectl -n cpaas-system get daemonset machine-config-daemon
+```
+
+Finally, confirm that the operator created its initial objects:
+
+```bash
+kubectl get machineconfigpool
+```
+
+```
+NAME     CONFIG                   UPDATED   UPDATING   DEGRADED   MACHINECOUNT   READYMACHINECOUNT   UPDATEDMACHINECOUNT   DEGRADEDMACHINECOUNT   AGE
+master   rendered-master-06c9c4   True      False      False      3              3                   3                     0                      3m
+worker   rendered-worker-f4b64    True      False      False      3              3                   3                     0                      3m
+```
+
+```bash
+kubectl get machineconfig
+```
+
+```
+NAME        IGNITIONVERSION   AGE
+00-master   3.4.0             3m
+00-worker   3.4.0             3m
+```
+
+```bash
+kubectl get machineconfiguration cluster
+```
+
+If the pools or the base configurations do not appear, check the controller logs — it creates all of them at startup:
+
+```bash
+kubectl -n cpaas-system logs deployment/machine-config-controller
+```
+
+## Upgrading \{#upgrading}
+
+Machine Configuration is released independently of <Term name="product" />, so it is upgraded as a standalone plugin instead of through a cluster upgrade. It appears in the Cluster Plugins list with the `Agnostic` life cycle.
+
+1. Download the new version from Customer Portal and upload it the same way as the initial installation.
+2. Wait for the platform to synchronize the new version. This takes approximately 10 to 15 minutes.
+3. Go to **Administrator** > **Marketplace** > **Cluster Plugins**, select the target cluster, and start the upgrade from the plugin list page or the plugin details page.
+4. Repeat for every cluster where the plugin is installed, so that all clusters in one environment run the same version.
+
+The plugin declares a low upgrade risk with no impact on running applications. The operator only creates its initial objects when they are absent, so an upgrade preserves the existing pools, the base configurations, and every `MachineConfig` you have created.
+
+For the general plugin upgrade procedure and the meaning of each life cycle, refer to <ExternalSiteLink name="acp" href="/extend/cluster_plugin.html#cluster-plugin" children="Cluster Plugin" />.
+
+## Next Steps \{#next-steps}
+
+- [Managing Node Configuration](./managing.mdx)
+- [Node Disruption Policies](./node_disruption.mdx)
