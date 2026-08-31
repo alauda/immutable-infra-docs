@@ -937,11 +937,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/release-notes/huawei_dcs.mdx": {
-      "sha256": "3938cc5ad832a616f5ec94864e6ce30f7e5c0515709def957dae68bb1d660bfd",
+      "sha256": "2d0cd19b0fb520e3cdc665827e9bb27df81b66551c8b3dfbf5ca270c0df97dea",
       "size": 14902,
       "description": "Version timeline for the ACP Huawei DCS Infrastructure Provider, now including v1.0.22: Self-built VIP, version-aware Kube-OVN/CoreDNS/kube-proxy repositories, upgrade-time component reconciliation, pod-log placement on the containerd data disk, CoreDNS pull-secret reconciliation, and dependency security maintenance, followed by the historical DCS release entries.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-21T10:17:50.316Z"
+      "updated_at": "2026-08-26T03:54:12Z"
     },
     "docs/en/release-notes/index.mdx": {
       "sha256": "90fd004db4829d1436da05de20c9229a571e6588b86c9e89c3172c112e2bc0b0",
