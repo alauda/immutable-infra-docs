@@ -27,8 +27,6 @@ For the current full capability list and installation steps, see [Huawei Cloud S
 
 - **Pod log placement on the containerd data disk** — When a node has a dedicated `/var/lib/containerd` data disk, generated bootstrap configuration links `/var/log/pods` to `/var/lib/containerd/pods` so pod logs use the containerd data disk.
 
-- **OCI provenance metadata for Helm charts** — Built HCS provider charts now include standard OCI `source`, `revision`, and `ref.name` annotations for artifact traceability.
-
 ### Fixed Issues
 
 - **Persistent disk duplicate creation** — The provider now reserves a persistent-disk slot in `HCSMachineConfigPool` status before submitting the EVS create request. Repeated reconciliation therefore waits for the in-flight volume instead of submitting duplicate `CreateVolume` requests.
