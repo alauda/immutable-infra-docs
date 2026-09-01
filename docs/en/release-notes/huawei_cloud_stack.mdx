@@ -17,6 +17,24 @@ Pre-release tags (`v1.0.0`, `v1.0`) are internal builds and are not covered here
 
 For the current full capability list and installation steps, see [Huawei Cloud Stack Provider Installation](../install/huawei-cloud-stack.mdx).
 
+## v1.0.4 (2026-09-01) \{#v1-0-4}
+
+### Enhancements
+
+- **ACP 4.4 system component repositories** — The provider selects the Kube-OVN chart repository from the target Kube-OVN version, the CoreDNS image repository from the ACP version suffix in the CoreDNS tag, and the kube-proxy image repository from the Kubernetes version. Kube-OVN `v4.4` and later uses `acp/chart-kube-ovn`; CoreDNS tags for ACP `v4.4` and later use `acp`; and Kubernetes `v1.35` and later uses `acp/k8s` for kube-proxy. Earlier targets keep their legacy repository paths.
+
+- **Upgrade-time system component reconciliation** — The provider configures the CoreDNS repository before control-plane creation, prevents the KubeadmControlPlane controller from overwriting provider-managed system components, and reconciles CoreDNS and kube-proxy after the relevant control-plane rollout. This keeps system component images and charts aligned with the selected ACP and Kubernetes versions.
+
+- **Pod log placement on the containerd data disk** — When a node has a dedicated `/var/lib/containerd` data disk, generated bootstrap configuration links `/var/log/pods` to `/var/lib/containerd/pods` so pod logs use the containerd data disk.
+
+- **OCI provenance metadata for Helm charts** — Built HCS provider charts now include standard OCI `source`, `revision`, and `ref.name` annotations for artifact traceability.
+
+### Fixed Issues
+
+- **Persistent disk duplicate creation** — The provider now reserves a persistent-disk slot in `HCSMachineConfigPool` status before submitting the EVS create request. Repeated reconciliation therefore waits for the in-flight volume instead of submitting duplicate `CreateVolume` requests.
+
+- **CoreDNS image pull secret reconciliation** — CoreDNS pull secrets are now evaluated from the CoreDNS Deployment, preserving existing credentials and adding the sentry registry credential only when it is missing.
+
 ## v1.0.3 (2026-06-27) \{#v1-0-3}
 
 ### New Features

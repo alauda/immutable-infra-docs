@@ -937,11 +937,11 @@
       "updated_at": "2026-08-26T00:00:00Z"
     },
     "docs/en/release-notes/huawei_cloud_stack.mdx": {
-      "sha256": "864587f5e28da84fa0cb61e6159ef7831e29171219506dd9143cba4dba8702ad",
-      "size": 6083,
-      "description": "Version timeline for the ACP Huawei Cloud Stack (HCS) Infrastructure Provider, from `v1.0.1` (2026-05-20, the first public release; internal `v1.0.0`/`v1.0` builds are excluded) through `v1.0.3` (2026-06-27), with New Features, Fixed Issues, and Upgrade Notes per tag: cluster lifecycle on HCS with automatic control plane ELB binding, availability-zone placement, `HCSMachineConfigPool` reserved hostname/IP slots, `HCSCluster.spec.controlPlaneHA` server-group anti-affinity, cloud-init-only node bootstrap, rate-limit-aware machine-creation backoff, and the HCS web UI requiring Fleet Essentials `1.0.2` or later.",
+      "sha256": "4d90900d88f137c6ce09aad085346361d65bbcdde07b6dbe43669bce0b112a09",
+      "size": 7995,
+      "description": "Version timeline for the ACP Huawei Cloud Stack (HCS) Infrastructure Provider, from `v1.0.1` (2026-05-20, the first public release; internal `v1.0.0`/`v1.0` builds are excluded) through `v1.0.4` (2026-09-01), with New Features, Enhancements, Fixed Issues, and Upgrade Notes per tag: ACP 4.4-aware system component repositories, upgrade-time CoreDNS and kube-proxy reconciliation, pod-log placement on the containerd data disk, Helm chart OCI provenance metadata, persistent-disk duplicate-create protection, CoreDNS pull-secret reconciliation, cluster lifecycle on HCS with automatic control-plane ELB binding, availability-zone placement, reserved hostname/IP slots, control-plane anti-affinity, cloud-init-only bootstrap, rate-limit-aware machine-creation backoff, and the HCS web UI requirement.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-09-01T06:25:02Z"
     },
     "docs/en/release-notes/huawei_dcs.mdx": {
       "sha256": "2d0cd19b0fb520e3cdc665827e9bb27df81b66551c8b3dfbf5ca270c0df97dea",
@@ -953,7 +953,7 @@
     "docs/en/release-notes/index.mdx": {
       "sha256": "90fd004db4829d1436da05de20c9229a571e6588b86c9e89c3172c112e2bc0b0",
       "size": 114,
-      "description": "Section index for the per-provider Release Notes pages, rendered as an `<Overview />` child listing: Huawei Cloud Stack (`v1.0.1`-`v1.0.3`), Huawei DCS (`v1.0.0`-`v1.0.22`), VMware vSphere (`v1.0.0`-`v1.0.16`), and the platform-wide Kubeadm Provider (`v1.0.0`-`v1.0.12`). Each linked page carries a version timeline with one section per release tag; the Bare Metal Provider has no published release notes on this site.",
+      "description": "Section index for the per-provider Release Notes pages, rendered as an `<Overview />` child listing: Huawei Cloud Stack (`v1.0.1`-`v1.0.4`), Huawei DCS (`v1.0.0`-`v1.0.22`), VMware vSphere (`v1.0.0`-`v1.0.16`), and the platform-wide Kubeadm Provider (`v1.0.0`-`v1.0.12`). Each linked page carries a version timeline with one section per release tag; the Bare Metal Provider has no published release notes on this site.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-21T10:44:21Z"
     },
