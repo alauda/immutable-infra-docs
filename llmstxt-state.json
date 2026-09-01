@@ -937,8 +937,8 @@
       "updated_at": "2026-08-26T00:00:00Z"
     },
     "docs/en/release-notes/huawei_cloud_stack.mdx": {
-      "sha256": "48765021e7cf29168f58696de86fde69b2e2bd448dcde4b5c9ba014ef205c9d5",
-      "size": 7817,
+      "sha256": "4aac91d05031413b1e0db5784778c32add1e1fe78a634f155253f2522e607904",
+      "size": 7829,
       "description": "Version timeline for the ACP Huawei Cloud Stack (HCS) Infrastructure Provider, from `v1.0.1` (2026-05-20, the first public release; internal `v1.0.0`/`v1.0` builds are excluded) through `v1.0.4` (2026-09-01), with New Features, Enhancements, Fixed Issues, and Upgrade Notes per tag: ACP 4.4-aware system component repositories, upgrade-time CoreDNS and kube-proxy reconciliation, pod-log placement on the containerd data disk, persistent-disk duplicate-create protection, CoreDNS pull-secret reconciliation, cluster lifecycle on HCS with automatic control-plane ELB binding, availability-zone placement, reserved hostname/IP slots, control-plane anti-affinity, cloud-init-only bootstrap, rate-limit-aware machine-creation backoff, and the HCS web UI requirement.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-09-01T06:25:02Z"

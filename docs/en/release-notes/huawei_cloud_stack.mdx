@@ -23,7 +23,7 @@ For the current full capability list and installation steps, see [Huawei Cloud S
 
 - **ACP 4.4 system component repositories** — The provider selects the Kube-OVN chart repository from the target Kube-OVN version, the CoreDNS image repository from the ACP version suffix in the CoreDNS tag, and the kube-proxy image repository from the Kubernetes version. Kube-OVN `v4.4` and later uses `acp/chart-kube-ovn`; CoreDNS tags for ACP `v4.4` and later use `acp`; and Kubernetes `v1.35` and later uses `acp/k8s` for kube-proxy. Earlier targets keep their legacy repository paths.
 
-- **Upgrade-time system component reconciliation** — The provider configures the CoreDNS repository before control-plane creation, prevents the KubeadmControlPlane controller from overwriting provider-managed system components, and reconciles CoreDNS and kube-proxy after the relevant control-plane rollout. This keeps system component images and charts aligned with the selected ACP and Kubernetes versions.
+- **Upgrade-time system component reconciliation** — The provider configures the CoreDNS repository before control-plane creation, sets missing KubeadmControlPlane skip annotations so provider-managed system components are not overwritten, and reconciles CoreDNS and kube-proxy after the relevant control-plane rollout. This keeps system component images and charts aligned with the selected ACP and Kubernetes versions.
 
 - **Pod log placement on the containerd data disk** — When a node has a dedicated `/var/lib/containerd` data disk, generated bootstrap configuration links `/var/log/pods` to `/var/lib/containerd/pods` so pod logs use the containerd data disk.
 
