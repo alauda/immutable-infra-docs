@@ -86,70 +86,60 @@ For `Domain user`, password lifecycle is governed by your LDAP/AD directory serv
 :::info
 **Domain user support: YAML only in this version**
 
-The web UI currently only creates `Interface interconnection user` credentials. To create a `Domain user` credential, use the YAML path below and set `.data.userType` to the base64 value of `domain` (for example, `ZG9tYWlu`) in the Secret. The base64 encoding step is shown in the `Example` block further down this page.
+The web UI currently only creates `Interface interconnection user` credentials. To create a `Domain user` credential, use the CLI path below and set `userType` to `domain`.
 :::
 
-### Using YAML
+### Using the CLI \{#using-yaml}
 
-Create a Secret resource to store DCS authentication information:
+Create a Secret in `cpaas-system` that stores the DCS authentication information. Write the values into a file with restricted permissions, create the Secret from that file, then remove the file:
 
-```yaml title="dcs-secret.yaml"
-apiVersion: v1
-data:
-  authUser: <base64-encoded-auth-user>
-  authKey: <base64-encoded-auth-key>
-  endpoint: <base64-encoded-endpoint>
-  userType: <base64-encoded-user-type>   # optional; "interconnect" (default) or "domain"
-kind: Secret
-metadata:
-  name: <auth-secret-name>
-  namespace: cpaas-system
-type: Opaque
+```bash
+umask 077
+cat > dcs-credential.env <<'EOF'
+authUser=<auth-user>
+authKey=<auth-key>
+endpoint=https://<dcs-api-host>:7443
+userType=interconnect
+EOF
+
+kubectl create secret generic <auth-secret-name> \
+  --namespace cpaas-system \
+  --from-env-file=dcs-credential.env
+
+rm -f dcs-credential.env
 ```
 
-:::tip
-**Skip the manual base64 step with `stringData`**
+Write the values in plain text — `kubectl` base64-encodes them when it creates the Secret, so there is no separate encoding step. Each line is `key=value`. Do not quote the values: `kubectl` takes quote characters literally, so `authKey="s3cret"` stores `"s3cret"` with the quotes included. A value may contain `=`; only the first `=` on a line separates the key from the value.
 
-The example above uses `data:`, which is Kubernetes' standard for Secrets — every value must already be base64-encoded. If you would rather author the Secret in plain text, replace the `data:` block with `stringData:` and provide the values directly. The API server transparently base64-encodes them at write time, so the final stored Secret is byte-identical to the `data:` form and the DCS Provider controller sees the same content either way.
+Omit the `userType` line for an interface interconnection user, which is the default. Set it to `domain` for a domain user — see [Credential User Types](#user-types).
 
-```yaml title="dcs-secret-stringdata.yaml"
-apiVersion: v1
+:::warning
+Do not create a credential Secret with `kubectl apply`. Client-side apply stores the manifest it applied — including the DCS password — in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret itself. `kubectl create` writes no such annotation. This applies whether the values were written as `stringData` or as base64 `data`; base64 is an encoding, not protection.
+:::
+
+To change a credential later, patch it rather than reapplying a manifest:
+
+```bash
+umask 077
+cat > dcs-credential-patch.yaml <<'EOF'
 stringData:
-  authUser: <plain-text-auth-user>
-  authKey: <plain-text-auth-key>
-  endpoint: <plain-text-endpoint>
-  userType: <plain-text-user-type>   # optional; "interconnect" (default) or "domain"
-kind: Secret
-metadata:
-  name: <auth-secret-name>
-  namespace: cpaas-system
-type: Opaque
-```
+  authKey: <new-auth-key>
+EOF
 
-`stringData:` is write-only — once the Secret is created, `kubectl get secret -o yaml` will only show the `data:` form, which is the canonical representation. The two forms are mutually exclusive at write time; do not set the same key in both blocks.
-:::
+kubectl patch secret <auth-secret-name> --namespace cpaas-system \
+  --type=merge --patch-file=dcs-credential-patch.yaml
+
+rm -f dcs-credential-patch.yaml
+```
 
 **Parameter Descriptions**:
 
-| Parameter | Description |
+| Key | Description |
 |-----------|-------------|
-| `.data.authUser` | DCS platform API user login name (base64-encoded) |
-| `.data.authKey` | DCS platform API user login password (base64-encoded) |
-| `.data.endpoint` | DCS platform API address with http or https protocol (base64-encoded). **Note**: The default API port for DCS platform is 7443 (not the common 8443). If your environment uses a custom port, confirm with your administrator. |
-| `.data.userType` | Optional. Base64 of the credential user type. Allowed plain-text values (before base64) are `interconnect` (default; used when the key is absent or empty) or `domain`. Matching is case-insensitive (`Domain`, `DOMAIN`, and `domain` all map to the same value). Any other value, including the legacy DCS magic numbers `1` and `2`, is rejected with a configuration error so a `domain` user is never silently authenticated as `interconnect`. |
-
-**Example**:
-
-```bash
-# Encode credentials
-echo -n "admin" | base64
-echo -n "your-password" | base64
-echo -n "https://dcs.example.com:7443" | base64
-echo -n "domain" | base64   # only when using a domain user; omit for interconnect (default)
-
-# Apply the Secret
-kubectl apply -f dcs-secret.yaml -n cpaas-system
-```
+| `authUser` | DCS platform API user login name. |
+| `authKey` | DCS platform API user login password. |
+| `endpoint` | DCS platform API address, including the `http` or `https` scheme. **Note**: The default API port for the DCS platform is 7443 (not the common 8443). If your environment uses a custom port, confirm with your administrator. |
+| `userType` | Optional. Allowed values are `interconnect` (default; used when the key is absent or empty) or `domain`. Matching is case-insensitive (`Domain`, `DOMAIN`, and `domain` all map to the same value). Any other value, including the legacy DCS magic numbers `1` and `2`, is rejected with a configuration error so a `domain` user is never silently authenticated as `interconnect`. |
 
 ### Credential User Types \{#user-types}
 
