@@ -136,7 +136,6 @@ Create a local working directory and store the manifests with the following layo
 ```text
 capv-cluster/
 ├── 00-namespace.yaml
-├── 01-vsphere-credentials-secret.yaml
 ├── 10-cluster.yaml
 ├── 15-vsphere-cpi-clusterresourceset.yaml
 ├── 16-vspheremachineconfigpool-control-plane.yaml
@@ -215,26 +214,33 @@ metadata:
   name: <namespace>
 ```
 
-Create the vCenter credential secret referenced by `VSphereCluster.spec.identityRef`.
-
-```yaml title="01-vsphere-credentials-secret.yaml"
-apiVersion: v1
-kind: Secret
-metadata:
-  name: <credentials_secret_name>
-  namespace: <namespace>
-type: Opaque
-stringData:
-  username: "<vsphere_username>"
-  password: "<vsphere_password>"
-```
-
-Apply both manifests:
+Apply the namespace:
 
 ```bash
 kubectl apply -f 00-namespace.yaml
-kubectl apply -f 01-vsphere-credentials-secret.yaml
 ```
+
+Create the vCenter credential secret referenced by `VSphereCluster.spec.identityRef`. Write the values into a file with restricted permissions, create the Secret from that file, then remove the file:
+
+```bash
+umask 077
+cat > vsphere-credentials.env <<'EOF'
+username=<vsphere_username>
+password=<vsphere_password>
+EOF
+
+kubectl create secret generic <credentials_secret_name> \
+  --namespace <namespace> \
+  --from-env-file=vsphere-credentials.env
+
+rm -f vsphere-credentials.env
+```
+
+Each line of the file is `key=value`. Do not quote the values — `kubectl` takes quote characters literally. A value may contain `=`; only the first `=` on a line separates the key from the value.
+
+<Directive type="warning" title="Do not create credential Secrets with kubectl apply">
+  Client-side apply stores the manifest it applied — including the vCenter password — in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret itself. `kubectl create` writes no such annotation. This applies whether the values were written as `stringData` or as base64 `data`; base64 is an encoding, not protection.
+</Directive>
 
 ### Create the `Cluster` and `VSphereCluster` objects
 
