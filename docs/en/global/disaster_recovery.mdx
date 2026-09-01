@@ -48,6 +48,17 @@ Before installing either cluster, complete both of the following network prepara
 
 The network policy must be bidirectional because the cluster roles are reversed after failover. Before failover, the effective service traffic is normally from standby to primary. After failover, the former primary becomes the new standby and must reach the new primary on the same ports. This requirement does not make etcd replication bidirectional: **<Term name="product" /> etcd Synchronizer** runs only on the current standby cluster and writes synchronized data to its local etcd.
 
+## Observability Placement \{#observability-placement}
+
+Disaster recovery replicates only the `global` cluster's etcd data, and namespaces such as `cpaas-system` are excluded from that replication. Monitoring and logging data is therefore never copied to the standby cluster. Plan observability placement before you install either cluster.
+
+- Each `global` cluster collects, stores, and queries its own metrics and logs. The primary and standby clusters never use each other's monitoring or log storage, so the standby cluster can observe itself immediately after a failover.
+- Workload cluster monitoring and logging must not be written to either `global` cluster. Aggregate workload cluster metrics and logs in a dedicated workload cluster that runs the VictoriaMetrics Center and the log storage, then point the collection agents of each workload cluster at that cluster.
+- If a network zone cannot reach that aggregation cluster, give the zone its own aggregation cluster instead of falling back to a `global` cluster.
+- Workload cluster observability data that is stored in a `global` cluster becomes unavailable when that cluster's role changes, because the data is not replicated and the other `global` cluster cannot serve it.
+
+For the synchronized and excluded scope, see <ExternalSiteLink name="acp" href="/install/global_dr.html" children="Global Cluster Disaster Recovery" />.
+
 ## Operational Scope
 
 After the primary and standby clusters are installed, operate DR as a separate lifecycle process. Keep the installation manifests aligned with the installation guide, then use an approved operations runbook for the following tasks:
@@ -69,12 +80,14 @@ This section is the Bare Metal DR procedure for ACP 4.4.0 and later. It covers a
 
 Bare Metal keeps physical hosts and their plan Secrets in MachineInventory objects. DR therefore separates Global hosts from workload hosts.
 
-### Endpoint and Identity
+### Endpoint and Identity \{#endpoint-and-identity}
 
 | Host | Endpoint | Identity | Sync |
 | --- | --- | --- | --- |
 | Local `Cluster/global` host | `https://<local-control-plane-vip>:6443` | `baremetal-global-system-agent` | Local only |
 | Non-`global` workload host | `https://<platform-domain>/kubernetes/global` | `baremetal-system-agent` | Primary to standby |
+
+The Global row is specific to DR and to the post-handoff Global registration described below. The workload row is the standard Bare Metal registration path; for the stage-by-stage network requirements of the workload-cluster path — including DNS, NTP, the registry, and cluster-internal traffic — see [Network Connectivity](../create-cluster/bare-metal.mdx#network-connectivity).
 
 Set `elemental.systemAgent.splitAuthEnabled: true` on both Bare Metal provider releases. The active Global uses `sharedAuthReadOnly: false`; the standby uses `sharedAuthReadOnly: true` while it receives data. Keep the standard ServiceAccount, Secret, Role, and RoleBinding names. Never grant namespace-wide Secret access.
 

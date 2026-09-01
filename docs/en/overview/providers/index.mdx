@@ -17,12 +17,12 @@ Immutable Infrastructure supports multiple infrastructure platforms through plug
 
 ## Supported Providers
 
-| Provider | Description | Status |
-|----------|-------------|--------|
-| [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution | ✅ Available |
-| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack | ✅ Available |
-| [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform | ✅ Available |
-| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization | ✅ Available (YAML only) |
+| Provider | Description |
+|----------|-------------|
+| [Huawei DCS](./huawei-dcs.mdx) | Huawei Datacenter Virtualization Solution |
+| [Huawei Cloud Stack](./huawei-cloud-stack.mdx) | Huawei Cloud Stack |
+| [VMware vSphere](./vmware-vsphere.mdx) | VMware vSphere virtualization platform |
+| [Bare Metal](./bare-metal.mdx) | Bare-metal servers without virtualization |
 
 ## Control Plane Endpoint
 
@@ -30,7 +30,7 @@ Each cluster's Kubernetes API server (`kube-apiserver`, port `6443`) is reached 
 
 | Provider | Control plane endpoint | Mechanism | What you prepare |
 |----------|------------------------|-----------|------------------|
-| Huawei DCS | You provide it | An external load balancer that fronts the control plane nodes, or a single control plane node reached directly | Provision the load balancer before cluster creation and supply its address and port in `DCSCluster.spec.controlPlaneLoadBalancer` |
+| Huawei DCS | You provide it, or the provider manages a Self-built VIP | An external load balancer, provider-managed `type: internal` Self-built VIP on DCS Provider `v1.0.22+` with ACP `v4.4+`, or a single control plane node reached directly | For external mode, provision the load balancer before cluster creation. For internal mode, reserve an IPv4 VIP in the control-plane Layer 2 network and use the DCS YAML workflow |
 | Huawei Cloud Stack | The provider creates it | An HCS Elastic Load Balance (ELB) instance created automatically during cluster reconciliation | Plan the ELB inputs — VIP subnet, VIP address, bandwidth, and public-IP preference — in `HCSCluster.spec.controlPlaneLoadBalancer` |
 | VMware vSphere | You provide it | An external load balancer that fronts the control plane nodes | Provision the load balancer and allocate the control plane VIP before cluster creation; the documented flow does not deploy an in-cluster VIP component |
 | Bare Metal | The provider creates it (or you provide it) | `BaremetalCluster.spec.controlPlaneLoadBalancer.type=Internal` deploys the `alive` chart (`keepalived` + IPVS + `kube-lock` Lease arbitration) onto the control-plane nodes; `type=External` delegates the LB to an existing external appliance | Choose a free VIP, port (typically `6443`), and a `vrid` unique in the control-plane Layer-2 broadcast domain |
@@ -53,7 +53,7 @@ Fleet Essentials works with Infrastructure Providers to deliver platform-specifi
 **Provider Extensions**:
 - **DCS Provider**: Alauda Container Platform DCS Infrastructure Provider `1.0.13` and later adds DCS-specific UI pages and workflows on Huawei DCS. Pool-managed persistent-disk scenarios require DCS provider `v1.0.16` or later, and in `v1.0.16` the `DCSIpHostnamePool.spec.pool[].persistentDisk` configuration remains YAML-only
 - **HCS Provider**: Provides YAML-based cluster lifecycle management on Huawei Cloud Stack. HCS provider `v1.0.1` and later supports pool-managed persistent disks through `HCSMachineConfigPool.spec.configs[].persistentDisks[]`
-- **vSphere Provider**: The VMware vSphere infrastructure provider is generally available; its Fleet Essentials UI extension for cluster creation and management is coming soon
+- **vSphere Provider**: Provides YAML-based cluster lifecycle management on VMware vSphere. There is no Fleet Essentials UI extension for vSphere cluster creation and management
 - **Bare Metal Provider**: Provides YAML-only cluster lifecycle management on physical servers. There is no Fleet Essentials UI for bare-metal clusters; every workflow is driven by `kubectl apply` against `BaremetalCluster`, `BaremetalMachineTemplate`, `MachineInventoryPool`, and the upstream CAPI resources
 
 ## Provider Architecture

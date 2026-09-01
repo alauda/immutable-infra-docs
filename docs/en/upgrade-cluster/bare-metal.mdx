@@ -86,6 +86,7 @@ Before you start, ensure all of the following prerequisites are met:
 - The target **kube-ovn (chart)** version has been read from the matching ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
 - `BaremetalCluster.spec.networkType` is `kube-ovn`; the provider skips Kube-OVN reconciliation for any other value.
 - The platform registry is reachable from every host in the cluster.
+- Every host the rollout may reprovision has at least 4 GiB free on its `state` partition, and carries no partial snapshot from an earlier failed upgrade (see [Check COS_STATE Free Space](#check-cos-state-free-space)).
 - Both `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0` are set — bare-metal does not over-provision physical hosts.
 - The relevant pools have enough capacity to replace one node at a time without falling below the desired replica count.
 - Every inventory with a non-empty storage declaration reports `StoragePrepared=True`, and every currently allocated inventory reports `StorageActive=True`. Record each `BaremetalMachine.status.machineInventoryRef` and the managed filesystem UUIDs before the rollout so that you can detect selection of a different inventory instead of assuming data moved with the Machine.
@@ -93,6 +94,48 @@ Before you start, ensure all of the following prerequisites are met:
 :::info
 The default local archive under `/var/cpaas/backup` can be used for recovery; S3-compatible storage is not required. However, bare-metal replacement can make the original node-local copy unavailable, and the replacement `Machine` is not guaranteed to use the same `MachineInventory`. If your recovery design cannot guarantee access to the local archive after node replacement or failure, keep an off-node copy in S3-compatible storage or another secure location outside the node before starting Phase 2.
 :::
+
+## Check COS_STATE Free Space \{#check-cos-state-free-space}
+
+Every reprovision creates a new snapshot on `COS_STATE` and writes the complete target system into it. Because the upgrade targets a *different* image, the partition has to hold two unrelated systems of roughly 3.5 GiB at the same time. A host that is short on space fails part-way through with `no space left on device`, and the failed attempt leaves its partial snapshot behind — so each automatic retry starts with *less* free space than the one before it. Three retries on an 8 GiB partition is enough to fill it completely.
+
+Check this before starting the rollout. Check every host in the affected pools, not only the ones you expect to be replaced: the inventory released by a `clean` plan is not guaranteed to be re-picked, so any `Available` inventory can receive the new image.
+
+On each host:
+
+```bash
+# Free space on COS_STATE. Use btrfs, not df — df does not account for snapshot extents.
+btrfs filesystem usage -h /
+
+# Retained snapshots
+snapper --no-dbus list
+```
+
+`Free (estimated)` must be at least **4 GiB** — the target system is roughly 3.5 GiB, plus headroom for btrfs metadata written during the copy. If it is lower, free space before starting the rollout.
+
+### Remove partial snapshots left by a failed upgrade \{#remove-partial-snapshots}
+
+Elemental marks a snapshot `update-in-progress=yes` while it writes into it, and clears the flag only when the upgrade completes. A snapshot that still carries the flag, and is neither the default nor the running one, is the residue of a failed attempt and is safe to delete.
+
+List the snapshots with the three columns that decide this:
+
+```bash
+snapper --no-dbus --csvout list --columns number,default,active,userdata
+```
+
+Delete a snapshot only when all three conditions hold — `default` is `no`, `active` is `no`, and the userdata column contains `update-in-progress=yes`:
+
+```bash
+snapper --no-dbus delete --sync <number>
+```
+
+:::warning
+Never delete a snapshot whose `default` or `active` column is `yes`. Those are the snapshot the host will boot next and the one it is running now; deleting either leaves the host unable to boot.
+:::
+
+Re-run `btrfs filesystem usage -h /` afterwards to confirm the space was actually reclaimed. On a partition that is already 100% full, `snapper delete` can itself fail for lack of metadata space — this is the same condition that let the partial snapshots accumulate in the first place. If deletion fails, treat the host as needing a reinstall rather than retrying the rollout against it.
+
+If the host still has less than 4 GiB free after every partial snapshot is gone, the partition itself is too small. Hosts installed before [COS_STATE sizing](../create-cluster/bare-metal.mdx#size-cos-state) was applied carry an 8 GiB `COS_STATE`, and partition sizes are fixed at install time — growing it requires a reinstall. Plan that separately; do not start the rollout against such a host and expect it to succeed.
 
 ## Update the Image Catalog \{#update-the-image-catalog}
 
@@ -265,7 +308,7 @@ For an inventory with managed volumes, also verify `status.storage.phase=Active`
 | Inventory does not become allocatable after clean | Check `MachineInventory.status.storage` and `status.observedStorage`. Managed volumes must be confirmed inactive and Prepared from a fresh host observation before the inventory can return to the allocation set. |
 | Replacement Machine waits on `StorageReady` | Verify that the selected inventory is the intended one, required device IDs and filesystem UUIDs still match, required mount units are active, and the host produced a fresh post-reboot observation. |
 | Host reboots into a state that never joins the cluster | `MachineInventory.status.plan.state` (`Failed` is terminal); inspect the host's serial console for `elemental upgrade` errors. Verify the platform registry is reachable from the host. |
-| `elemental upgrade` fails with `no space left on device` | The `state` partition is too small — an 8 GiB `COS_STATE` cannot hold the running system and an upgrade to a different image at the same time. Each failed attempt also leaves a partial snapshot under `/.snapshots/`, so free space keeps shrinking. Recover by deleting the partial snapshot directories that are **not** listed by `btrfs subvolume list /` and are **not** the running snapshot (`findmnt -no FSROOT /`), then let the plan retry. Hosts installed before [COS_STATE sizing](../create-cluster/bare-metal.mdx#size-cos-state) was applied need a reinstall to grow the partition. |
+| `elemental upgrade` fails with `no space left on device` | The `state` partition is too small — an 8 GiB `COS_STATE` cannot hold the running system and an upgrade to a different image at the same time. Each failed attempt also leaves a partial snapshot behind, so free space keeps shrinking. Recover by removing them as described in [Remove partial snapshots left by a failed upgrade](#remove-partial-snapshots), then let the plan retry. Hosts installed before [COS_STATE sizing](../create-cluster/bare-metal.mdx#size-cos-state) was applied need a reinstall to grow the partition. |
 | New control-plane node fails `kubeadm join` | Confirm the VIP is still reachable; `alive` may have lost the lock. Check `kubectl -n kube-system get lease`, `ipvsadm -Ln`, `keepalived` logs from the static pod. |
 | Worker rollout stalls with `MachineDeployment.spec.strategy.rollingUpdate.maxSurge > 0` set | Bare-metal pools cannot honour over-provisioning. Set `maxSurge=0` and bump `maxUnavailable` to budget more parallel replacements within the pool. |
 | Pool capacity exhausted mid-rollout | `MachineInventoryPool.status.available=0` and `allocated` still includes the not-yet-replaced nodes. Add another `MachineInventory` to the pool to free the queue, or wait for in-flight `Preparing` nodes to drain. |
