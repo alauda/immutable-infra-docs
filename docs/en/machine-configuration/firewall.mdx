@@ -52,7 +52,7 @@ The following example opens TCP ports `9141` (ZooKeeper) and `9308` (cpaas-kafka
                WantedBy=multi-user.target
    ```
 
-2. Configure a node disruption policy so that changes to this unit restart the unit—re-running `firewall-cmd`—instead of rebooting the node. Add the `open-app-ports.service` entry to the `nodeDisruptionPolicy.units` list of the `cluster` `MachineConfiguration` object in the `cpaas-system` namespace, and confirm it is reflected in `status.nodeDisruptionPolicyStatus` **before** applying the `MachineConfig`:
+2. Configure a node disruption policy so that changes to this unit restart the unit—re-running `firewall-cmd`—instead of rebooting the node. Add the `open-app-ports.service` entry to the `nodeDisruptionPolicy.units` list of the cluster-scoped `MachineConfiguration` singleton named `cluster`, and confirm it is reflected in `status.nodeDisruptionPolicyStatus` **before** applying the `MachineConfig`:
 
    ```yaml
    apiVersion: machineconfiguration.alauda.io/v1alpha1

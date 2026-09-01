@@ -946,7 +946,7 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 - Add `Cluster.metadata.labels.is-global: "true"` and `Cluster.metadata.labels.cluster-type: DCS`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: ignition` for Alauda OS.
-- With DCS Provider `v1.0.21`, use an external LoadBalancer and set `DCSCluster.spec.controlPlaneLoadBalancer.type: external`. Validate the listener, backends, health check, and reachability in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). Do not set `type: internal` for this provider release.
+- With DCS Provider `v1.0.22`, use an external LoadBalancer and set `DCSCluster.spec.controlPlaneLoadBalancer.type: external`, or use `type: internal` Self-built VIP when paired with ACP `v4.4+`. For internal mode, reserve an IPv4 VIP in the control-plane Layer 2 network and use the YAML workflow in [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx#self-built-vip). For external mode, validate the listener, backends, health check, and reachability in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
 - Keep the `KubeadmControlPlane.spec.kubeadmConfigSpec.users` entry with a non-empty `sshAuthorizedKeys` list (the `boot` user). The DCS `ignition` format rejects an empty SSH key list, so this field is required even for a `global` cluster you do not plan to access over SSH. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders) for what to supply when no interactive key is needed.
 - Keep the non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries. The file contents (the PodSecurity admission config, the kubelet patch, and the audit policy), together with the full `clusterConfiguration`, `preKubeadmCommands`, `postKubeadmCommands`, and the init and join node-registration patches, are identical to a workload cluster. Copy them from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, or reference the `dcs-kubernetes-<major.minor>-files` Secret documented there. The wiring fragment below shows only the `global`-specific fields layered on top of that base.
 - For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef` and do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
@@ -1257,6 +1257,7 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
 - For a normal non-DR deployment, `BaremetalCluster.spec.encryptionProviderConfigRef` can be omitted. For DR, set it as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment); do not deliver `/etc/kubernetes/encryption-provider.conf` by adding it to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
 - For Bare Metal DR, add `baremetal.cluster.io/system-agent-auth-scope: global` to the `MachineRegistration` used for the bootstrap `global` hosts. Do not set `baremetal.cluster.io/system-agent-server-url` during bootstrap. The bootstrap ISO must register through the bootstrap host; the handoff job later moves the `global` machines to the local direct API endpoint.
 - If a `global` VM or physical host does not have DHCP during the live-ISO boot, configure the NIC manually from the host console before waiting for `MachineInventory` registration. Use the same NetworkManager procedure described in [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx#network-connectivity), replacing the example address, gateway, DNS, and connection name with the values for that host.
+- Set the clock from firmware on every `global` host before the live-ISO boot, and keep the spread across the hosts within the platform's 10-second requirement. See [Host Time Synchronization](../create-cluster/bare-metal.mdx#host-time-synchronization).
 - Do not depend on OS hostname side effects. The bare-metal provider normalizes kubeadm node names and provider IDs from the CAPI and inventory objects.
 - The `SeedImage` created in the bootstrap cluster is a bootstrap artifact. After handoff, create any new `MachineRegistration` or `SeedImage` on the active `global` cluster.
 
@@ -1672,7 +1673,7 @@ Create the provider-specific installer configuration JSON file on the current bo
 <Tabs>
   <Tab label="Huawei DCS">
 
-The DCS installer request includes the external HA VIP because DCS uses a third-party control plane VIP.
+The DCS installer request includes the `global` control-plane HA VIP. With an external LoadBalancer, this is the externally provisioned VIP. With DCS Provider `v1.0.22+` and ACP `v4.4+` `Self-built VIP`, use the reserved VIP that the provider-managed `alive` runtime owns.
 
 ```shell
 mkdir -p /root/yamls
@@ -2905,10 +2906,10 @@ The manifest references these but does not create them. Prepare them first, in o
 1. **DCS API access** — the endpoint (`https://<host>:7443`), an `administrator` user and password, and the site ID. These fill the `Secret` and `DCSCluster.spec.site`. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials).
 2. **A VM template** — upload the Alauda OS image and create a VM template from it; record its name for `vmTemplateName`. Use a `4.2.1+` template so the `/var/cpaas` persistent disk can be detached and reattached during node replacement. See [Machine Templates](../infrastructure/huawei-dcs.mdx#machine-templates).
 3. **Compute cluster, distributed virtual switch, port group, and datastore** — pick the target DCS compute cluster, a distributed virtual switch, a port group, and a datastore with enough free capacity. They fill `resource`, `dvSwitchName`, `portGroupName`, and `datastoreName`. See [DCS Platform Capacity and Placement](../infrastructure/huawei-dcs.mdx#capacity-and-placement).
-4. **IPs and the API load balancer** — three free node IPs (with gateway and DNS) for the control plane, and an external LoadBalancer that follows [the control plane endpoint contract](../how-to/control-plane-endpoint.mdx) and forwards TCP `6443` to the three nodes. DCS Provider `v1.0.21` does not create this load balancer. These values fill the `DCSIpHostnamePool` and `DCSCluster.spec.controlPlaneLoadBalancer` / `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
+4. **IPs and the API endpoint** — prepare three free node IPs (with gateway and DNS) for the control plane; these fill the `DCSIpHostnamePool`. Then choose either an external LoadBalancer that follows [the control plane endpoint contract](../how-to/control-plane-endpoint.mdx) and forwards TCP `6443` to the three nodes, or a separate IPv4 VIP in the same Layer 2 network for DCS Provider `v1.0.22+` Self-built VIP with ACP `v4.4+`; the selected endpoint host and port fill `DCSCluster.spec.controlPlaneLoadBalancer` and `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
 5. **Versions and IDs to read** — `${K8S_VERSION}` plus the CoreDNS and etcd image tags from the `cpaas.io/dcs-vm-template` ConfigMap (see [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders)); the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx); and the registry address, VIP, and CIDR values you exported in Step 1.
 
-With those prepared, apply the manifest below.
+With those prepared, apply the manifest below. The worked example uses an external LoadBalancer so it remains valid for every supported DCS provider version. If you select DCS Provider `v1.0.22+` with ACP `v4.4+` `Self-built VIP`, apply the internal-mode replacement shown after the manifest before creating the `global` cluster.
 
 ```yaml
 ---
@@ -3088,6 +3089,21 @@ spec:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
     kind: DCSCluster
     name: global
+```
+
+#### Internal Self-built VIP variant
+
+The worked example above uses `type: external`. Before applying it, DCS Provider `v1.0.22+` with ACP `v4.4+` can replace resource 5's endpoint fields with this internal configuration. The VIP must be reserved in the control-plane Layer 2 network, and the `vrid` must be unique in that network:
+
+```yaml
+spec:
+  controlPlaneLoadBalancer:
+    host: "${CONTROL_PLANE_VIP}"
+    port: 6443
+    type: internal
+    vrid: <unique-vrid-1-255>
+    # interface: eth0  # optional; omit for provider/alive auto-detection
+  controlPlaneEndpoint: {host: "${CONTROL_PLANE_VIP}", port: 6443}
 ```
 
 ### Values to Replace \{#dcs-worked-example-values}

@@ -5,3 +5,4 @@ kubelet
 blkid
 COS
 VD
+dbus

@@ -8,11 +8,12 @@ queries:
   - deploy kubernetes on huawei dcs
   - dcs cluster creation guide
   - workload cluster naming cluster-name not global
+  - dcs self-built vip control plane endpoint
 ---
 
 # Creating Clusters on Huawei DCS
 
-This document provides instructions for creating Kubernetes clusters on the Huawei DCS platform. YAML-based cluster creation is available through manifests. If Fleet Essentials is installed and Alauda Container Platform DCS Infrastructure Provider is `1.0.13` or later, you can also create clusters through the web UI. If the workflow relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the `persistentDisk` declaration on `DCSIpHostnamePool` is available through YAML only and is not exposed in the web UI.
+This document provides instructions for creating Kubernetes clusters on the Huawei DCS platform. YAML-based cluster creation is available through manifests. If Fleet Essentials is installed and Alauda Container Platform DCS Infrastructure Provider is `1.0.13` or later, you can also create clusters through the web UI. If the workflow relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the `persistentDisk` declaration on `DCSIpHostnamePool` is available through YAML only and is not exposed in the web UI. DCS Provider `v1.0.22` or later paired with ACP `v4.4` or later also supports `Self-built VIP` through the YAML workflow.
 
 Before choosing a VM template and provider package, review [Alauda OS and Provider Compatibility](../overview/providers/huawei-dcs.mdx#alauda-os-and-provider-compatibility).
 
@@ -70,14 +71,15 @@ If global cluster nodes use a multi-NIC layout (for example, one NIC on the ACP 
 
 ### 5. LoadBalancer Configuration
 
-Configure a stable Kubernetes API endpoint before creating the cluster. For DCS Provider `v1.0.21`, highly available clusters require an external LoadBalancer that you provision and maintain outside the cluster.
+Configure a stable Kubernetes API endpoint before creating the cluster. The endpoint distributes or directs API server traffic for control plane access.
 
 | Mode | Version | Who manages it | When to use |
 |---|---|---|---|
-| External LoadBalancer | All documented DCS provider versions, including `v1.0.21` | You provision and maintain the listener and control-plane backends before cluster creation. | Use this for production and other highly available clusters. |
+| External LoadBalancer | All supported DCS provider versions | You provision and maintain the load balancer before cluster creation. | Use this when your environment already has a hardware or software load balancer. |
+| `Self-built VIP` | DCS Provider `v1.0.22+` with ACP `v4.4+` | The DCS provider creates and reconciles the provider-managed `alive` `ModuleInfo`. | Use this when you need a highly available control plane endpoint but no external load balancer is available. |
 | Single control plane direct endpoint | All supported versions | No load balancer is created. The API endpoint is the single control plane node IP. | Use this only for development or PoC clusters with one control plane replica. |
 
-Follow [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx) for the external LoadBalancer contract. DCS Provider `v1.0.21` does not support `type: internal`; do not use ACP version alone to infer provider capability. For a single-control-plane deployment that has no load balancer in front of the API server, see [Single-Control-Plane (No External LB) Layout](#single-control-plane-layout).
+For external LoadBalancer requirements, follow [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). For a single-control-plane deployment that has no load balancer in front of the API server, see [Single-Control-Plane (No External LB) Layout](#single-control-plane-layout).
 
 ### 6. Workload Cluster Image Registry
 
@@ -137,13 +139,13 @@ Step 5: Review
 | Display Name | text | No | Custom description for easy identification |
 | Distribution Version | readonly | - | ACP version (matches the `global` cluster) |
 | Kubernetes Version | readonly | - | Determined by Distribution Version |
-| Cluster API Address | text | Yes | Format: `https://<load-balancer-address>:6443`. Provision and validate the external LoadBalancer before cluster creation. |
+| Cluster API Address | text | Yes | Format: `https://<load-balancer-address>:6443`. For `Self-built VIP`, reserve the VIP and use the YAML path in this document. |
 
 **Prerequisites Check**:
 
 Before creating a cluster, ensure:
 - DCS VM Templates exist in the DCS platform, and the Alauda OS version matches the Kubernetes version
-- The Kubernetes API endpoint and external LoadBalancer are ready before cluster creation.
+- The Kubernetes API endpoint is ready. For an external LoadBalancer, create it before cluster creation. For `Self-built VIP`, reserve the VIP and use the YAML path.
 
 **Version Constraint**: Only the latest Kubernetes version supported by the platform can be created.
 
@@ -268,6 +270,7 @@ The example manifests below use `<placeholder>` syntax for values that are envir
 | `<auth-secret-name>` | The Secret you authored in [Infrastructure → Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). | `kubectl -n cpaas-system get secret <name>` |
 | `<cluster-name>` | Operator-chosen; must satisfy DNS-1123 and **must not** be `global` (that name is reserved for the `global` cluster). Reused across `Cluster`, `DCSCluster`, and the `cluster.x-k8s.io/cluster-name` label on every `Machine`. The `KubeadmControlPlane` uses the prefixed form `<cluster-name>-kcp`. See [Workload Cluster Naming](#workload-cluster-naming) for the full convention. | n/a |
 | `<load-balancer-ip-or-domain-name>` | Operator-supplied endpoint clients use to reach the cluster API server. For `type: external`, this can be an external load balancer IP address or domain name. For single-control-plane clusters with no external LB, this is the IP of the sole control plane node (see [Single-control-plane layout](#single-control-plane-layout)). | n/a |
+| `<self-built-vip>` | Operator-supplied IPv4 VIP for `Self-built VIP`. Reserve this address before cluster creation. It must not be assigned to a node primary IP or `DCSIpHostnamePool.spec.pool[].additionNic[].ip`. | n/a |
 | `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the `global` cluster's CIDRs, or any other CAPI cluster's CIDRs you intend to interconnect. Leaving them empty falls back to the kube-ovn defaults shipped with the `global` cluster, which is **not recommended** for production: explicit CIDRs avoid silent collisions when multiple workload clusters live on the same `global` cluster. | n/a |
 
 ### Magic-Token Placeholders \{#magic-tokens}
@@ -283,16 +286,17 @@ Replacing or quoting these tokens manually breaks the join flow and produces nod
 
 ### Network Planning and Load Balancer
 
-Before creating control plane resources, plan the network architecture and external control plane endpoint.
+Before creating control plane resources, plan the network architecture and choose the control plane endpoint mode.
 
 **Requirements**:
 - **Network segmentation**: Plan IP address ranges for control plane nodes
 - **Additional NICs**: If nodes require storage, management, or isolated application networks, plan `DCSIpHostnamePool.spec.pool[].additionNic[]` values for each IP slot, including DVS and Port Group names
-- **API endpoint mode**: Use an external LoadBalancer for a highly available DCS cluster
-- **API server address**: Prepare a stable load balancer VIP or FQDN for the Kubernetes API server
+- **API endpoint mode**: Use an external LoadBalancer, or use `Self-built VIP` with DCS Provider `v1.0.22+` and ACP `v4.4+`
+- **API server address**: Prepare a stable VIP or load balancer address for the Kubernetes API server
 - **Connectivity**: Ensure network connectivity between all components
 
-Validate the Layer 4 listener, TCP `6443` backends, HTTPS `/healthz` checks, backend ownership, and endpoint reachability in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
+For `Self-built VIP`, validate that the target DCS port group allows VIP ownership, GARP or ARP updates, and VRRP traffic between the control plane VMs. The VIP must be in the same Layer 2 network as the NIC that will hold it.
+For an external LoadBalancer, validate the Layer 4 listener, TCP `6443` backends, HTTPS `/healthz` checks, backend ownership, and endpoint reachability in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
 
 ### Configure KubeadmControlPlane
 
@@ -398,7 +402,7 @@ For component versions (e.g., `<dns-image-tag>`, `<etcd-image-tag>`), refer to [
 
 DCSCluster is the infrastructure cluster declaration that references the load balancer and DCS platform credentials.
 
-Use `type: external` for the external LoadBalancer. This is the supported mode for DCS Provider `v1.0.21` and all earlier documented releases.
+Use `type: external` when you manage the load balancer outside the cluster. This mode is supported by all documented DCS provider versions.
 
 ```yaml title="dcscluster.yaml"
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -423,14 +427,40 @@ spec:
   site: <site>
 ```
 
+With DCS Provider `v1.0.22+` and ACP `v4.4+`, use `type: internal` to enable `Self-built VIP`:
+
+```yaml title="dcscluster-self-built-vip.yaml"
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DCSCluster
+metadata:
+  name: "<cluster-name>"
+  namespace: cpaas-system
+spec:
+  controlPlaneLoadBalancer:
+    host: <self-built-vip>
+    port: 6443
+    type: internal
+    vrid: 42
+    interface: eth0
+  credentialSecretRef:
+    name: <auth-secret-name>
+  controlPlaneEndpoint:
+    host: <self-built-vip>
+    port: 6443
+  networkType: kube-ovn
+  site: <site>
+```
+
 **Parameter Descriptions**:
 
 | Parameter | Type | Description | Required |
 |-----------|------|-------------|----------|
 | `.spec.controlPlaneLoadBalancer` | object | Control plane API server exposure method | Yes |
-| `.spec.controlPlaneLoadBalancer.type` | string | Set to `external`. DCS Provider `v1.0.21` does not support `internal`. | Yes |
-| `.spec.controlPlaneLoadBalancer.host` | string | External load balancer IP address or domain name. | Yes |
+| `.spec.controlPlaneLoadBalancer.type` | string | `external` uses an operator-managed load balancer. `internal` enables `Self-built VIP` and requires DCS Provider `v1.0.22+` with ACP `v4.4+`. | Yes |
+| `.spec.controlPlaneLoadBalancer.host` | string | For `external`, the external load balancer IP address or domain name. For `internal`, the reserved IPv4 VIP. | Yes |
 | `.spec.controlPlaneLoadBalancer.port` | int | Kubernetes API server port. The valid range is `1-65535`. | Yes |
+| `.spec.controlPlaneLoadBalancer.vrid` | int | Keepalived VRID used by `Self-built VIP`. Set a value from `1` to `255` when `type` is `internal`. This field is ignored when `type` is `external`. | Conditional |
+| `.spec.controlPlaneLoadBalancer.interface` | string | Optional NIC name used by the bootstrap VIP and `alive`. Leave it empty to detect the NIC by node IP. Set it explicitly for multi-NIC clusters when the VIP must be held by a specific interface. | No |
 | `.spec.credentialSecretRef.name` | string | DCS authentication Secret name. The Secret defines whether DCS Provider authenticates as an interface interconnection user (default) or a domain user — see [Credential User Types](../infrastructure/huawei-dcs.mdx#user-types). | Yes |
 | `.spec.controlPlaneEndpoint` | object | Kubernetes API endpoint that CAPI and kubeadm use. Set it to the same host and port as `controlPlaneLoadBalancer`. | Yes |
 | `.spec.controlPlaneHA.enabled` | bool | Enables a provider-managed DCS DRS mutual-exclusion rule for control-plane VMs. Set it to `true` only when the target DCS compute cluster has DRS enabled and has enough hosts and capacity for cross-host placement. | No |
@@ -438,6 +468,45 @@ spec:
 | `.spec.site` | string | DCS platform site ID | Yes |
 
 `controlPlaneHA` is optional. When enabled, the provider creates and maintains one DRS `ruleType=2` mutual-exclusion rule for the current control-plane VMs in this workload cluster. DCS performs the actual placement and runtime migration. The provider does not run DRS or apply DRS recommendations. If the rule is maintained but placement has not converged, wait for the DCS scheduling mechanism or trigger/apply DRS from the DCS platform side. For infrastructure prerequisites, see [Cross-Host High Availability for Control Plane](../infrastructure/huawei-dcs.mdx#cross-host-ha).
+
+#### Self-built VIP behavior and limitations \{#self-built-vip\}
+
+`Self-built VIP` requires DCS Provider `v1.0.22` or later and ACP `v4.4` or later. Plan this mode before cluster creation.
+
+**Recommendation**: Use `type: internal` only for new highly available clusters with three control plane replicas. For existing clusters that use `type: external`, keep the external load balancer unless you have a tested migration plan. `controlPlaneHA.enabled` is an independent DRS placement feature and is not required for Self-built VIP.
+
+The DCS provider handles `Self-built VIP` in two phases:
+
+1. During bootstrap, the provider injects `dcs-bootstrap-vip.service` only on the first `kubeadm init` control plane node. This service adds `<self-built-vip>/32` before `kubeadm` starts.
+2. After the control plane nodes register, the provider creates or updates the provider-managed `alive` `ModuleInfo`. The platform plugin flow renders the workload `AppRelease`, and `alive` installs the VIP runtime on the control plane nodes.
+
+Important constraints:
+
+- `type: internal` requires an IPv4 VIP. Domain names are not supported for `Self-built VIP`.
+- The VIP must be excluded from `DCSIpHostnamePool` primary IPs and additional NIC IPs.
+- The target DCS port group must allow VIP ownership, GARP or ARP updates, and VRRP traffic.
+- `interface` must be a Linux interface name of 15 characters or fewer. Use it when the VIP must be bound to a specific NIC, such as `eth0` or `eth1`.
+- `type`, `host`, `port`, `vrid`, and `interface` are not intended to be changed after the cluster control plane is initialized.
+- The DCS provider creates or patches the `alive` `ModuleInfo`; the platform plugin flow creates the workload `AppRelease` and runtime resources.
+- The DCS provider does not inject or persist IPVS kernel modules or sysctl parameters. Use the VM template and plugin package delivered with the supported ACP release.
+
+#### Verify Self-built VIP \{#verify-self-built-vip\}
+
+If you set `DCSCluster.spec.controlPlaneLoadBalancer.type` to `internal`, verify the provider-managed VIP path after the cluster is created.
+
+```bash
+kubectl -n cpaas-system get dcscluster <cluster-name> \
+  -o jsonpath='{.spec.controlPlaneLoadBalancer.type}{" "}{.spec.controlPlaneEndpoint.host}{":"}{.spec.controlPlaneEndpoint.port}{"\n"}'
+kubectl -n cpaas-system get cluster <cluster-name> \
+  -o jsonpath='{.spec.controlPlaneEndpoint.host}{":"}{.spec.controlPlaneEndpoint.port}{"\n"}'
+kubectl -n cpaas-system get moduleinfo \
+  -l cpaas.io/cluster-name=<cluster-name>,cpaas.io/module-name=alive
+kubectl --kubeconfig <workload-kubeconfig> -n cpaas-system get apprelease alive
+kubectl --kubeconfig <workload-kubeconfig> -n kube-system get pods -l app=alive -o wide
+kubectl --kubeconfig <vip-kubeconfig> get --raw=/version
+```
+
+Expected results are the configured VIP endpoint, a provider-created `alive` `ModuleInfo`, a synced and healthy `alive` `AppRelease`, Ready `alive` pods on every control plane node, and a successful `/version` request through the VIP.
 
 #### Single-Control-Plane (No External LB) Layout \{#single-control-plane-layout}
 
@@ -459,7 +528,7 @@ spec:
     port: 6443
 ```
 
-This layout has no HA — losing the single control plane node makes the cluster API unreachable until the node is recovered. For production, use `replicas: 3` with an external LoadBalancer.
+This layout has no HA — losing the single control plane node makes the cluster API unreachable until the node is recovered. Do not use `Self-built VIP` for this layout. For production, use `replicas: 3` with an external LoadBalancer or `Self-built VIP`.
 
 ### Configure Cluster
 
