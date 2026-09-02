@@ -91,18 +91,26 @@ The web UI currently only creates `Interface interconnection user` credentials. 
 
 ### Using the CLI \{#using-yaml}
 
-Create a Secret in `cpaas-system` that stores the DCS authentication information. Write the values into a file with restricted permissions, create the Secret from that file, then remove the file:
+Create a Secret in `cpaas-system` that stores the DCS authentication information.
 
-```bash
-umask 077
-cat > dcs-credential.env <<'EOF'
+Author the credential file with an editor rather than typing the values at a shell prompt. A shell records the whole command, password included, in its history; a file written by an editor leaves no such copy.
+
+```text title="dcs-credential.env"
 authUser=<auth-user>
 authKey=<auth-key>
 endpoint=https://<dcs-api-host>:7443
+site=<dcs-site-id>
 userType=interconnect
-EOF
+```
 
-kubectl create secret generic <auth-secret-name> \
+Restrict the file, create the Secret from it, then remove it:
+
+```bash
+chmod 600 dcs-credential.env
+
+DCS_SECRET_NAME="<auth-secret-name>"
+
+kubectl create secret generic "${DCS_SECRET_NAME}" \
   --namespace cpaas-system \
   --from-env-file=dcs-credential.env
 
@@ -117,16 +125,17 @@ Omit the `userType` line for an interface interconnection user, which is the def
 Do not create a credential Secret with `kubectl apply`. Client-side apply stores the manifest it applied — including the DCS password — in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret itself. `kubectl create` writes no such annotation. This applies whether the values were written as `stringData` or as base64 `data`; base64 is an encoding, not protection.
 :::
 
-To change a credential later, patch it rather than reapplying a manifest:
+To change a credential later, patch it rather than reapplying a manifest. Author the patch file with an editor, for the same reason:
 
-```bash
-umask 077
-cat > dcs-credential-patch.yaml <<'EOF'
+```yaml title="dcs-credential-patch.yaml"
 stringData:
   authKey: <new-auth-key>
-EOF
+```
 
-kubectl patch secret <auth-secret-name> --namespace cpaas-system \
+```bash
+chmod 600 dcs-credential-patch.yaml
+
+kubectl patch secret "${DCS_SECRET_NAME}" --namespace cpaas-system \
   --type=merge --patch-file=dcs-credential-patch.yaml
 
 rm -f dcs-credential-patch.yaml
@@ -139,6 +148,7 @@ rm -f dcs-credential-patch.yaml
 | `authUser` | DCS platform API user login name. |
 | `authKey` | DCS platform API user login password. |
 | `endpoint` | DCS platform API address, including the `http` or `https` scheme. **Note**: The default API port for the DCS platform is 7443 (not the common 8443). If your environment uses a custom port, confirm with your administrator. |
+| `site` | DCS site ID. The provider reads it from this Secret and writes it to `DCSCluster.spec.site` when that field is left empty, so setting it here is enough. Set `DCSCluster.spec.site` explicitly only to override the Secret for one cluster. |
 | `userType` | Optional. Allowed values are `interconnect` (default; used when the key is absent or empty) or `domain`. Matching is case-insensitive (`Domain`, `DOMAIN`, and `domain` all map to the same value). Any other value, including the legacy DCS magic numbers `1` and `2`, is rejected with a configuration error so a `domain` user is never silently authenticated as `interconnect`. |
 
 ### Credential User Types \{#user-types}

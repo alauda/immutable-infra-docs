@@ -290,32 +290,47 @@ When configuring resources, exercise caution with parameter modifications:
 
 #### Configure HCS Authentication
 
-HCS authentication information is stored in a Secret resource.
+HCS authentication information is stored in a Secret resource in `cpaas-system`.
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: <credential-secret-name>
-  namespace: cpaas-system
-type: Opaque
-data:
-  accessKey: <base64-encoded-access-key>
-  secretKey: <base64-encoded-secret-key>
-  projectID: <base64-encoded-project-id>
-  region: <base64-encoded-region>
-  externalGlobalDomain: <base64-encoded-domain>
-  schema: <base64-encoded-schema>
+Author the credential file with an editor rather than typing the values at a shell prompt. A shell records the whole command, secret key included, in its history; a file written by an editor leaves no such copy.
+
+```text title="hcs-credential.env"
+accessKey=<access-key>
+secretKey=<secret-key>
+projectID=<project-id>
+region=<region>
+externalGlobalDomain=<domain>
+schema=https
 ```
 
-| Parameter | Description |
+Restrict the file, create the Secret from it, then remove it:
+
+```bash
+chmod 600 hcs-credential.env
+
+HCS_SECRET_NAME="<credential-secret-name>"
+
+kubectl create secret generic "${HCS_SECRET_NAME}" \
+  --namespace cpaas-system \
+  --from-env-file=hcs-credential.env
+
+rm -f hcs-credential.env
+```
+
+Write the values in plain text — `kubectl` base64-encodes them when it creates the Secret, so there is no separate encoding step. Each line is `key=value`. Do not quote the values: `kubectl` takes quote characters literally. A value may contain `=`; only the first `=` on a line separates the key from the value.
+
+<Directive type="warning" title="Do not create credential Secrets with kubectl apply">
+  Client-side apply stores the manifest it applied — including the HCS secret key — in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret itself. `kubectl create` writes no such annotation. This applies whether the values were written as `stringData` or as base64 `data`; base64 is an encoding, not protection.
+</Directive>
+
+| Key | Description |
 |-----------|-------------|
-| `.data.accessKey` | HCS access key ID from **My Settings** > **Access Keys** (base64-encoded) |
-| `.data.secretKey` | HCS secret access key from **My Settings** > **Access Keys** (base64-encoded) |
-| `.data.projectID` | Resource Space ID from **My Settings** > **Resource Spaces** (base64-encoded) |
-| `.data.region` | HCS region API value used by the provider (base64-encoded). Tenant administrators cannot retrieve this value from the HCS UI; get it from the HCS administrator |
-| `.data.externalGlobalDomain` | HCS platform access domain used by the provider (base64-encoded) |
-| `.data.schema` | Optional API scheme for the HCS IAM endpoint, usually `https` (base64-encoded). If omitted, the provider uses `https` |
+| `accessKey` | HCS access key ID from **My Settings** > **Access Keys** |
+| `secretKey` | HCS secret access key from **My Settings** > **Access Keys** |
+| `projectID` | Resource Space ID from **My Settings** > **Resource Spaces** |
+| `region` | HCS region API value used by the provider. Tenant administrators cannot retrieve this value from the HCS UI; get it from the HCS administrator |
+| `externalGlobalDomain` | HCS platform access domain used by the provider |
+| `schema` | Optional API scheme for the HCS IAM endpoint, usually `https`. Omit the line to use the default |
 
 Existing credential Secrets created without `schema` continue to work unchanged. Only set `schema` if your HCS IAM endpoint uses `http` instead of the default `https`.
 
