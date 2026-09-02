@@ -2897,13 +2897,35 @@ After the installer reports success, and after you complete [Prepare the global 
 
 This is a complete, single-file manifest for a three-replica control-plane `global` cluster on Huawei DCS. It is the same set of resources described in Step 4, already assembled so you do not have to merge fragments across pages. It uses documentation-only example values: replace every `<placeholder>`, and reuse the `${...}` variables you exported in Step 1. Apply it in Step 5.
 
-This example targets a non-DR cluster. To avoid maintaining two copies of it, the `KubeadmControlPlane` `kubeadmConfigSpec` body is not repeated here — it is identical to a workload cluster and is taken from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, with the two `global` / non-DR deltas noted inline in resource 4 below.
+This example targets a non-DR cluster. To avoid maintaining two copies of it, the `KubeadmControlPlane` `kubeadmConfigSpec` body is not repeated here — it is identical to a workload cluster and is taken from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, with the two `global` / non-DR deltas noted inline in resource 3 below.
+
+The manifest does not create the DCS API credential `Secret`. That Secret is created in the prerequisites above and referenced here by name through `DCSCluster.spec.credentialSecretRef`, which is also how Step 7 imports it into the `global` cluster.
 
 ### Before You Apply: Prepare These on DCS \{#dcs-worked-example-prereqs}
 
 The manifest references these but does not create them. Prepare them first, in order:
 
-1. **DCS API access** — the endpoint (`https://<host>:7443`), an `administrator` user and password, and the site ID. These fill the `Secret` and `DCSCluster.spec.site`. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials).
+1. **DCS API access, and the credential Secret created from it** — the endpoint (`https://<host>:7443`), an `administrator` user and password, and the site ID. The site ID fills `DCSCluster.spec.site`; the rest go into the credential Secret. Create it now, so the manifest can reference it by name:
+
+   ```bash
+   umask 077
+   cat > dcs-credential.env <<'EOF'
+   authUser=<dcs-api-user>
+   authKey=<dcs-api-password>
+   endpoint=https://<dcs-api-host>:7443
+   EOF
+
+   kubectl create secret generic "${PROVIDER_SECRET_NAME}" \
+     --namespace cpaas-system \
+     --from-env-file=dcs-credential.env
+
+   kubectl label secret "${PROVIDER_SECRET_NAME}" --namespace cpaas-system \
+     cpaas.io/cluster-name=global
+
+   rm -f dcs-credential.env
+   ```
+
+   Write the values in plain text and do not quote them — `kubectl` base64-encodes them and takes quote characters literally. Do not create this Secret with `kubectl apply`: client-side apply stores the manifest it applied, password included, in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret. Add `userType=domain` to the file for a domain user. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials).
 2. **A VM template** — upload the Alauda OS image and create a VM template from it; record its name for `vmTemplateName`. Use a `4.2.1+` template so the `/var/cpaas` persistent disk can be detached and reattached during node replacement. See [Machine Templates](../infrastructure/huawei-dcs.mdx#machine-templates).
 3. **Compute cluster, distributed virtual switch, port group, and datastore** — pick the target DCS compute cluster, a distributed virtual switch, a port group, and a datastore with enough free capacity. They fill `resource`, `dvSwitchName`, `portGroupName`, and `datastoreName`. See [DCS Platform Capacity and Placement](../infrastructure/huawei-dcs.mdx#capacity-and-placement).
 4. **IPs and the API endpoint** — prepare three free node IPs (with gateway and DNS) for the control plane; these fill the `DCSIpHostnamePool`. Then choose either an external LoadBalancer that follows [the control plane endpoint contract](../how-to/control-plane-endpoint.mdx) and forwards TCP `6443` to the three nodes, or a separate IPv4 VIP in the same Layer 2 network for DCS Provider `v1.0.22+` Self-built VIP with ACP `v4.4+`; the selected endpoint host and port fill `DCSCluster.spec.controlPlaneLoadBalancer` and `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
@@ -2913,22 +2935,7 @@ With those prepared, apply the manifest below. The worked example uses an extern
 
 ```yaml
 ---
-# 1. DCS API credential. See Infrastructure Resources for the field sources.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: <auth-secret-name>   # imported to the global cluster via the dcs-import-extra-resources ConfigMap in Step 7
-  namespace: cpaas-system
-  labels:
-    cpaas.io/cluster-name: "global"
-type: Opaque
-stringData:
-  authUser: "<dcs-api-user>"
-  authKey: "<dcs-api-password>"
-  endpoint: "https://<dcs-api-host>:7443"
-  # userType: "interconnect"   # optional; "interconnect" (default) or "domain"
----
-# 2. Control-plane IP / hostname pool (one entry per control-plane replica).
+# 1. Control-plane IP / hostname pool (one entry per control-plane replica).
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: DCSIpHostnamePool
 metadata:
@@ -2966,7 +2973,7 @@ spec:
     persistentDisk:
     - {slot: 0, quantityGB: 100, datastoreName: <datastore-name>, path: /var/cpaas, format: xfs, mountOptions: [defaults]}
 ---
-# 3. Control-plane VM spec.
+# 2. Control-plane VM spec.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: DCSMachineTemplate
 metadata:
@@ -2997,7 +3004,7 @@ spec:
       ipHostPoolRef:
         name: global-cp-pool
 ---
-# 4. Control plane.
+# 3. Control plane.
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
@@ -3041,7 +3048,7 @@ spec:
     #        apiServer.extraArgs.encryption-provider-config argument (keep both for
     #        DR / at-rest encryption — see the note after this example).
 ---
-# 5. DCS infrastructure cluster.
+# 4. DCS infrastructure cluster.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: DCSCluster
 metadata:
@@ -3054,11 +3061,11 @@ metadata:
 spec:
   controlPlaneLoadBalancer: {host: "${CONTROL_PLANE_VIP}", port: 6443, type: external}
   controlPlaneEndpoint: {host: "${CONTROL_PLANE_VIP}", port: 6443}
-  credentialSecretRef: {name: <auth-secret-name>}
+  credentialSecretRef: {name: "${PROVIDER_SECRET_NAME}"}   # created in the prerequisites above
   networkType: kube-ovn
   site: <dcs-site-id>
 ---
-# 6. Top-level CAPI Cluster: global wiring, labels, and annotations.
+# 5. Top-level CAPI Cluster: global wiring, labels, and annotations.
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster
 metadata:
@@ -3093,7 +3100,7 @@ spec:
 
 #### Internal Self-built VIP variant
 
-The worked example above uses `type: external`. Before applying it, DCS Provider `v1.0.22+` with ACP `v4.4+` can replace resource 5's endpoint fields with this internal configuration. The VIP must be reserved in the control-plane Layer 2 network, and the `vrid` must be unique in that network:
+The worked example above uses `type: external`. Before applying it, DCS Provider `v1.0.22+` with ACP `v4.4+` can replace resource 4's endpoint fields with this internal configuration. The VIP must be reserved in the control-plane Layer 2 network, and the `vrid` must be unique in that network:
 
 ```yaml
 spec:
