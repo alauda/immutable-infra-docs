@@ -58,8 +58,8 @@ Before you begin, ensure the following conditions are met:
 4. The external control plane LoadBalancer satisfies [the endpoint contract](../how-to/control-plane-endpoint.mdx). VMware vSphere Provider `v1.0.16` does not deploy a Self-built VIP.
 5. All required static IP addresses are allocated and not in use.
 6. `ClusterResourceSet=true` is enabled.
-7. The platform already has a valid `public-registry-credential` Secret, and the permanent Registry address is reachable from workload nodes.
-8. The permanent platform Registry contains the required Kube-OVN, CoreDNS, and vSphere CPI tags.
+7. The image registry for this cluster is decided. By default the cluster inherits the registry of the `global` cluster, which requires a valid `public-registry-credential` Secret when that registry is authenticated. To pull platform images from a dedicated registry instead, follow [Choose the Image Registry for a Workload Cluster](../how-to/workload-cluster-image-registry.mdx) before you create the cluster; the binding cannot be changed afterwards.
+8. The registry chosen above is reachable from workload nodes and contains the required Kube-OVN, CoreDNS, and vSphere CPI tags.
 9. The platform can process the cluster annotations required to install the network plugin.
 
 ## Key Objects
@@ -136,7 +136,6 @@ Create a local working directory and store the manifests with the following layo
 ```text
 capv-cluster/
 ├── 00-namespace.yaml
-├── 01-vsphere-credentials-secret.yaml
 ├── 10-cluster.yaml
 ├── 15-vsphere-cpi-clusterresourceset.yaml
 ├── 16-vspheremachineconfigpool-control-plane.yaml
@@ -215,26 +214,33 @@ metadata:
   name: <namespace>
 ```
 
-Create the vCenter credential secret referenced by `VSphereCluster.spec.identityRef`.
-
-```yaml title="01-vsphere-credentials-secret.yaml"
-apiVersion: v1
-kind: Secret
-metadata:
-  name: <credentials_secret_name>
-  namespace: <namespace>
-type: Opaque
-stringData:
-  username: "<vsphere_username>"
-  password: "<vsphere_password>"
-```
-
-Apply both manifests:
+Apply the namespace:
 
 ```bash
 kubectl apply -f 00-namespace.yaml
-kubectl apply -f 01-vsphere-credentials-secret.yaml
 ```
+
+Create the vCenter credential secret referenced by `VSphereCluster.spec.identityRef`. Write the values into a file with restricted permissions, create the Secret from that file, then remove the file:
+
+```bash
+umask 077
+cat > vsphere-credentials.env <<'EOF'
+username=<vsphere_username>
+password=<vsphere_password>
+EOF
+
+kubectl create secret generic <credentials_secret_name> \
+  --namespace <namespace> \
+  --from-env-file=vsphere-credentials.env
+
+rm -f vsphere-credentials.env
+```
+
+Each line of the file is `key=value`. Do not quote the values — `kubectl` takes quote characters literally. A value may contain `=`; only the first `=` on a line separates the key from the value.
+
+<Directive type="warning" title="Do not create credential Secrets with kubectl apply">
+  Client-side apply stores the manifest it applied — including the vCenter password — in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret itself. `kubectl create` writes no such annotation. This applies whether the values were written as `stringData` or as base64 `data`; base64 is an encoding, not protection.
+</Directive>
 
 ### Create the `Cluster` and `VSphereCluster` objects
 
@@ -250,6 +256,9 @@ metadata:
     cluster.x-k8s.io/cluster-name: <cluster_name>
     cluster-type: VSphere
     addons.cluster.x-k8s.io/vsphere-cpi: "enabled"
+    # Optional. Bind this cluster to a dedicated image registry instead of the
+    # registry of the `global` cluster. Read only at cluster creation.
+    # cpaas.io/registry-reference: <registry_credential_name>
   annotations:
     capi.cpaas.io/resource-group-version: infrastructure.cluster.x-k8s.io/v1beta1
     capi.cpaas.io/resource-kind: VSphereCluster
@@ -1321,7 +1330,7 @@ Prioritize the following checks:
 - If the CPI resources are not delivered, verify `ClusterResourceSet=true`, `ClusterResourceSet`, and `ClusterResourceSetBinding`.
 - If `ClusterResourceSet` exists but no `ClusterResourceSetBinding` is created, check whether the controller has the required delete permission on the referenced `ConfigMap` and `Secret` resources.
 - If the network plugin is not installed, verify that the required cluster annotations are present and that the platform controllers processed them.
-- If the `cpaas.io/registry-address` annotation is missing or incorrect, verify that it is set to the permanent `<registry_address>` without a scheme or `/v2/`. Also verify that `public-registry-credential` exists and that the platform controller processed the annotation.
+- If the `cpaas.io/registry-address` annotation is missing or incorrect, verify that it is set to the permanent `<registry_address>` without a scheme or `/v2/`. Then verify the credential that backs it: `public-registry-credential` when the cluster inherits the registry of the `global` cluster, or the Secret named by `cpaas.io/registry-reference` when the cluster uses a dedicated registry.
 - If a machine is stuck in `Provisioning`, check `VSphereMachine` conditions for `MachineConfigPoolReady` — it shows whether slot allocation failed due to pool binding or datacenter mismatch.
 - If a VM is waiting for IP allocation, verify VMware Tools, the static IP settings, and `VSphereVM.status.addresses`.
 - If workload `Node` objects remain without `spec.providerID`, first verify the CPI delivery resources and then check for duplicate vCenter guest hostnames. When an old VM in the same datacenter still reports the same guest hostname as a new node, `cloud-provider-vsphere` can fall back to node-name lookup, cache the old VM, and reject the new node because the VM IP does not match the kubelet node IP. Check the leader `vsphere-cloud-controller-manager` logs, the node `SystemUUID`, the real VM UUID, and vCenter guest hostname/IP values. After you fix or remove the duplicate hostname or old VM conflict, restart the workload cluster's `vsphere-cloud-controller-manager` Pods to clear the bad in-memory cache:

@@ -127,9 +127,19 @@ Set `MachineRegistration.spec.config.elemental.registration.emulate-tpm` from wh
 - `emulate-tpm: false` (or omit the field) — only when the host has a working hardware TPM, so `elemental-register` can use it for `auth: tpm`.
 - `emulate-tpm: true` with `emulated-tpm-seed: -1` — for any host **without** a hardware TPM. This includes both virtual machines and physical servers that ship without a TPM module (for example a Dell R620). On such a host, `auth: tpm` combined with `emulate-tpm: false` makes `elemental-register` fail TPM attestation and never send the registration request, so `elemental-operator` records zero registration POSTs.
 
-### 6. Public Registry Credential (Only When Installing Platform Components Later)
+### 6. Workload Cluster Image Registry
 
-`public-registry-credential` is **not** required to create a bare-metal cluster. It only becomes necessary when later platform components on the new workload cluster need to pull from a credentialed public registry. If your test scope ends at cluster + node Ready, you can ignore this prerequisite.
+Bringing the cluster up needs no registry credential. Bare-metal hosts install the operating system and join the cluster using the platform registry address alone, so you can reach a cluster whose Nodes are all `Ready` without configuring one.
+
+A credential matters at the next step — installing platform components on the new cluster. Those components pull their images from a registry, and a registry that requires authentication needs credentials the cluster can use.
+
+By default the cluster uses the registry of the `global` cluster, backed by the `public-registry-credential` Secret when that registry is authenticated. To have it pull platform component images from a dedicated registry instead, follow [Choose the Image Registry for a Workload Cluster](../how-to/workload-cluster-image-registry.mdx).
+
+:::warning
+The credential can wait, but the choice of registry cannot. A cluster is bound to its registry when it is created, and an existing cluster cannot be moved to another one. Decide before you apply the manifests below, even if you do not install platform components until later.
+:::
+
+Neither choice affects the operating system images described above. Hosts pull `base-image` and `base-image-iso` from the platform registry during `elemental install` and every reprovision, before any cluster-level binding exists.
 
 ### 7. Host Disk and Boot Preparation \{#host-disk-and-boot-preparation}
 
