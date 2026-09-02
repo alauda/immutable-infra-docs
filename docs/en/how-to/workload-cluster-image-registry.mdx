@@ -88,24 +88,29 @@ Verify the contents before you create the cluster. A cluster bound to an incompl
 
 Create the Secret in the `cpaas-system` namespace of the `global` cluster. The reference on a cluster carries only a name, so only this namespace is consulted; a Secret with the same name in another namespace is ignored.
 
-Write the values into a file with restricted permissions, create the Secret from that file, then remove the file:
+Author the credential file with an editor rather than typing the values at a shell prompt. A shell records the whole command, password included, in its history; a file written by an editor leaves no such copy.
 
-```bash
-umask 077
-cat > registry-credential.env <<'EOF'
+```text title="registry-credential.env"
 registry=<registry-host>:<port>
 username=<username>
 password=<password>
-EOF
+```
 
-kubectl create secret generic <registry-credential-name> \
+For an anonymous registry, keep only the `registry` line and omit the other two.
+
+Restrict the file, create the Secret from it, then remove it:
+
+```bash
+chmod 600 registry-credential.env
+
+REGISTRY_CREDENTIAL_NAME="<registry-credential-name>"
+
+kubectl create secret generic "${REGISTRY_CREDENTIAL_NAME}" \
   --namespace cpaas-system \
   --from-env-file=registry-credential.env
 
 rm -f registry-credential.env
 ```
-
-For an anonymous registry, keep only the `registry` line and omit the other two.
 
 :::warning
 Do not create a credential Secret with `kubectl apply`. Client-side apply stores the manifest it applied — including every value in it — in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret itself. `kubectl create` writes no such annotation. This applies whether the values were written as `stringData` or as base64 `data`; base64 is an encoding, not protection.
@@ -116,7 +121,7 @@ Each line of the file is `key=value`. Do not quote the values — `kubectl` take
 The Secret is created with type `Opaque`, which is correct here. The platform recognizes a registry credential by its labels, not by its type, so apply both labels before you create any cluster that references it:
 
 ```bash
-kubectl label secret <registry-credential-name> --namespace cpaas-system \
+kubectl label secret "${REGISTRY_CREDENTIAL_NAME}" --namespace cpaas-system --overwrite \
   capi.cpaas.io/provider=registry-credential \
   cpaas.io/registry-credential-format=direct
 ```
@@ -196,15 +201,16 @@ Platform component images use the dedicated registry. Images kubeadm manages, an
 
 Update a credential with `kubectl patch` rather than `kubectl apply`, for the same reason `kubectl create` was used to make it:
 
-```bash
-umask 077
-cat > registry-credential-patch.yaml <<'EOF'
+```yaml title="registry-credential-patch.yaml"
 stringData:
   username: <new-username>
   password: <new-password>
-EOF
+```
 
-kubectl patch secret <registry-credential-name> --namespace cpaas-system \
+```bash
+chmod 600 registry-credential-patch.yaml
+
+kubectl patch secret "${REGISTRY_CREDENTIAL_NAME}" --namespace cpaas-system \
   --type=merge --patch-file=registry-credential-patch.yaml
 
 rm -f registry-credential-patch.yaml

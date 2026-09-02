@@ -220,26 +220,34 @@ Apply the namespace:
 kubectl apply -f 00-namespace.yaml
 ```
 
-Create the vCenter credential secret referenced by `VSphereCluster.spec.identityRef`. Write the values into a file with restricted permissions, create the Secret from that file, then remove the file:
+Create the vCenter credential secret referenced by `VSphereCluster.spec.identityRef`.
 
-```bash
-umask 077
-cat > vsphere-credentials.env <<'EOF'
+Author the credential file with an editor rather than typing the values at a shell prompt. A shell records the whole command, password included, in its history; a file written by an editor leaves no such copy. Keep it outside `capv-cluster/` so it is never mistaken for a manifest.
+
+```text title="vsphere-credentials.env"
 username=<vsphere_username>
 password=<vsphere_password>
-EOF
-
-kubectl create secret generic <credentials_secret_name> \
-  --namespace <namespace> \
-  --from-env-file=vsphere-credentials.env
-
-rm -f vsphere-credentials.env
 ```
 
-Each line of the file is `key=value`. Do not quote the values — `kubectl` takes quote characters literally. A value may contain `=`; only the first `=` on a line separates the key from the value.
+Each line is `key=value`. Do not quote the values — `kubectl` takes quote characters literally. A value may contain `=`; only the first `=` on a line separates the key from the value.
+
+Restrict the file, create the Secret from it, then remove it:
+
+```bash
+chmod 600 ../vsphere-credentials.env
+
+VSPHERE_SECRET_NAME="<credentials_secret_name>"
+VSPHERE_NAMESPACE="<namespace>"
+
+kubectl create secret generic "${VSPHERE_SECRET_NAME}" \
+  --namespace "${VSPHERE_NAMESPACE}" \
+  --from-env-file=../vsphere-credentials.env
+
+rm -f ../vsphere-credentials.env
+```
 
 <Directive type="warning" title="Do not create credential Secrets with kubectl apply">
-  Client-side apply stores the manifest it applied — including the vCenter password — in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret itself. `kubectl create` writes no such annotation. This applies whether the values were written as `stringData` or as base64 `data`; base64 is an encoding, not protection.
+  Client-side apply stores the manifest it applied — including the vCenter password — in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret itself. `kubectl create` writes no such annotation. This applies whether the values were written as `stringData` or as base64 `data`; base64 is an encoding, not protection. The same applies to the CPI credential later on this page.
 </Directive>
 
 ### Create the `Cluster` and `VSphereCluster` objects
@@ -542,11 +550,9 @@ spec:
     kind: ConfigMap
 ```
 
-Create the CPI credential Secret. It wraps the `vsphere-cloud-secret` that the vSphere CPI reads on the workload cluster, so its payload carries the vCenter password. Write the payload into a file with restricted permissions, create the Secret from that file, then remove the file:
+Create the CPI credential Secret. It wraps the `vsphere-cloud-secret` that the vSphere CPI reads on the workload cluster, so its payload carries the vCenter password. Author the payload with an editor, for the reason given earlier on this page, and keep it outside `capv-cluster/` so it is not mistaken for a manifest:
 
-```bash
-umask 077
-cat > vsphere-cpi-secret-payload.yaml <<'EOF'
+```text title="vsphere-cpi-secret-payload.txt"
 apiVersion: v1
 kind: Secret
 metadata:
@@ -556,19 +562,24 @@ type: Opaque
 stringData:
   <vsphere_server>.username: <vsphere_username>
   <vsphere_server>.password: <vsphere_password>
-EOF
-
-kubectl create secret generic <cluster_name>-vsphere-cpi-secret \
-  --namespace <namespace> \
-  --type=addons.cluster.x-k8s.io/resource-set \
-  --from-file=data=vsphere-cpi-secret-payload.yaml
-
-rm -f vsphere-cpi-secret-payload.yaml
 ```
 
-<Directive type="warning" title="Do not create this Secret with kubectl apply">
-  Client-side apply stores the manifest it applied — here, the payload with the vCenter password — in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret itself. `kubectl create` writes no such annotation. Replace the placeholders in the payload before running the command; the surrounding quotes on the heredoc keep the shell from expanding them.
-</Directive>
+Restrict the file, create the Secret from it, then remove it:
+
+```bash
+chmod 600 ../vsphere-cpi-secret-payload.txt
+
+CLUSTER_NAME="<cluster_name>"
+
+kubectl create secret generic "${CLUSTER_NAME}-vsphere-cpi-secret" \
+  --namespace "${VSPHERE_NAMESPACE}" \
+  --type=addons.cluster.x-k8s.io/resource-set \
+  --from-file=data=../vsphere-cpi-secret-payload.txt
+
+rm -f ../vsphere-cpi-secret-payload.txt
+```
+
+Use the same `<cluster_name>` as everywhere else on this page. `VSPHERE_NAMESPACE` was set when you created the vCenter credential; set it again if you are in a new shell. The Secret's only key must be `data`, which `--from-file=data=` produces.
 
 Then apply the manifest:
 
