@@ -552,25 +552,25 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/create-cluster/bare-metal.mdx": {
-      "sha256": "d2d2ee69c19f99b6244f265ed5e307ae8b75b5241e65688ff080508ebe5f6406",
-      "size": 55348,
+      "sha256": "b106de67fcfb19f2811f44d01cd2e2e6161c819a62033351ab100163083d6075",
+      "size": 56342,
       "description": "YAML-only workflow (no Fleet Essentials UI) for creating bare-metal workload clusters with the Elemental-based Bare Metal Infrastructure Provider: import the paired `base-image`/`base-image-iso`, confirm `elemental-image-catalog` holds every `Machine.spec.version`, then meet the prerequisites — a stage-by-stage network table (DNS, NTP, registration and plan polling on the platform HTTPS port, registry `11443`, control-plane `6443`, and cluster-internal traffic including the Kube-OVN Geneve tunnel), a first-boot firmware-level clock gate, the install device, residual `COS_*` label cleanup, and the `emulate-tpm` decision. Apply `MachineRegistration` and `SeedImage` — sizing `COS_STATE` above the 8 GiB Elemental default before the first install — so booted hosts register as `MachineInventory`, optionally prepare managed data disks, then apply per-role `MachineInventoryPool`, `BaremetalCluster` (`Internal` Alive VIP with `vrid`, or `External` LoadBalancer), `BaremetalMachineTemplate`, `KubeadmControlPlane`, `Cluster`, and the worker `MachineDeployment` — all in `cpaas-system`. Includes placeholder sourcing, verification commands, and a condition-reason failure-mode table.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-28T14:49:02Z"
+      "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/create-cluster/huawei-cloud-stack.mdx": {
-      "sha256": "df5596272520b1ce538f83e15d57b89d1235469af904a4df0d5b49483368898e",
-      "size": 47416,
+      "sha256": "a79ee99b13ded3515a9bbd93e24abaf6bc95604712230f8d1ddd68856d16dc92",
+      "size": 50187,
       "description": "Creating Cluster API workload clusters on Huawei Cloud Stack through both a 6-step web UI wizard (Basic Info, Networking, Infrastructure, Control Plane Node Pool, Worker Node Pools, Review — requires Fleet Essentials `1.0.2`+, HCS provider `v1.0.3`+, and a `cpaas.io/os-release` ConfigMap registered per Alauda OS image) and YAML: HCS credential `Secret`, `HCSMachineConfigPool` (hostnames, subnets, static IPs), `HCSMachineTemplate` (`imageName`/`flavorName`/`availabilityZone`, root and data volumes), a hardened `KubeadmControlPlane`, `HCSCluster` (provider-created Hybrid Load Balancing ELB with `vipAddress` plus two-IP L4/L7 virsubnet lists, optional `controlPlaneHA` server-group anti-affinity, VPC, subnet inventory, security group), and the `Cluster` with `cpaas.io/kube-ovn-join-cidr` and `cluster-type: HCS`, ending with kubectl and `ControlPlaneHAReady` verification.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/create-cluster/huawei-dcs.mdx": {
-      "sha256": "1c126beb6b81106d51a770bd90c3bf1b8b6207ee3b087c60f9f5f39f1e8544f1",
-      "size": 52876,
+      "sha256": "13bc313ae8df9b87bda52277b4f07bb0fca28e1762ba89922914629d402eee14",
+      "size": 55155,
       "description": "Creating Kubernetes clusters on Huawei DCS through the web UI and YAML manifests. Covers provider gates, DCS API and file-upload connectivity, external LoadBalancer and DCS Provider `v1.0.22+` with ACP `v4.4+` Self-built VIP endpoint modes, IPv4 VIP/VRID/interface constraints, bootstrap and `alive` verification, DRS control-plane HA, persistent disks, magic tokens, component-version sources, single-control-plane behavior, and required Cluster annotations.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-31T05:54:15Z"
+      "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/create-cluster/index.mdx": {
       "sha256": "4a4fe829a89520ed3f99d13d9cac7c58502fe72481f5e286ed300a9e3a806e02",
@@ -580,11 +580,11 @@
       "updated_at": "2026-08-12T13:52:29Z"
     },
     "docs/en/create-cluster/vmware-vsphere.mdx": {
-      "sha256": "27edf4a1b7655b8ce205a81224928f82bfcd498a1bf4d228d46ea70ef70ed3b1",
-      "size": 68478,
+      "sha256": "92bb58f7929088061bbd7c75c35c708105449239cd38109277719659fc6e3bd5",
+      "size": 71327,
       "description": "End-to-end guide for creating a VMware vSphere workload cluster by applying Cluster API manifests to the ACP `global` management cluster, validated against VMware vSphere Provider `v1.0.16`. Covers vCenter identity, ordered manifest application, CPI delivery through `ClusterResourceSet`, static node slots and persistent disks in `VSphereMachineConfigPool`, control-plane and worker templates, external LoadBalancer and Registry boundaries, verification, and troubleshooting. Distinguishes Registry-served Kube-OVN, CoreDNS, and vSphere CPI artifacts from the exact etcd, kube-apiserver, and sandbox image references preloaded by the OS template, and links the executable template-validation procedure. Keeps failure-domain objects conditional, separates the Kubernetes 1.35 kubelet variant from the earlier-version baseline, and includes creation-time variants for second NICs, multiple datacenters, and extra or raw disks.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-13T13:09:02Z"
+      "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
       "sha256": "895bf0399d1863bff771cea1f55fe7af3e0453942b05f9da5a45e33445354293",
@@ -601,11 +601,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "2d32a43900dbb92bf227bffc7b702849d2c45631230d79255465381f3d13d30d",
-      "size": 159647,
+      "sha256": "55c69d2db70d96ef26491b7230e363fce51e446a2050a7f9a6d0eb76a6bcb08d",
+      "size": 161372,
       "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers bootstrap host hardware, operating system, network requirements, provider-package delivery, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification, provider-resource handoff, optional DR inputs, and final decommissioning gates.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-31T05:54:15Z"
+      "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/global/upgrade.mdx": {
       "sha256": "51b4c7bfb190066f09aba4f67f9ea43b92c806ac140c4f156b59a33533b750b4",
@@ -705,6 +705,13 @@
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
     },
+    "docs/en/how-to/workload-cluster-image-registry.mdx": {
+      "sha256": "12fd78a06c39660848927e230f874fd6c88612d18da82b7a4c20c2129dc19641",
+      "size": 16939,
+      "description": "How to choose the image registry a workload cluster pulls platform components from. Contrasts inheriting the `global` cluster's registry (the default, and the only option the creation wizards offer) with binding a cluster to a dedicated registry through a `direct`-format RegistryCredential Secret in `cpaas-system` selected by the `cpaas.io/registry-reference` label on the `Cluster`. States what the binding does not cover — images kubeadm resolves from `clusterConfiguration.imageRepository`, the containerd pause image, bare-metal OS images, and application workloads — and that the Secret must exist before the cluster is created, because registration reads it by name and otherwise stalls without reporting a reason. Covers credential rotation by patch, sharing one credential across clusters, deletion refused while referenced, and why an existing cluster cannot be moved to another registry.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-09-02T11:04:57Z"
+    },
     "docs/en/index.mdx": {
       "sha256": "ea8d719fb06b69c8f8fa90c79d3ec2a67457c854f2c664fb78f523febe3f6960",
       "size": 48,
@@ -720,11 +727,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/infrastructure/huawei-dcs.mdx": {
-      "sha256": "b0581f47e4fdb47f9286f63cab5b24bc224e09ff7d71d75717242a6f6e716f8f",
-      "size": 44123,
-      "description": "Reference for the three Huawei DCS infrastructure resources in `cpaas-system`: the credential `Secret` (`authUser`/`authKey`/`endpoint` plus optional `userType: interconnect`|`domain`), authored through the web UI or YAML `data`/`stringData`; `DCSIpHostnamePool` for per-node IP/mask/gateway/DNS/hostname/`machineName`, `additionNic[]` entries (DVS and Port Group, applied only when a new VM is cloned), and YAML-only `persistentDisk` entries (`slot`, `quantityGB`, `datastoreName`/`datastoreClusterName`, `isThin`, `path`, `format`, `mountOptions`) that bind disks such as `/var/cpaas` to an `(ip, slot)` identity so they survive VM replacement; and `DCSMachineTemplate` for `vmTemplateName`, VM-folder `location`, CPU/memory, and the `dcsMachineDiskSpec` system, `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/lib/etcd` disks. Adds DCS-side capacity and placement preflight (`datastoreClusterName` versus `datastoreName`, host `cpuMuxRatio` checks, provider-managed DRS mutual exclusion via `DCSCluster.spec.controlPlaneHA`, diagnosing VMs stuck in `creating`) and cross-cluster shared-storage `location.type: cluster` deployments.",
+      "sha256": "1deaa3b4e34ad9ac35e2174357fb4ef6da1e2f904679a0b59bc313a3bc20aaa0",
+      "size": 44395,
+      "description": "Reference for the three Huawei DCS infrastructure resources in `cpaas-system`: the credential `Secret` (`authUser`/`authKey`/`endpoint`/`site` plus optional `userType: interconnect`|`domain`), created from an editor-authored `key=value` file with `kubectl create secret generic --from-env-file` so the values never reach shell history or a `last-applied-configuration` annotation, and from which the provider fills `DCSCluster.spec.site` when that field is left empty; `DCSIpHostnamePool` for per-node IP/mask/gateway/DNS/hostname/`machineName`, `additionNic[]` entries (DVS and Port Group, applied only when a new VM is cloned), and YAML-only `persistentDisk` entries (`slot`, `quantityGB`, `datastoreName`/`datastoreClusterName`, `isThin`, `path`, `format`, `mountOptions`) that bind disks such as `/var/cpaas` to an `(ip, slot)` identity so they survive VM replacement; and `DCSMachineTemplate` for `vmTemplateName`, VM-folder `location`, CPU/memory, and the `dcsMachineDiskSpec` system, `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/lib/etcd` disks. Adds DCS-side capacity and placement preflight (`datastoreClusterName` versus `datastoreName`, host `cpuMuxRatio` checks, provider-managed DRS mutual exclusion via `DCSCluster.spec.controlPlaneHA`, diagnosing VMs stuck in `creating`) and cross-cluster shared-storage `location.type: cluster` deployments.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/infrastructure/index.mdx": {
       "sha256": "0948c1dd59261c56876ecd4bdc84d005120b7b0b260e9f33194a1502fb4de5ea",
@@ -816,6 +823,13 @@
       "description": "Conceptual reference for Machine Configuration, defining the `MachineConfig` and `MachineConfigPool` CRDs, the `master`/`worker` pools and `00-master`/`00-worker` configs the Machine Configuration Operator creates when it first starts after the cluster plugin is installed, custom worker pool inheritance, the rendered `render-<pool>-<hash>` config flow, the cordon/drain/apply/reboot/uncordon update sequence executed by `machine-config-daemon`, drift detection that marks nodes `Degraded`, the status inspection queries, and links to the installation page and the release notes.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-28T16:18:15Z"
+    },
+    "docs/en/machine-configuration/release-note.md": {
+      "sha256": "445f92610fd0f3d11cfc234300f8c1ed46344c3b4dc912ae37ff9da132972941",
+      "size": 2388,
+      "description": "Version timeline for machine-config versions confirmed in cloud.alauda.io: v4.0.13 (first published version, consolidating source tags through v4.0.13), v4.0.16 (consolidating v4.0.14-v4.0.16), and v4.0.18 (consolidating v4.0.17-v4.0.18).",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-08-26T00:00:00Z"
     },
     "docs/en/machine-configuration/sysctl.mdx": {
       "sha256": "ba37d733375127670d9c4c6503587e2fbd8397b55ce79ac8ecbcf1909ee567c9",
@@ -928,13 +942,6 @@
       "description": "Routing stub in the Overview section that carries no release content of its own: it states that release notes are maintained per infrastructure provider and links out to the four dedicated pages under `release-notes/` (Huawei Cloud Stack, Huawei DCS, VMware vSphere, Kubeadm), noting that the Bare Metal Provider has no published release notes on this site. The actual per-tag version timelines live on those linked pages, not here.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
-    },
-    "docs/en/machine-configuration/release-note.md": {
-      "sha256": "445f92610fd0f3d11cfc234300f8c1ed46344c3b4dc912ae37ff9da132972941",
-      "size": 2388,
-      "description": "Version timeline for machine-config versions confirmed in cloud.alauda.io: v4.0.13 (first published version, consolidating source tags through v4.0.13), v4.0.16 (consolidating v4.0.14-v4.0.16), and v4.0.18 (consolidating v4.0.17-v4.0.18).",
-      "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-26T00:00:00Z"
     },
     "docs/en/release-notes/huawei_cloud_stack.mdx": {
       "sha256": "4aac91d05031413b1e0db5784778c32add1e1fe78a634f155253f2522e607904",

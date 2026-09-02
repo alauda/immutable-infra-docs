@@ -927,11 +927,12 @@ Set the output path for the DCS `global` manifest before you render it.
 export GLOBAL_DCS_YAML="/root/yamls/new-global.yaml"
 ```
 
-The DCS `global` manifest must contain the following resources in the `cpaas-system` namespace:
+Create the DCS API credential `Secret` before you assemble the manifest, by following [Cloud Credentials](../infrastructure/huawei-dcs.mdx#using-yaml). Do not author it as YAML inside the manifest: the manifest is applied with `kubectl apply` in Step 5, which records the credential in the Secret's `kubectl.kubernetes.io/last-applied-configuration` annotation. The manifest references it through `DCSCluster.spec.credentialSecretRef`.
+
+The DCS `global` manifest must then contain the following resources in the `cpaas-system` namespace:
 
 | Resource | Purpose |
 |----------|---------|
-| `Secret` with `type: CloudCredential` | Stores `authUser`, `authKey`, `endpoint`, and `site` for DCS API access. |
 | `DCSIpHostnamePool` for control plane nodes | Assigns static IPs, hostnames, network settings, and any pool-managed persistent disks. |
 | `DCSMachineTemplate` for control plane nodes | Defines the DCS VM template, folder, CPU, memory, and template-local disks. |
 | `KubeadmControlPlane` | Bootstraps the Kubernetes control plane. Set `spec.version` to `${K8S_VERSION}`. |
@@ -1029,17 +1030,21 @@ Set the output path for the VMware vSphere `global` manifest before you render i
 export GLOBAL_VSPHERE_YAML="/root/yamls/new-global.yaml"
 ```
 
-The VMware vSphere `global` manifest must contain the following resources in the `cpaas-system` namespace:
+Create the two credential Secrets before you assemble the manifest, and keep them out of it. The manifest is applied with `kubectl apply` in Step 5, which would record their contents in each Secret's `kubectl.kubernetes.io/last-applied-configuration` annotation.
+
+* The vCenter credential, which **must** be named `global-vsphere-credentials` — the import ConfigMap in Step 7 and the DR section hardcode this exact name. Create it as described in [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere.mdx), using that fixed name, and reference it from `VSphereCluster.spec.identityRef.name`.
+* The vSphere CPI credential, referenced by the `ClusterResourceSet`. Create it as described in the same guide.
+
+The VMware vSphere `global` manifest must then contain the following resources in the `cpaas-system` namespace:
 
 | Resource | Purpose |
 |----------|---------|
-| `Secret` (must be named `global-vsphere-credentials`) | Stores the vCenter username and password. Must be referenced by `VSphereCluster.spec.identityRef.name`. The fixed name is required for the vSphere `global` install path: the import ConfigMap in Step 7 and the DR section hardcode this exact name. |
 | `VSphereMachineConfigPool` for control plane nodes | Assigns static hostnames, datacenter values, IP addresses, network settings, and optional data disks. |
 | `VSphereMachineTemplate` for control plane nodes | Defines the VM template, clone mode, CPU, memory, datastore, folder, network devices, and system disk settings. |
 | `KubeadmControlPlane` | Bootstraps the Kubernetes control plane. Set `spec.version` to `${K8S_VERSION}`. |
 | `VSphereCluster` | Defines the vCenter endpoint, thumbprint, credential reference, and control plane endpoint. |
 | `Cluster` | Connects the Cluster API `Cluster` to `VSphereCluster` and `KubeadmControlPlane`. |
-| `ClusterResourceSet`, `ConfigMap`, and `Secret` for the vSphere CPI | Delivers the vSphere CPI resources to the `global` cluster after the API server becomes reachable. |
+| `ClusterResourceSet` and `ConfigMap` for the vSphere CPI | Delivers the vSphere CPI resources to the `global` cluster after the API server becomes reachable. The `ClusterResourceSet` also references the CPI credential Secret created above. |
 | `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment` for workers | Creates worker nodes. |
 
 Prepare the vSphere input values by using [VMware vSphere Infrastructure Preparation](../infrastructure/vmware-vsphere.mdx). Prepare the `global` cluster manifest by using [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere.mdx) and [VMware vSphere Provider](../overview/providers/vmware-vsphere.mdx) as the base references. The create-cluster guide creates workload clusters by applying manifests to an existing `global` management cluster; it does not create the `global` cluster itself. Reuse its vSphere resource definitions only after you apply the following `global`-specific requirements:
@@ -2899,33 +2904,23 @@ This is a complete, single-file manifest for a three-replica control-plane `glob
 
 This example targets a non-DR cluster. To avoid maintaining two copies of it, the `KubeadmControlPlane` `kubeadmConfigSpec` body is not repeated here — it is identical to a workload cluster and is taken from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, with the two `global` / non-DR deltas noted inline in resource 3 below.
 
-The manifest does not create the DCS API credential `Secret`. That Secret is created in the prerequisites above and referenced here by name through `DCSCluster.spec.credentialSecretRef`, which is also how Step 7 imports it into the `global` cluster.
+The manifest does not create the DCS API credential `Secret`. That Secret is created in the prerequisites above and referenced here by name through `DCSCluster.spec.credentialSecretRef`. Step 7 copies it into the `global` cluster through the `dcs-import-extra-resources` ConfigMap, whose `names` list you must keep aligned with the same Secret name.
 
 ### Before You Apply: Prepare These on DCS \{#dcs-worked-example-prereqs}
 
 The manifest references these but does not create them. Prepare them first, in order:
 
-1. **DCS API access, and the credential Secret created from it** — the endpoint (`https://<host>:7443`), an `administrator` user and password, and the site ID. The site ID fills `DCSCluster.spec.site`; the rest go into the credential Secret. Create it now, so the manifest can reference it by name:
+1. **DCS API access, and the credential Secret created from it** — the endpoint (`https://<host>:7443`), an `administrator` user and password, and the site ID. All four go into the credential Secret; the provider reads the site ID from there and writes it to `DCSCluster.spec.site` when that field is left empty, so the manifest below does not set it.
+
+   Create the Secret named `${PROVIDER_SECRET_NAME}` in `cpaas-system` by following [Cloud Credentials](../infrastructure/huawei-dcs.mdx#using-yaml). Do not author it as YAML and apply it: `kubectl apply` records the password in the Secret's `kubectl.kubernetes.io/last-applied-configuration` annotation.
+
+   The `global` install additionally expects the cluster-name label that every other resource in the manifest carries:
 
    ```bash
-   umask 077
-   cat > dcs-credential.env <<'EOF'
-   authUser=<dcs-api-user>
-   authKey=<dcs-api-password>
-   endpoint=https://<dcs-api-host>:7443
-   EOF
-
-   kubectl create secret generic "${PROVIDER_SECRET_NAME}" \
-     --namespace cpaas-system \
-     --from-env-file=dcs-credential.env
-
    kubectl label secret "${PROVIDER_SECRET_NAME}" --namespace cpaas-system \
-     cpaas.io/cluster-name=global
-
-   rm -f dcs-credential.env
+     --overwrite cpaas.io/cluster-name=global
    ```
 
-   Write the values in plain text and do not quote them — `kubectl` base64-encodes them and takes quote characters literally. Do not create this Secret with `kubectl apply`: client-side apply stores the manifest it applied, password included, in the `kubectl.kubernetes.io/last-applied-configuration` annotation on the Secret. Add `userType=domain` to the file for a domain user. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials).
 2. **A VM template** — upload the Alauda OS image and create a VM template from it; record its name for `vmTemplateName`. Use a `4.2.1+` template so the `/var/cpaas` persistent disk can be detached and reattached during node replacement. See [Machine Templates](../infrastructure/huawei-dcs.mdx#machine-templates).
 3. **Compute cluster, distributed virtual switch, port group, and datastore** — pick the target DCS compute cluster, a distributed virtual switch, a port group, and a datastore with enough free capacity. They fill `resource`, `dvSwitchName`, `portGroupName`, and `datastoreName`. See [DCS Platform Capacity and Placement](../infrastructure/huawei-dcs.mdx#capacity-and-placement).
 4. **IPs and the API endpoint** — prepare three free node IPs (with gateway and DNS) for the control plane; these fill the `DCSIpHostnamePool`. Then choose either an external LoadBalancer that follows [the control plane endpoint contract](../how-to/control-plane-endpoint.mdx) and forwards TCP `6443` to the three nodes, or a separate IPv4 VIP in the same Layer 2 network for DCS Provider `v1.0.22+` Self-built VIP with ACP `v4.4+`; the selected endpoint host and port fill `DCSCluster.spec.controlPlaneLoadBalancer` and `controlPlaneEndpoint`. See [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx).
@@ -3117,8 +3112,8 @@ spec:
 
 | Placeholder / variable | Where it comes from |
 |---|---|
-| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}` | Exported in Step 1. |
-| `<dcs-api-user>` / `<dcs-api-password>` / `<dcs-api-host>` / `<dcs-site-id>` | DCS platform credentials and site. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). |
+| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}`, `${PROVIDER_SECRET_NAME}` | Exported in Step 1. |
+| `<dcs-api-user>` / `<dcs-api-password>` / `<dcs-api-host>` / `<dcs-site-id>` | DCS platform credentials and site. They do not appear in the manifest — they go into the credential file used to create `${PROVIDER_SECRET_NAME}` in the prerequisites. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#using-yaml). |
 | `<vm-template-name>`, `<dns-image-tag>`, `<etcd-image-tag>` | The `cpaas.io/dcs-vm-template` ConfigMap. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders). |
 | `<dcs-cluster-name>`, `<dvswitch-name>`, `<port-group-name>`, `<datastore-name>` | DCS platform objects. Confirm with the DCS administrator. |
 | `192.0.2.x`, `<kube-ovn-join-cidr>`, `<os-family>`, `<kube-ovn-chart-version>` | Node IPs/gateway/DNS for your network; a `/16` Kube-OVN join CIDR that does not overlap the pod / service CIDRs or another cluster's join CIDR; the OS family of the image; and the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx). |
