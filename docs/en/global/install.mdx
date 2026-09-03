@@ -2875,12 +2875,37 @@ After the installer reports success, and after you complete [Prepare the global 
   ```shell
   kubectl --kubeconfig <global-kubeconfig> -n cpaas-system \
     get configmap baremetal-system-agent-handoff \
-    -o jsonpath='{.data.ready}{"\n"}{.data.profile}{"\n"}{.data.config}{"\n"}'
+    -o jsonpath='{.data.ready}{"\n"}'
   ```
 
-  Continue only when the current installer handoff hook has recreated or run the Job with the deployed provider configuration and completed successfully, `data.ready` is `true`, `data.profile` matches the selected authentication and endpoint mode, and `data.config` is a 64-character lowercase hexadecimal digest. The handoff binary computes this digest from the effective endpoint, TLS and authentication inputs, identity names, and the complete imported target plan set; do not try to reconstruct or approve it by visual comparison. The successful current Job is what proves that the stored digest matches those inputs.
+  The completion ConfigMap carries exactly one key, `ready`. It is the installer cleanup gate and nothing more: it records that the handoff and the global-side probe finished, and it says nothing about the endpoint, the TLS inputs, or the identity each host ended up with. Do not patch `data.ready` by hand, and do not treat it on its own as proof that the authentication split is correct — the checks below are what establish that.
 
-  Also confirm that every imported target object and referenced plan Secret exists in the final cluster. If the current Job failed or timed out, its final validation rejected the ConfigMap, the target set is incomplete, or a referenced plan Secret is missing, keep `minialauda` running and investigate the handoff Job and provider logs.
+  Continue only when all of the following hold:
+
+  - The current installer handoff hook ran the Job with the deployed provider configuration, and the Job completed successfully.
+  - `data.ready` is `true` on the final `global` cluster.
+  - Every imported target `MachineInventory` reports `status.plan.state: Applied` on the final `global` cluster. This is the global-side probe result, and it is the check that proves each host now reports to the new cluster.
+  - Every imported target object, and the plan Secret each one references, exists in the final cluster.
+  - The system-agent identities on the final cluster match the mode you deployed, and the temporary cross-identity RoleBinding is gone.
+
+  Check the last three conditions with:
+
+  ```shell
+  kubectl --kubeconfig <global-kubeconfig> -n cpaas-system \
+    get machineinventories.elemental.cattle.io \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.plan.state}{"\n"}{end}'
+
+  kubectl --kubeconfig <global-kubeconfig> -n cpaas-system \
+    get serviceaccount,secret,role,rolebinding \
+    | grep -E 'baremetal-(global-)?system-agent'
+
+  kubectl --kubeconfig <global-kubeconfig> -n cpaas-system \
+    get rolebinding baremetal-global-system-agent-handoff-bridge
+  ```
+
+  With `elemental.systemAgent.splitAuthEnabled: false` the final cluster carries only the shared `baremetal-system-agent` identity. With `true` it also carries the Global-local `baremetal-global-system-agent` identity, and the two Roles must not name the same plan Secret. The last command must report `NotFound`.
+
+  If the current Job failed or timed out, the target set is incomplete, a referenced plan Secret is missing, or a probe plan is not `Applied`, keep `minialauda` running and investigate the handoff Job and provider logs.
 </Directive>
 
 <Directive type="info" title="Verify the DCS credential Secret reached the global cluster">
