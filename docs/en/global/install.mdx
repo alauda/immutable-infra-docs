@@ -750,7 +750,7 @@ kubectl -n cpaas-system rollout restart deploy/global-alb2
 kubectl -n cpaas-system rollout status deploy/global-alb2
 ```
 
-Do not include this bootstrap `dex.tls` in `dcs-import-extra-resources`. It is only for the temporary bootstrap endpoint. The final `global` cluster's `dex.tls` is created or maintained by the installer platform certificate flow. For DR, use the `thirdParty` console certificate guidance in Step 8 so both sides serve a certificate for the stable platform domain. A control-plane VIP needs to be in that platform certificate only when clients intentionally access platform HTTPS directly through that VIP. The Global registry on port `11443` presents its own `global-registry-server` certificate chain and is not configured by `console.cert` or `dex.tls`.
+Do not include this bootstrap `dex.tls` in `dcs-import-extra-resources`. It is only for the temporary bootstrap endpoint. The final `global` cluster's `dex.tls` is created or maintained by the installer platform certificate flow. For DR, use the [Third-Party Console Certificate](#third-party-console-certificate) guidance in Step 8 so both sides serve a certificate for the stable platform domain. A control-plane VIP needs to be in that platform certificate only when clients intentionally access platform HTTPS directly through that VIP. The Global registry on port `11443` presents its own `global-registry-server` certificate chain and is not configured by `console.cert` or `dex.tls`.
 
 ```shell
 mkdir -p /root/yamls
@@ -1888,9 +1888,96 @@ Set `console.host` and `cluster.features.ha.vip` to the local Bare Metal `global
   </Tab>
 </Tabs>
 
-<Directive type="info" title="Third-Party Console Certificates">
-  The examples use a self-signed console certificate. If the environment requires a third-party certificate, replace `console.cert` with a `thirdParty` block that contains the base64 full certificate chain, private key, and optional PKCS#12 values before you submit the installer request. This certificate is only for platform HTTPS ingress; it does not configure the kube-apiserver or etcd certificates generated from `KubeadmControlPlane`. The Global registry on port `11443` uses an independently managed `global-registry-server` certificate chain, not `console.cert` or `dex.tls`.
+#### Third-Party Console Certificate \{#third-party-console-certificate}
+
+The provider examples above use a self-signed console certificate. When the platform must serve a certificate issued by the customer's own CA, replace `console.cert.selfSigned` with a `thirdParty` block before you submit the installer request. Nothing else in the request body changes, and every provider uses the same block.
+
+This certificate is only for platform HTTPS ingress. It does not configure the kube-apiserver or etcd certificates generated from `KubeadmControlPlane`, and the Global Registry on port `11443` presents an independently managed `global-registry-server` certificate chain that is configured by neither `console.cert` nor `dex.tls`.
+
+| Field | Encoding | Value |
+| :--- | :--- | :--- |
+| `certificate` | base64 | The full PEM chain: server certificate first, then any intermediate CA certificates |
+| `privateKey` | base64 | The matching PEM private key, unencrypted, RSA or ECDSA |
+| `pkcs12Certificate` | base64 | The binary PKCS#12 file, as an alternative to the two fields above |
+| `pkcs12Password` | plain text | The password of that PKCS#12 file. This field is **not** base64 |
+
+The installer reads `certificate`, `privateKey` and `pkcs12Certificate` as byte fields and base64-decodes them. PEM text submitted directly is rejected with `illegal base64 data at input byte 0`, because the decoder reads the leading `-` of `-----BEGIN`.
+
+##### Certificate Requirements \{#third-party-certificate-requirements}
+
+The installer validates the certificate before it accepts the request:
+
+- The certificate and the private key must belong together.
+- `console.globalHost` must be covered by the certificate. A domain must appear in a DNS SAN, where a wildcard SAN matches; an IP address must appear in an IP SAN.
+- Every entry in `console.host` that is a domain must appear in a DNS SAN. Entries that are IP addresses — what Huawei DCS and Bare Metal put in this field — are not matched against the certificate, which is why a control-plane VIP does not have to be in the SAN list unless clients intentionally reach platform HTTPS through that VIP.
+- SANs are collected across every certificate in the submitted chain.
+
+A failed check rejects the request with `certificate DNSNames must contains <host>` or `certificate IPAddresses must contains <address>`, and the installation does not start.
+
+Verify the delivered files on the bootstrap host before you build the request:
+
+```shell
+# SAN list, validity window, and the order of the chain
+openssl x509 -in tls.crt -noout -text | grep -A1 "Subject Alternative Name"
+openssl x509 -in tls.crt -noout -dates
+openssl crl2pkcs7 -nocrl -certfile tls.crt | openssl pkcs7 -print_certs -noout
+
+# The certificate and the key must yield the same public key
+diff <(openssl x509 -in tls.crt -noout -pubkey) <(openssl pkey -in tls.key -pubout)
+```
+
+##### Build the Request Block \{#build-the-third-party-cert-block}
+
+```shell
+export CERT_B64="$(base64 -w0 tls.crt)"
+export KEY_B64="$(base64 -w0 tls.key)"
+```
+
+Replace `console.cert` in the provider request body with the `thirdParty` block:
+
+```json
+  "console": {
+    "host": [
+      "${CONTROL_PLANE_VIP}"
+    ],
+    "globalHost": "${PLATFORM_HOST}",
+    "httpPort": 80,
+    "httpsPort": 443,
+    "cert": {
+      "thirdParty": {
+        "certificate": "${CERT_B64}",
+        "privateKey": "${KEY_B64}",
+        "pkcs12Certificate": null,
+        "pkcs12Password": ""
+      }
+    }
+  }
+```
+
+The generated request file now contains the private key. Restrict it with `chmod 600` and delete it from the bootstrap host once the installation succeeds.
+
+<Directive type="warning" title="PKCS#12 Input Drops the Intermediate Certificates">
+  When `pkcs12Certificate` is set, the installer decodes that file and overwrites `certificate` and `privateKey` from its contents. It keeps only the server certificate, so the intermediate CA certificates inside the PKCS#12 file are dropped and the platform serves an incomplete chain. The key inside the file must be RSA or ECDSA. When the platform has to serve a full chain, convert the delivered file and submit `certificate` and `privateKey` instead:
+
+  ```shell
+  openssl pkcs12 -in platform.pfx -nokeys -out tls.crt
+  openssl pkcs12 -in platform.pfx -nocerts -nodes -out tls.key
+  ```
 </Directive>
+
+##### What the Installer Creates \{#third-party-cert-secret}
+
+A `thirdParty` certificate becomes `cpaas-system/dex.tls` in the `global` cluster, of type `kubernetes.io/tls`, holding `tls.crt` and `tls.key` only. It has no `ca.crt` key, because the certificate is not issued by cert-manager. Two consequences:
+
+- The installer creates this Secret only when it is absent and never overwrites an existing one. Rotating the platform certificate later is a Secret update, not a new installer request.
+- On Bare Metal, the provider mounts a CA bundle from `elemental.tls.caCertSecretName` / `caCertSecretKey`, which default to `dex.tls` and `ca.crt`. With a `thirdParty` certificate that key does not exist and `elemental-operator` stays in `ContainerCreating`. Check which keys the Secret actually has and set `caCertSecretKey` to a key that exists, or point the provider at a separate Secret that carries the issuing CA:
+
+  ```shell
+  kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system \
+    get secret dex.tls -o jsonpath='{.data}' | jq -r 'keys | join(",")'
+  ```
+
+  See [Point the provider at the platform certificate that actually exists](#point-the-provider-at-the-platform-certificate).
 
 <Directive type="warning" title="DR Certificate Requirement">
   For a primary/standby Bare Metal `global` DR deployment, do not let each side generate an unrelated self-signed certificate. Configure the same trusted `thirdParty` platform certificate on both sides. Its required SAN is the stable `${PLATFORM_HOST}` domain. Do not add the primary or standby control-plane VIPs or internal Service names by default. Add a VIP SAN only when clients intentionally access platform HTTPS directly through that VIP. Registry access through port `11443` does not use this certificate; registry certificate management is independent and outside this certificate step. Global hosts handed off to `https://<control-plane-vip>:6443` validate the separate kube-apiserver certificate and CA, not `console.cert` or `dex.tls`.
@@ -2785,7 +2872,7 @@ kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system get deploy \
   cluster-api-provider-baremetal-manager elemental-operator
 ```
 
-### Point the provider at the platform certificate that actually exists
+### Point the provider at the platform certificate that actually exists \{#point-the-provider-at-the-platform-certificate}
 
 The Bare Metal provider mounts a CA bundle for `platformUrl` from
 `elemental.tls.caCertSecretName` / `caCertSecretKey`, which default to `dex.tls` and `ca.crt`.
