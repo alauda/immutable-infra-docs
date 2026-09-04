@@ -199,7 +199,7 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 | `<vrid>` | Operator-supplied VRID for `Internal` only. It must be unique in the control-plane Layer-2 domain. Remove the field for `External`. | n/a |
 | `<install-device>` | Whole-disk target for `elemental install`. A direct kernel path is suitable only when its identity is stable and unambiguous. For multi-disk bare-metal hosts that reuse one ISO, use `/dev/elemental-install-target`. | Confirm the disk by WWN from the host console. See [Select a Fixed System Disk on Multi-Disk Bare-Metal Hosts](../how-to/configure-fixed-install-disk-bare-metal.mdx). |
 | `<dns-image-tag>` / `<etcd-image-tag>` | Component versions baked into the bare-metal base image for `<kubernetes-version>`. | See the `coredns` and `etcd` columns in the [OS Support Matrix](../overview/os-support-matrix.mdx). |
-| `<kube-ovn-version>` | The `acp/chart-cpaas-kube-ovn` chart version matching the selected ACP and Kubernetes release. | Use the **kube-ovn (chart)** value from the [OS Support Matrix](../overview/os-support-matrix.mdx), not the Kube-OVN component version. |
+| `<kube-ovn-version>` | Kube-OVN chart version matching the selected ACP and Kubernetes release. | Use the **kube-ovn (chart)** value from the [OS Support Matrix](../overview/os-support-matrix.mdx), not the Kube-OVN component version, and confirm it against the installed plugin: `kubectl get moduleplugins.cluster.alauda.io kube-ovn -o jsonpath='{.spec.mainChart}{" "}{.status.latestVersion}'`. |
 | `<dns-server>` | Operator-supplied when the first-boot registration path needs an explicit resolver. | Prefer `MachineRegistration.config.cloud-config` or later `KubeadmControlPlane` bootstrap data (`format: cloud-config`). Do not write `/etc/resolv.conf` from `SeedImage.cloud-config`. |
 | `<ssh-authorized-keys>` | Operator-supplied OpenSSH public key — required for any interactive debugging on the node. | n/a |
 | `<inventory-name>` | Allocated by `elemental-operator` after the host boots the ISO and registers. Cannot be predicted before registration. | `kubectl -n cpaas-system get machineinventories.elemental.cattle.io` |
@@ -207,6 +207,7 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 | `<control-plane-inventory-1/2/3>` / `<worker-inventory-1/2/3>` | Exact `MachineInventory` names selected for each role. | Use the names from `kubectl -n cpaas-system get machineinventories.elemental.cattle.io`. |
 | `<control-plane-host-1/2/3>` / `<worker-host-1>` | Optional Kubernetes node hostnames applied during reprovision. | Operator-supplied; omit `hostname` to fall back to the inventory name. |
 | `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the `global` cluster's CIDRs, or any other CAPI cluster on the same `global`. | n/a |
+| `<workload-kubeconfig>` | Kubeconfig for the workload cluster. Published by Cluster API as a `Secret` once the control plane initializes. | `kubectl -n cpaas-system get secret <cluster-name>-kubeconfig -o jsonpath='{.data.value}' \| base64 -d` |
 | `<machine-name>` | Existing CAPI `Machine` name used for targeted removal or recovery. | `kubectl -n cpaas-system get machines.cluster.x-k8s.io` |
 | `<new-replica-count>` | Desired `MachineDeployment.spec.replicas` value after scaling. | Operator-supplied target worker count. |
 | `<new-template-name>` | New immutable template name for a changed `BaremetalMachineTemplate` or `KubeadmConfigTemplate`. | Operator-supplied; create a new name instead of editing an existing template in place. |
@@ -589,7 +590,7 @@ kubectl -n cpaas-system get baremetalmachines.infrastructure.cluster.x-k8s.io -w
 Each new control-plane `BaremetalMachine` advances `Pending → Allocated → Reprovisioning → Running`. Watch:
 
 - `BaremetalMachine.status.machineInventoryRef.name` — which inventory was picked.
-- `BaremetalMachine.status.planSecretRef.name` — plan secret being driven. The secret carries `baremetal.alauda.io/plan.type=reprovision`.
+- `BaremetalMachine.status.planSecretRef.name` — plan secret being driven. The secret carries the annotation `baremetal.alauda.io/plan.type=reprovision`.
 - `MachineInventory.status.plan.state` — `Applied` once the host completes `cloud-init clean`, `elemental upgrade`, reboot, and `kubeadm init`/`join`.
 - `BaremetalCluster.status.conditions[EndpointReady]` — true once the configured control-plane endpoint is reachable.
 
@@ -660,7 +661,7 @@ A successfully created cluster shows:
 - `Cluster.status.conditions[Ready]=True`.
 - `KubeadmControlPlane` replicas all `Ready`.
 - Every `BaremetalMachine.status.phase=Running` and `status.ready=true`.
-- Every used `MachineInventory.status.plan.state=Applied` with `baremetal.alauda.io/plan.type=reprovision` on its plan secret.
+- Every used `MachineInventory.status.plan.state=Applied` with the annotation `baremetal.alauda.io/plan.type=reprovision` on its plan secret (an annotation, not a label — `-o jsonpath='{.metadata.annotations}'`).
 - Every used inventory with non-empty `spec.storage.volumes[]` reports `status.storage.phase=Active`, `StoragePrepared=True`, and `StorageActive=True`; the corresponding `BaremetalMachine` reports `StorageReady=True/AllVolumesReady`.
 - `MachineInventoryPool.status` satisfies `available + allocated + preparing + reprovisioning + unavailable = total`.
 - Kubernetes Nodes Ready.
