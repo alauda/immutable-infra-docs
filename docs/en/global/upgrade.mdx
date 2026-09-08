@@ -19,7 +19,7 @@ For a Huawei DCS `global` cluster, review [Alauda OS and Provider Compatibility]
 Choose this upgrade path when:
 
 - The `global` cluster was originally installed on Immutable Infrastructure. See [Installing the global Cluster](./install.mdx).
-- Your infrastructure is one of the documented providers: Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal when provider `v0.0.1` or later is included in the installed release.
+- Your infrastructure is one of the documented providers: Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal when provider `v1.0.0` or later is included in the installed release.
 
 For traditional-OS `global` clusters, use <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="the standard upgrade path" /> instead.
 
@@ -191,7 +191,7 @@ Do not treat HCS `dataVolumes[]` as preserved state during node replacement. Thi
   </Tab>
   <Tab label="Bare Metal">
 
-This YAML workflow requires Bare Metal provider `v0.0.1` or later. Use it only after that provider package and the target OS Support Matrix row are available in the installed release. Before editing Cluster API resources, confirm that the provider `AppRelease` requested and installed revisions match and its chart phase is `Success`.
+This YAML workflow requires Bare Metal provider `v1.0.0` or later. Use it only after that provider package and the target OS Support Matrix row are available in the installed release. Before editing Cluster API resources, confirm that the provider `AppRelease` requested and installed revisions match and its chart phase is `Success`.
 
 Verify that the target Kubernetes version exists in `elemental-image-catalog`:
 

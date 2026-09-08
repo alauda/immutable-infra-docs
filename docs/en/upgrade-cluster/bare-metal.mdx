@@ -78,7 +78,7 @@ For the preparation and validation procedure, see [Manage Data Disks on Bare-Met
 Before you start, ensure all of the following prerequisites are met:
 
 - The Distribution Version upgrade is complete.
-- The installed Bare Metal provider is `v0.0.1` or later and its `AppRelease` reports the same requested and installed revision with `phase=Success`.
+- The installed Bare Metal provider is `v1.0.0` or later and its `AppRelease` reports the same requested and installed revision with `phase=Success`.
 - The control plane is reachable through the existing `<control-plane-vip>:<control-plane-port>`.
 - All current nodes are healthy and `Ready`.
 - Before changing Kube-OVN or reprovisioning any node, use <ExternalSiteLink name="acp" href="/configure/backup/etcd.html" children="ACP Cluster Enhancer" /> to create a current on-demand etcd backup. Verify that the newest `status.records` entry reports `result: Success`, record its `backupTimestamp` and `fileName`, and confirm that the corresponding backup archive exists and will remain retrievable if any control-plane node is reprovisioned or becomes unavailable.
@@ -178,7 +178,7 @@ When the new version corresponds to a new Alauda OS release, obtain the matching
 
 ## Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
 
-Follow the Bare Metal `v0.0.1+` flow in [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane). Bare Metal has no earlier supported provider flow in this documentation.
+Follow the Bare Metal `v1.0.0+` flow in [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane). Bare Metal has no earlier supported provider flow in this documentation.
 
 The shared procedure verifies `BaremetalCluster.spec.networkType`, updates the CAPI `Cluster` annotation, lets the provider reconcile the complete chart source and specification, and checks the chart name, requested revision, installed revision, phase, and conditions. Do not patch the `AppRelease` source manually.
 
@@ -303,7 +303,7 @@ For an inventory with managed volumes, also verify `status.storage.phase=Active`
 
 | Issue | What to check |
 |---|---|
-| The Kube-OVN annotation changed but the chart name, target revision, or installed revision did not converge | Confirm that the installed Bare Metal provider is `v0.0.1` or later, then inspect the `AppRelease` conditions and provider logs. Follow the shared [Kube-OVN verification](./index.mdx#verify-the-kube-ovn-apprelease); do not patch the source manually. |
+| The Kube-OVN annotation changed but the chart name, target revision, or installed revision did not converge | Confirm that the installed Bare Metal provider is `v1.0.0` or later, then inspect the `AppRelease` conditions and provider logs. Follow the shared [Kube-OVN verification](./index.mdx#verify-the-kube-ovn-apprelease); do not patch the source manually. |
 | Rollout stuck on the first new node | `BaremetalMachine.status.conditions[ImageResolved]` — confirm the new key is in `elemental-image-catalog` and that the `Cluster` carries `cpaas.io/registry-address`. |
 | Inventory does not become allocatable after clean | Check `MachineInventory.status.storage` and `status.observedStorage`. Managed volumes must be confirmed inactive and Prepared from a fresh host observation before the inventory can return to the allocation set. |
 | Replacement Machine waits on `StorageReady` | Verify that the selected inventory is the intended one, required device IDs and filesystem UUIDs still match, required mount units are active, and the host produced a fresh post-reboot observation. |

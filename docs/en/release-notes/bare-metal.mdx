@@ -1,0 +1,51 @@
+---
+weight: 60
+queries:
+  - bare metal release notes
+  - baremetal provider version
+  - what changed bare metal provider
+---
+
+# Bare Metal Provider Release Notes
+
+## Overview
+
+This page tracks release notes for the Alauda Container Platform Baremetal Infrastructure Provider. The version number you see on the platform refers to the packaging release of the bare-metal provider, which bundles the `cluster-api-provider-baremetal` controller image, the Alauda build of `elemental-operator`, the SeedImage builder, and the Helm chart used to deploy them on the Alauda Container Platform.
+
+The provider manages Kubernetes cluster lifecycle on physical servers with no virtualization layer. For the capability model and how it differs from the VM-based providers, see [Bare Metal Provider](../overview/providers/bare-metal.mdx). For installation steps, see [Bare Metal Provider Installation](../install/bare-metal.mdx).
+
+## v1.0.0 (2026-09-04) \{#v1-0-0}
+
+### Overview
+
+`v1.0.0` is the initial release of the Alauda Container Platform Baremetal Infrastructure Provider. It is compatible with Alauda Container Platform 4.4.
+
+The provider follows a YAML-only workflow. There is no Fleet Essentials UI for bare-metal clusters in this release; every workflow is driven by `kubectl apply` against `BaremetalCluster`, `BaremetalMachineTemplate`, `MachineInventoryPool`, and the upstream Cluster API resources.
+
+### Initial Capability Set
+
+- **Inventory-based allocation model** — Operators pre-declare which `MachineInventory` objects may back a `KubeadmControlPlane` or `MachineDeployment` through `MachineInventoryPool`. The provider selects an `Available` inventory from that pool when a `Machine` is created; nothing is provisioned outside the declared set. The provider never creates or deletes a `MachineInventory`.
+
+- **Plan-driven node lifecycle** — Node attach runs a `reprovision` plan (write cloud-init, `cloud-init clean`, `elemental upgrade`, reboot, cloud-init re-execute, `kubeadm init/join`). Node detach runs a `clean` plan (stop kubelet, clear CRI workload, stop containerd). The host stays in the inventory across scaling, upgrade, and cluster deletion.
+
+- **Cluster API native object tree** — Uses the upstream `Cluster`, `KubeadmControlPlane`, `MachineDeployment`, and `Machine` resources. The provider owns only the infrastructure tree: `BaremetalCluster`, `BaremetalMachine`, `BaremetalMachineTemplate`, and `MachineInventoryPool`. There is no custom control-plane CRD.
+
+- **Image-catalog driven Kubernetes versions** — A cluster-scoped `elemental-image-catalog` ConfigMap maps `Machine.spec.version` to an `elemental upgrade` image, so an upgrade is expressed as a version patch and the controller resolves the matching image.
+
+- **Two control-plane endpoint modes** — `BaremetalCluster.spec.controlPlaneLoadBalancer.type: Internal` deploys Alive (`keepalived` + IPVS + `kube-lock` Lease arbitration) onto the control-plane nodes and reconciles the Self-built VIP. `External` skips Alive and uses a pre-provisioned Layer 4 TCP load balancer maintained outside the cluster. See [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
+
+- **Network identity preservation** — `elemental-register` records the live-ISO observed network in `MachineInventory.spec.observedNetwork`. The first install and every later `reprovision` plan replay that snapshot as cloud-init `network-config v2`, so a host keeps its address, default route, and DNS across the entire lifecycle.
+
+- **Inventory-owned managed data disks** — Up to 32 XFS or ext4 data volumes can be declared in `MachineInventory.spec.storage`. The provider prepares them before allocation, activates their mount units before kubelet during reprovision, deactivates them during node removal, and preserves their filesystems for reuse of the same inventory. Volumes are addressed by stable device identity rather than kernel names, so a device rename across reboots does not break the mapping. See [Manage Data Disks on Bare-Metal Hosts](../how-to/manage-bare-metal-storage.mdx).
+
+- **Global Cluster disaster recovery** — The provider supports the Global Cluster disaster recovery handoff, including isolation of Global system-agent credentials between the primary and standby sites. See [Global Cluster Disaster Recovery](../global/disaster_recovery.mdx).
+
+- **Fixed install disk selection** — The installation target disk can be pinned so that a host installs to the intended device. See [Configure a Fixed Install Disk](../how-to/configure-fixed-install-disk-bare-metal.mdx).
+
+### Notes
+
+- **Base image ISO distribution** — The provider chart does not bundle a base image ISO. Import the ISO into the platform registry out of band and reference it from `SeedImage.spec.baseImage`.
+
+- **Architecture** — This release ships `linux/amd64` only.
+
+- **Kubernetes version** — Alauda Container Platform 4.4 ships Kubernetes 1.35. The OS image that a host installs must match the target Kubernetes version; see the [OS Support Matrix](../overview/os-support-matrix.mdx) for the per-release component versions and the supported OS variants.
