@@ -608,7 +608,7 @@
       "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/global/upgrade.mdx": {
-      "sha256": "51b4c7bfb190066f09aba4f67f9ea43b92c806ac140c4f156b59a33533b750b4",
+      "sha256": "cf02bb8490b733af781d5c579f101c9a213e792da158541baa4245f93b52e265",
       "size": 21259,
       "description": "Phase 2 (Kubernetes and Alauda OS image) of the two-phase `global` cluster upgrade on Immutable Infrastructure, for Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal: upgrade Kube-OVN first, then create new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources for the target image (Bare Metal resolves it from `Machine.spec.version` through `elemental-image-catalog`), retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment`, set CoreDNS and etcd tags from the OS Support Matrix row, add the `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch when targeting Kubernetes 1.35, and keep `rollingUpdate.maxSurge: 0` so pool-declared persistent disks and fixed identities are reused. Includes stage-based recovery rules and the single-control-plane HCS exclusion.",
       "generation_method": "ai_agent_reading",
@@ -937,11 +937,16 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/overview/release_notes.mdx": {
-      "sha256": "c756f4724e054ed5e700d41b6e8b602429b7eba5abe9ca329415a9787bd21d00",
-      "size": 654,
-      "description": "Routing stub in the Overview section that carries no release content of its own: it states that release notes are maintained per infrastructure provider and links out to the four dedicated pages under `release-notes/` (Huawei Cloud Stack, Huawei DCS, VMware vSphere, Kubeadm), noting that the Bare Metal Provider has no published release notes on this site. The actual per-tag version timelines live on those linked pages, not here.",
+      "sha256": "a5286469e9dba38abbfa45d89835923b1d3523bd1d0b551c662dd7080946a853",
+      "size": 635,
+      "description": "Routing stub in the Overview section that carries no release content of its own: it states that release notes are maintained per infrastructure provider and links out to the five dedicated pages under `release-notes/` (Huawei Cloud Stack, Huawei DCS, VMware vSphere, Kubeadm, Bare Metal). The actual per-tag version timelines live on those linked pages, not here.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
+    },
+    "docs/en/release-notes/bare-metal.mdx": {
+      "sha256": "65edcabbd0aa8369d61fdbf80f6705237ec88238315cc1cdb80b848d15ab99d4",
+      "size": 5139,
+      "description": "Version timeline for the ACP Baremetal Infrastructure Provider, whose version denotes the packaging release bundling the `cluster-api-provider-baremetal` controller image, the Alauda build of `elemental-operator`, the SeedImage builder, and the Helm chart that deploys them. Starts at `v1.0.0` (2026-09-04), the initial release, compatible with ACP 4.4 and shipping `linux/amd64` only: the `MachineInventoryPool` allocation model, plan-driven node attach and detach through `reprovision` and `clean`, the Cluster API native object tree, image-catalog driven Kubernetes versions, Internal (Alive keepalived + IPVS) and External control-plane endpoint modes, network identity preservation via `observedNetwork`, inventory-owned managed data disks, Global Cluster disaster recovery handoff, and fixed install disk selection. The chart does not bundle a base image ISO."
     },
     "docs/en/release-notes/huawei_cloud_stack.mdx": {
       "sha256": "4aac91d05031413b1e0db5784778c32add1e1fe78a634f155253f2522e607904",
@@ -960,14 +965,14 @@
     "docs/en/release-notes/index.mdx": {
       "sha256": "90fd004db4829d1436da05de20c9229a571e6588b86c9e89c3172c112e2bc0b0",
       "size": 114,
-      "description": "Section index for the per-provider Release Notes pages, rendered as an `<Overview />` child listing: Huawei Cloud Stack (`v1.0.1`-`v1.0.4`), Huawei DCS (`v1.0.0`-`v1.0.22`), VMware vSphere (`v1.0.0`-`v1.0.16`), and the platform-wide Kubeadm Provider (`v1.0.0`-`v1.0.12`). Each linked page carries a version timeline with one section per release tag; the Bare Metal Provider has no published release notes on this site.",
+      "description": "Section index for the per-provider Release Notes pages, rendered as an `<Overview />` child listing: Huawei Cloud Stack (`v1.0.1`-`v1.0.4`), Huawei DCS (`v1.0.0`-`v1.0.22`), VMware vSphere (`v1.0.0`-`v1.0.16`), the platform-wide Kubeadm Provider (`v1.0.0`-`v1.0.14`), and Bare Metal (`v1.0.0`). Each linked page carries a version timeline with one section per release tag.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-21T10:44:21Z"
     },
     "docs/en/release-notes/kubeadm.mdx": {
-      "sha256": "7efa1963ada6c5b90f77069ec3b5914ad9c75ffa6a9f9863ec4aafb07e07ab5f",
-      "size": 4126,
-      "description": "Version timeline for the Alauda-packaged Kubeadm Provider - the ACP distribution of the upstream Cluster API kubeadm bootstrap and control plane providers, consumed platform-wide by the HCS, DCS, and vSphere infrastructure providers - from `v1.0.0` (2025-06-18) through `v1.0.12` (2026-07-28), with New Features, Enhancements, Fixed Issues, and Notes per tag: KCP rollout gating and readiness validation, machine taint synchronization to nodes, platform registry refresh after control-plane VM replacement, standby Global Cluster protection, and CVE/toolchain updates.",
+      "sha256": "68ecc1e8db3d2c66f7149ff1568f3df42d94d616f46a200917b41f5b329d18ef",
+      "size": 6384,
+      "description": "Version timeline for the Alauda-packaged Kubeadm Provider - the ACP distribution of the upstream Cluster API kubeadm bootstrap and control plane providers, consumed platform-wide by the HCS, DCS, vSphere, and Bare Metal infrastructure providers - from `v1.0.0` (2025-06-18) through `v1.0.14` (2026-08-31), with New Features, Enhancements, Fixed Issues, and Notes per tag: KCP rollout gating and readiness validation, the Alive rollout gate and Alive static pod repair scoped to bare-metal clusters, machine taint synchronization to nodes, platform registry refresh after control-plane VM replacement, standby Global Cluster protection, and CVE/toolchain updates.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
     },
@@ -979,8 +984,8 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/upgrade-cluster/bare-metal.mdx": {
-      "sha256": "0737251b80b7f41d469ca0fb6841a588784ed3397226e31887cf4d4c843051b5",
-      "size": 24605,
+      "sha256": "cce22323369ff0389e906d3977d804918c234153c54479f93825726ae94143db",
+      "size": 27753,
       "description": "Phase 2 Kubernetes upgrade for bare-metal clusters, which replaces every node instead of running `kubeadm upgrade`: CAPI deletes a `Machine`, the provider writes a `clean` plan, reallocates an `Available` inventory from the same pool, and writes a `reprovision` plan that runs `elemental upgrade --system <new-image>`, with initramfs clearing `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes` while declared managed volumes are only deactivated. Covers the management-cluster-first sequence, verifying or extending the `elemental-image-catalog` ConfigMap, the shared Kube-OVN step, patching `KubeadmControlPlane.spec.version` with matching `dns` and `etcd.local` image tags (no new `BaremetalMachineTemplate` for a version-only hop), worker `MachineDeployment` rollouts at `maxSurge: 0`, storage compatibility limits on pre-storage hosts, cross-version hops, staged recovery, plan/inventory verification, and the `no space left on device` failure caused by an 8 GiB `COS_STATE`, including partial-snapshot cleanup and the reinstall needed on hosts installed before COS_STATE sizing was applied.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-28T14:49:02Z"
@@ -1000,9 +1005,9 @@
       "updated_at": "2026-08-31T05:54:15Z"
     },
     "docs/en/upgrade-cluster/index.mdx": {
-      "sha256": "6b4709dfdff1148709137d811125e8243b9e25b3b2612694aab458c7ac49059e",
-      "size": 22453,
-      "description": "Owner page for the two-phase cluster upgrade model: Phase 1 moves ACP Core and the Distribution Version through CVO (procedure owned by the ACP product documentation; Fleet Essentials `1.0.4`+ can request it), and Phase 2 replaces nodes with the Alauda OS image carrying the target Kubernetes version. Holds the shared Kube-OVN-first procedure - set `cpaas.io/kube-ovn-version` on the CAPI `Cluster`, respect the provider boundaries (DCS `v1.0.22`+, HCS `v1.0.4`+, vSphere `v1.0.16`+, Bare Metal `v0.0.1`+) and the chart-name change from `acp/chart-cpaas-kube-ovn` to `acp/chart-kube-ovn` at chart `v4.4`, then verify the `cni-kube-ovn` `AppRelease` - plus stage-1 Kube-OVN restore, the Kubernetes 1.35 `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch, and cross-version preparation with `upgrade.sh --only-sync-image` and staged intermediate OS images.",
+      "sha256": "9e8c4d1982c34d5410e85ae6669ef7ebe560e9292595039340aa209b277b7681",
+      "size": 22326,
+      "description": "Owner page for the two-phase cluster upgrade model: Phase 1 moves ACP Core and the Distribution Version through CVO (procedure owned by the ACP product documentation; Fleet Essentials `1.0.4`+ can request it), and Phase 2 replaces nodes with the Alauda OS image carrying the target Kubernetes version. Holds the shared Kube-OVN-first procedure - set `cpaas.io/kube-ovn-version` on the CAPI `Cluster`, respect the provider boundaries (DCS `v1.0.22`+, HCS `v1.0.4`+, vSphere `v1.0.16`+, Bare Metal `v1.0.0`+) and the chart-name change from `acp/chart-cpaas-kube-ovn` to `acp/chart-kube-ovn` at chart `v4.4`, then verify the `cni-kube-ovn` `AppRelease` - plus stage-1 Kube-OVN restore, the Kubernetes 1.35 `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch, and cross-version preparation with `upgrade.sh --only-sync-image` and staged intermediate OS images.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-31T05:54:15Z"
     },
