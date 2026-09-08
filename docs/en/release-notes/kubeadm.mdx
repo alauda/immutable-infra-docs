@@ -12,9 +12,25 @@ queries:
 
 This page tracks release notes for the Alauda Container Platform Kubeadm Provider, the Alauda-packaged distribution of the upstream Cluster API kubeadm bootstrap and control plane providers for the Alauda Container Platform.
 
-The Kubeadm Provider is platform-wide and is consumed by every infrastructure provider on this site (HCS, DCS, vSphere) for cluster bootstrap and control plane management.
+The Kubeadm Provider is platform-wide and is consumed by every infrastructure provider on this site (HCS, DCS, vSphere, Bare Metal) for cluster bootstrap and control plane management.
 
 For installation and capability details, see the platform installation documentation.
+
+## v1.0.14 (2026-08-31) \{#v1-0-14}
+
+### Enhancements
+
+- **Alive rollout gate for bare-metal clusters** — Control-plane machine replacement is now gated on Alive coverage of the remaining nodes. Deleting the last old control-plane node before its replacement has `keepalived` running would drop the Self-built VIP and leave the cluster unable to update the control-plane node identity. The gate blocks the deletion until the remaining nodes are covered.
+
+  The gate is scoped to bare-metal clusters by default. Its release criteria depend on how Alive is actually deployed — the interface carrying the VIP, the `app=alive` static pod labels, and whether the VIP lands on a node interface — and that has only been verified on bare metal. Other infrastructure providers are not gated until their own deployment shape is verified.
+
+### Fixed Issues
+
+- **Control-plane rollout recovers when Alive static pods are missing** — Within the same bare-metal scope as the gate above, a rollout could stall permanently when the recorded control-plane node identity was already current but a node it claimed had no running Alive static pod, because the trigger and the readiness gate never exchanged state. The controller now detects that condition and re-renders the Alive chart to reinstall the missing static pods, throttled to avoid repeated re-renders, and with concurrent reconciles resolved so that only one of them performs the repair. Previously the only recovery was to hand-edit the Alive `AppRelease` values. A bare-metal reprovision clears `/etc/kubernetes` and removes Alive from a host after a successful install, which is how the condition arises.
+
+- **Kubernetes API server to kubelet permissions during control-plane replacement** — Cluster API updated to a build that backports the kubeadm permission fix, resolving a control-plane replacement upgrade failure.
+
+- **CVE remediation across all three images** — The Go builder base image was unified and vulnerable Go modules were upgraded in the bootstrap, control-plane, and rollout-gate images. Cluster API was updated to `v1.10.6-alauda.17`, which clears the reachable advisories in `google.golang.org/grpc`, `go.opentelemetry.io/otel/sdk`, and `github.com/moby/spdystream`.
 
 ## v1.0.12 (2026-07-28) \{#v1-0-12}
 
