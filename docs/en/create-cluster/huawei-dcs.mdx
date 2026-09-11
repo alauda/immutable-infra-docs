@@ -580,6 +580,8 @@ spec:
 
 The example above shows three annotations, but a complete `Cluster` resource carries a few more. The table below lists the annotations the **operator authors** (some others are written by ACP controllers and you should not pre-set them):
 
+{/* lint disable no-legacy-os-names */}
+
 | Annotation | Required | Value source | Purpose |
 |---|---|---|---|
 | `capi.cpaas.io/resource-group-version` | Yes | Literal `infrastructure.cluster.x-k8s.io/v1beta1` | Tells the CAPI infrastructure binding which API group to use. |
@@ -589,6 +591,9 @@ The example above shows three annotations, but a complete `Cluster` resource car
 | `cpaas.io/kube-ovn-version` | Yes | The kube-ovn release the `global` cluster ships with. Read it from the `cpaas.io/kube-ovn-version` annotation on the `global` CAPI `Cluster` (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/kube-ovn-version}'`). The same value lives on every healthy workload cluster on the same `global` cluster, so you can also read it from any of those if they exist. | Pin the kube-ovn version installed into the workload cluster. |
 | `cpaas.io/registry-address` | Yes | The image registry the `global` cluster uses (typically `<registry-host>:11443`). Read it from the `cpaas.io/registry-address` annotation on the `global` CAPI `Cluster` (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'`). | Lets day-2 reconcilers resolve images while the cluster is being provisioned. This annotation does not select a registry credential: to pull platform images from a dedicated registry, use the `cpaas.io/registry-reference` label described below. |
 | `cpaas.io/nodes-mode` | Yes | Literal `self-managed` for clusters that DCS Provider provisions. | Marks the cluster as having its node lifecycle managed by CAPI + this provider. |
+| `cpaas.io/os-family` | KubeOS only | Literal `kubeos` when the cluster's DCS VM template is built from a KubeOS image. Omit it for Alauda OS: DCS Provider handles an unset value, or any value other than `kubeos`, as `slemicro`. Requires DCS Provider `v1.0.19` or later. | Tells DCS Provider not to render the `/home` mount into the node Ignition config. A KubeOS node that receives that mount fails early in Ignition and does not boot. Set it when you create the `Cluster`, before any machine is provisioned. |
+
+{/* lint enable no-legacy-os-names */}
 
 ACP controllers may write additional read-only annotations (`cpaas.io/cpu-cores-number`, `cpaas.io/memories`, `cpaas.io/nodes-number`, and so on) after the cluster is up — these are computed and **must not** be pre-set in the YAML you apply.
 
