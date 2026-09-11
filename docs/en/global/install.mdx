@@ -3078,7 +3078,6 @@ metadata:
     cpaas.io/nodes-mode: self-managed   # node lifecycle managed by CAPI + the DCS provider
     cpaas.io/kube-ovn-join-cidr: <kube-ovn-join-cidr>   # a /16 you choose; must not overlap the pod / service CIDRs or another cluster's join CIDR
     cpaas.io/kube-ovn-version: <kube-ovn-chart-version>
-    cpaas.io/os-family: <os-family>   # OS family of the Alauda OS image, for example slemicro
 spec:
   clusterNetwork:
     pods:     {cidrBlocks: ["${CLUSTER_CIDR}"]}
@@ -3116,7 +3115,7 @@ spec:
 | `<dcs-api-user>` / `<dcs-api-password>` / `<dcs-api-host>` / `<dcs-site-id>` | DCS platform credentials and site. They do not appear in the manifest — they go into the credential file used to create `${PROVIDER_SECRET_NAME}` in the prerequisites. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#using-yaml). |
 | `<vm-template-name>`, `<dns-image-tag>`, `<etcd-image-tag>` | The `cpaas.io/dcs-vm-template` ConfigMap. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders). |
 | `<dcs-cluster-name>`, `<dvswitch-name>`, `<port-group-name>`, `<datastore-name>` | DCS platform objects. Confirm with the DCS administrator. |
-| `192.0.2.x`, `<kube-ovn-join-cidr>`, `<os-family>`, `<kube-ovn-chart-version>` | Node IPs/gateway/DNS for your network; a `/16` Kube-OVN join CIDR that does not overlap the pod / service CIDRs or another cluster's join CIDR; the OS family of the image; and the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx). |
+| `192.0.2.x`, `<kube-ovn-join-cidr>`, `<kube-ovn-chart-version>` | Node IPs/gateway/DNS for your network; a `/16` Kube-OVN join CIDR that does not overlap the pod / service CIDRs or another cluster's join CIDR; and the kube-ovn chart version from the [OS Support Matrix](../overview/os-support-matrix.mdx). |
 | `ssh-ed25519 AAAA...` | A real OpenSSH public key. The `ignition` format rejects an empty list; supply any valid key even if you do not plan to SSH in. |
 
 <Directive type="info" title="Secret encryption and disaster recovery">
