@@ -1451,8 +1451,6 @@ For a disaster recovery installation, the two providers that deliver the encrypt
 
 The DCS provider's Cluster API resources are migrated by the built-in flow, so for a normal installation the ConfigMap only needs to import the credential `Secret` referenced by `DCSCluster.spec.credentialSecretRef.name`. Use the same Secret name you set in the `global` manifest.
 
-For a DR installation, the ConfigMap must also import the encryption-provider `Secret` referenced by `DCSCluster.spec.encryptionProviderConfigRef.name`. Export `DCS_ENCRYPTION_PROVIDER_SECRET` first, as described in [Prepare Shared DR Variables](#prepare-shared-dr-variables), and keep the second `names` entry below. For a normal non-DR installation that does not set `DCSCluster.spec.encryptionProviderConfigRef`, remove that entry.
-
 ```shell
 mkdir -p /root/yamls
 cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
@@ -1465,10 +1463,32 @@ data:
   resources.yaml: |
     resources:
     - resource: "secrets"
+      names: ["${PROVIDER_SECRET_NAME}"]
+      method: kubectl
+EOF
+
+kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+```
+
+For a DR installation, use the form below instead. It adds the encryption-provider `Secret` referenced by `DCSCluster.spec.encryptionProviderConfigRef.name`, which must reach the final `global` cluster. `DCS_ENCRYPTION_PROVIDER_SECRET` comes from [Prepare Shared DR Variables](#prepare-shared-dr-variables); the first line fails loudly if it is not exported, because the heredoc would otherwise expand it to an empty Secret name.
+
+```shell
+mkdir -p /root/yamls
+: "${DCS_ENCRYPTION_PROVIDER_SECRET:?export it first — see Prepare Shared DR Variables}"
+cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+    - resource: "secrets"
       names:
         - "${PROVIDER_SECRET_NAME}"
-        # Required for DR when DCSCluster.spec.encryptionProviderConfigRef is set.
-        # The name must match the Secret referenced by DCSCluster.
+        # The name must match the Secret referenced by
+        # DCSCluster.spec.encryptionProviderConfigRef.
         - "${DCS_ENCRYPTION_PROVIDER_SECRET}"
       method: kubectl
 EOF
@@ -1476,6 +1496,8 @@ EOF
 kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
 kubectl -n cpaas-system get cm dcs-import-extra-resources -o yaml
 ```
+
+Check the rendered ConfigMap before continuing: both `names` entries must be non-empty, and the second must match `DCSCluster.spec.encryptionProviderConfigRef.name` exactly.
 
 For DR, verify after installation that the final `global` cluster has the imported encryption-provider Secret.
 
@@ -2131,7 +2153,7 @@ DCS uses `DCSCluster.spec.encryptionProviderConfigRef` to deliver the disaster r
 
 This Secret must also be included in the DCS `dcs-import-extra-resources` ConfigMap from Step 7. It cannot remain only in the bootstrap cluster because the handed-off `global` cluster keeps the `DCSCluster` object and its `encryptionProviderConfigRef`, and must also have the referenced Secret for later provider reconciliation. The built-in DCS migration flow moves the Cluster API resources but does not copy this Secret.
 
-Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. Set `PROVIDER_SECRET_NAME` to the same Secret name used by `DCSCluster.spec.credentialSecretRef.name`, and keep `DCS_ENCRYPTION_PROVIDER_SECRET` aligned with `DCSCluster.spec.encryptionProviderConfigRef.name`.
+Create the DCS `dcs-import-extra-resources` ConfigMap on both installation environments, using the DR form of the ConfigMap in Step 7 rather than the normal one. Set `PROVIDER_SECRET_NAME` to the same Secret name used by `DCSCluster.spec.credentialSecretRef.name`, and keep `DCS_ENCRYPTION_PROVIDER_SECRET` aligned with `DCSCluster.spec.encryptionProviderConfigRef.name`.
 
 <Directive type="warning" title="A missing Secret only fails later, when a control-plane machine is replaced">
   When `DCSCluster.spec.encryptionProviderConfigRef` is set, the DCS provider requires the referenced Secret and does not fall back to generating or reading a configuration. Reconciles that do not create a control-plane machine are unaffected, so an installation whose Secret stayed in the bootstrap cluster looks healthy until something needs a new control-plane machine — a Kubernetes upgrade, a `KubeadmControlPlane` rolling update, or a control-plane node replacement. The new `Machine` then stays in `Provisioning` with no VM created, and the provider logs `failed to create vm: failed to resolve user data: get encryption provider config secret`.
@@ -3074,7 +3096,9 @@ spec:
     # use contentFrom the dcs-kubernetes-<major.minor>-files Secret. Apply these
     # global / non-DR deltas to that body:
     #   1. Add clusterConfiguration.etcd.local.serverCertSANs:
-    #        ["${CONTROL_PLANE_VIP}", "etcd.kube-system"]
+    #        ["${CONTROL_PLANE_VIP}", "${PLATFORM_HOST}"]
+    #        A DR pair uses a different list — see Optional Disaster Recovery
+    #        Deployment. etcd.kube-system belongs to that list, not this one.
     #   2. Omit the /etc/kubernetes/encryption-provider.conf files entry: the
     #        provider writes that file on control-plane nodes and drops any
     #        files entry for it. Keep apiServer.extraArgs.encryption-provider-
@@ -3148,7 +3172,7 @@ spec:
 
 | Placeholder / variable | Where it comes from |
 |---|---|
-| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}`, `${PROVIDER_SECRET_NAME}` | Exported in Step 1. |
+| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${PLATFORM_HOST}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}`, `${PROVIDER_SECRET_NAME}` | Exported in Step 1. |
 | `<dcs-api-user>` / `<dcs-api-password>` / `<dcs-api-host>` / `<dcs-site-id>` | DCS platform credentials and site. They do not appear in the manifest — they go into the credential file used to create `${PROVIDER_SECRET_NAME}` in the prerequisites. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#using-yaml). |
 | `<vm-template-name>`, `<dns-image-tag>`, `<etcd-image-tag>` | The `cpaas.io/dcs-vm-template` ConfigMap. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders). |
 | `<dcs-cluster-name>`, `<dvswitch-name>`, `<port-group-name>`, `<datastore-name>` | DCS platform objects. Confirm with the DCS administrator. |
