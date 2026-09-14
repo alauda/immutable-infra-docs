@@ -950,7 +950,7 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 - With DCS Provider `v1.0.22`, use an external LoadBalancer and set `DCSCluster.spec.controlPlaneLoadBalancer.type: external`, or use `type: internal` Self-built VIP when paired with ACP `v4.4+`. For internal mode, reserve an IPv4 VIP in the control-plane Layer 2 network and use the YAML workflow in [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx#self-built-vip). For external mode, validate the listener, backends, health check, and reachability in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
 - Keep the `KubeadmControlPlane.spec.kubeadmConfigSpec.users` entry with a non-empty `sshAuthorizedKeys` list (the `boot` user). The DCS `ignition` format rejects an empty SSH key list, so this field is required even for a `global` cluster you do not plan to access over SSH. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders) for what to supply when no interactive key is needed.
 - Keep the non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries. The file contents (the PodSecurity admission config, the kubelet patch, and the audit policy), together with the full `clusterConfiguration`, `preKubeadmCommands`, `postKubeadmCommands`, and the init and join node-registration patches, are identical to a workload cluster. Copy them from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, or reference the `dcs-kubernetes-<major.minor>-files` Secret documented there. The wiring fragment below shows only the `global`-specific fields layered on top of that base.
-- For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef` and do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
+- For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef`. Keep `clusterConfiguration.apiServer.extraArgs.encryption-provider-config` as the appendix has it: the DCS provider writes `/etc/kubernetes/encryption-provider.conf` onto every control-plane node itself — a random key for the first machine, the running API server's file for the rest — so the argument resolves and the `global` cluster runs with etcd secret encryption-at-rest. Do not add that file to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`; the provider drops any entry for that path, so one added there is silently unused. See [How the Encryption Provider Configuration Is Delivered](../create-cluster/huawei-dcs.mdx#encryption-provider-delivery).
 - Keep `/var/cpaas` as platform state. If you need the disk to survive rolling replacement, declare it in `DCSIpHostnamePool.spec.pool[].persistentDisk`; do not rely on `DCSMachineTemplate` template disks as preserved state.
 - Use concrete `datastoreName` values for DCS local storage unless you have verified that the selected datastore cluster can place volumes on hosts that can run the target VM.
 
@@ -1442,12 +1442,14 @@ The control plane is ready when the `KubeadmControlPlane` reports `Ready: True` 
 
 Before triggering the installer, create the `dcs-import-extra-resources` ConfigMap in the `cpaas-system` namespace for providers that require extra resource import. The ConfigMap name keeps the `dcs` prefix for historical installer compatibility, even when the provider is not Huawei DCS.
 
-Every provider uses this ConfigMap to import the IaaS credential `Secret` into the new `global` cluster. For VMware vSphere, Huawei Cloud Stack, and Bare Metal it also imports the provider's Cluster API resources; for Huawei DCS those resources are migrated by the built-in flow, so the DCS ConfigMap only needs the credential `Secret` entry. VMware vSphere, Huawei Cloud Stack, and Bare Metal require it for both normal and disaster recovery `global` installations.
+Every provider uses this ConfigMap to import the IaaS credential `Secret` into the new `global` cluster. For VMware vSphere, Huawei Cloud Stack, and Bare Metal it also imports the provider's Cluster API resources; for Huawei DCS those resources are migrated by the built-in flow, so the DCS ConfigMap only needs the credential `Secret` entry for a normal installation. VMware vSphere, Huawei Cloud Stack, and Bare Metal require it for both normal and disaster recovery `global` installations.
+
+For a disaster recovery installation, the two providers that deliver the encryption provider configuration through a Secret reference — Huawei DCS (`DCSCluster.spec.encryptionProviderConfigRef`) and Bare Metal (`BaremetalCluster.spec.encryptionProviderConfigRef`) — must also import that Secret through this ConfigMap. The built-in DCS migration flow moves Cluster API resources only; it does not copy the referenced Secret.
 
 <Tabs>
   <Tab label="Huawei DCS">
 
-The DCS provider's Cluster API resources are migrated by the built-in flow, so the ConfigMap only needs to import the credential `Secret` referenced by `DCSCluster.spec.credentialSecretRef.name`. Use the same Secret name you set in the `global` manifest.
+The DCS provider's Cluster API resources are migrated by the built-in flow, so for a normal installation the ConfigMap only needs to import the credential `Secret` referenced by `DCSCluster.spec.credentialSecretRef.name`. Use the same Secret name you set in the `global` manifest.
 
 ```shell
 mkdir -p /root/yamls
@@ -1466,6 +1468,43 @@ data:
 EOF
 
 kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+```
+
+For a DR installation, use the form below instead. It adds the encryption-provider `Secret` referenced by `DCSCluster.spec.encryptionProviderConfigRef.name`, which must reach the final `global` cluster. `DCS_ENCRYPTION_PROVIDER_SECRET` comes from [Prepare Shared DR Variables](#prepare-shared-dr-variables); the first line fails loudly if it is not exported, because the heredoc would otherwise expand it to an empty Secret name.
+
+```shell
+mkdir -p /root/yamls
+: "${DCS_ENCRYPTION_PROVIDER_SECRET:?export it first — see Prepare Shared DR Variables}"
+cat > /root/yamls/dcs-import-extra-resources.yaml <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dcs-import-extra-resources
+  namespace: cpaas-system
+data:
+  resources.yaml: |
+    resources:
+    - resource: "secrets"
+      names:
+        - "${PROVIDER_SECRET_NAME}"
+        # The name must match the Secret referenced by
+        # DCSCluster.spec.encryptionProviderConfigRef.
+        - "${DCS_ENCRYPTION_PROVIDER_SECRET}"
+      method: kubectl
+EOF
+
+kubectl apply -f /root/yamls/dcs-import-extra-resources.yaml
+kubectl -n cpaas-system get cm dcs-import-extra-resources -o yaml
+```
+
+Check the rendered ConfigMap before continuing: both `names` entries must be non-empty, and the second must match `DCSCluster.spec.encryptionProviderConfigRef.name` exactly.
+
+For DR, verify after installation that the final `global` cluster has the imported encryption-provider Secret.
+
+```shell
+kubectl --kubeconfig <global-kubeconfig> -n cpaas-system \
+  get secret "${DCS_ENCRYPTION_PROVIDER_SECRET}" \
+  -o jsonpath='{.data.encryption-provider\.conf}{"\n"}'
 ```
 
   </Tab>
@@ -1669,16 +1708,18 @@ Create the provider-specific installer configuration JSON file on the current bo
 | Field | Huawei DCS | VMware vSphere | Huawei Cloud Stack | Bare Metal |
 |-------|------------|----------------|--------------------|------------|
 | Endpoint path | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` | `/cpaas-installer/api/config/dcs` |
-| `console.host` | Local `global` HA VIP list | Empty list, `[]` | Empty list, `[]` | Local `global` control-plane VIP list |
+| `console.host` | `["${CONTROL_PLANE_VIP}"]` | `["${CONTROL_PLANE_VIP}"]` | `["${CONTROL_PLANE_VIP}"]` | `["${CONTROL_PLANE_VIP}"]` |
 | `console.globalHost` | Platform access address | Platform access address | Platform access address | Platform access address |
 | `cluster.clusterCIDR` and `cluster.serviceCIDR` | Required | Not set; cluster CIDRs are declared in the VMware vSphere `Cluster` manifest | Not set | Required |
-| `cluster.features.ha` | Required, points to the local HA VIP with `isThirdParty: true` | Not set; the control plane endpoint is declared in `VSphereCluster.spec.controlPlaneEndpoint.host` | Not set; HCS ELB is declared in `HCSCluster` | Required, points to the bare-metal control-plane VIP with `isThirdParty: true` |
+| `cluster.features.ha` | Required, `vip` is `${CONTROL_PLANE_VIP}` with `isThirdParty: true` | Not set; the control plane endpoint is declared in `VSphereCluster.spec.controlPlaneEndpoint.host` | Not set; HCS ELB is declared in `HCSCluster` | Required, `vip` is `${CONTROL_PLANE_VIP}` with `isThirdParty: true` |
 | `hostIP` | Current bootstrap host IP | Current bootstrap host IP | Current bootstrap host IP | Current bootstrap host IP |
+
+Each `console.host` entry is a bare address: no `https://` prefix and no port. The ports come from `console.httpPort` and `console.httpsPort`.
 
 <Tabs>
   <Tab label="Huawei DCS">
 
-The DCS installer request includes the `global` control-plane HA VIP. With an external LoadBalancer, this is the externally provisioned VIP. With DCS Provider `v1.0.22+` and ACP `v4.4+` `Self-built VIP`, use the reserved VIP that the provider-managed `alive` runtime owns.
+The DCS installer request includes the `global` control-plane VIP. With an external LoadBalancer, this is the externally provisioned VIP. With DCS Provider `v1.0.22+` and ACP `v4.4+` `Self-built VIP`, use the reserved VIP that the provider-managed `alive` runtime owns.
 
 ```shell
 mkdir -p /root/yamls
@@ -1731,7 +1772,7 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   -d @"${INSTALLER_CONFIG_JSON}"
 ```
 
-Set `console.host` and `cluster.features.ha.vip` to the local `global` HA VIP. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address.
+Set `console.host` to the local `global` control-plane VIP, `${CONTROL_PLANE_VIP}`. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address. `cluster.features.ha.vip` uses the same address.
 
   </Tab>
   <Tab label="VMware vSphere">
@@ -1754,7 +1795,9 @@ cat > "${INSTALLER_CONFIG_JSON}" <<EOF
     "password": "<base64-registry-password>"
   },
   "console": {
-    "host": [],
+    "host": [
+      "${CONTROL_PLANE_VIP}"
+    ],
     "globalHost": "${PLATFORM_HOST}",
     "httpPort": 80,
     "httpsPort": 443,
@@ -1776,12 +1819,12 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   -d @"${INSTALLER_CONFIG_JSON}"
 ```
 
-Keep `console.host` as an empty list because the VMware vSphere control plane endpoint is already set in the `global` manifest. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address.
+Set `console.host` to the local `global` control-plane VIP, `${CONTROL_PLANE_VIP}`. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address. `VSphereCluster.spec.controlPlaneEndpoint.host` uses the same address.
 
   </Tab>
   <Tab label="Huawei Cloud Stack">
 
-HCS uses the same installer endpoint path as DCS, but its request body does not include `cluster.features.ha`. The control plane VIP is owned by the HCS ELB declared in `HCSCluster.spec.controlPlaneLoadBalancer`, so `console.host` must remain an empty list.
+HCS uses the same installer endpoint path as DCS, but its request body does not include `cluster.features.ha`. The control-plane VIP is owned by the HCS ELB declared in `HCSCluster.spec.controlPlaneLoadBalancer`.
 
 ```shell
 mkdir -p /root/yamls
@@ -1799,7 +1842,9 @@ cat > "${INSTALLER_CONFIG_JSON}" <<EOF
     "password": "<base64-registry-password>"
   },
   "console": {
-    "host": [],
+    "host": [
+      "${CONTROL_PLANE_VIP}"
+    ],
     "globalHost": "${PLATFORM_HOST}",
     "httpPort": 80,
     "httpsPort": 443,
@@ -1820,6 +1865,8 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   -H 'Content-Type: application/json' \
   -d @"${INSTALLER_CONFIG_JSON}"
 ```
+
+Set `console.host` to the local `global` control-plane VIP, `${CONTROL_PLANE_VIP}`. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address. `HCSCluster.spec.controlPlaneLoadBalancer.vipAddress` uses the same address.
 
   </Tab>
   <Tab label="Bare Metal">
@@ -1883,7 +1930,7 @@ curl -k -X POST "http://${INSTALLER_IP}:8080/cpaas-installer/api/config/dcs" \
   -d @"${INSTALLER_CONFIG_JSON}"
 ```
 
-Set `console.host` and `cluster.features.ha.vip` to the local Bare Metal `global` control-plane VIP. Use `console.globalHost` for the stable platform domain.
+Set `console.host` to the local `global` control-plane VIP, `${CONTROL_PLANE_VIP}`. Do not use the platform domain in `console.host`; use `console.globalHost` for the platform access address. `cluster.features.ha.vip` uses the same address.
 
   </Tab>
 </Tabs>
@@ -1982,7 +2029,7 @@ All providers: primary and standby clusters must use the same encryption provide
 
 Bare Metal only: primary and standby must additionally use the same Kubernetes ServiceAccount signing key, so that the fixed `baremetal-system-agent` token created on the primary cluster is accepted by the standby API server after failover. The machines that form each `global` cluster still use separate cluster-local identities.
 
-### Prepare Shared DR Variables
+### Prepare Shared DR Variables \{#prepare-shared-dr-variables}
 
 Set the same encryption key value on both the primary and standby installation environments.
 
@@ -1991,6 +2038,7 @@ export ENCRYPTION_PROVIDER_CONF="/root/yamls/encryption-provider.conf"
 export ENCRYPTION_PROVIDER_SECRET_B64="<base64-shared-etcd-encryption-key>"
 export PRIMARY_CLUSTER_VIP="<primary-ha-vip>"
 export STANDBY_CLUSTER_VIP="<standby-ha-vip>"
+export DCS_ENCRYPTION_PROVIDER_SECRET="encryption-provider-config"
 export BAREMETAL_ENCRYPTION_PROVIDER_SECRET="global-encryption-provider-config"
 export SERVICE_ACCOUNT_ISSUER="https://kubernetes.default.svc.cluster.local"
 ```
@@ -2078,7 +2126,7 @@ grep -E 'service-account-private-key-file' \
 
 ### Add DR etcd Server Certificate SANs to KubeadmControlPlane
 
-In the manifest generated in Step 4, include both the primary and standby control plane VIPs, the platform access address, and `etcd.kube-system` in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`. Use the same SAN list on both the primary and standby installation environments. These values configure the etcd server certificate generated by kubeadm; they are independent of the platform `console.cert` and must not be copied into its `thirdParty` SAN list.
+In the manifest generated in Step 4, include both the primary and standby control-plane VIPs, the platform access address, and `etcd.kube-system` in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.serverCertSANs`. Use the same SAN list on both the primary and standby installation environments. These values configure the etcd server certificate generated by kubeadm; they are independent of the platform `console.cert` and must not be copied into its `thirdParty` SAN list.
 
 ```yaml
 serverCertSANs:
@@ -2088,15 +2136,15 @@ serverCertSANs:
   - "etcd.kube-system"
 ```
 
-### Add Provider-Specific DR Fields
+### Add Provider-Specific DR Fields \{#add-provider-specific-dr-fields}
 
 <Tabs>
   <Tab label="Huawei DCS">
 
-Create the encryption provider Secret in the bootstrap cluster.
+Create the encryption provider Secret in the bootstrap cluster on both installation environments. The Secret must be in the same namespace as `DCSCluster` and must contain a key named `encryption-provider.conf`.
 
 ```shell
-kubectl create secret generic encryption-provider-config \
+kubectl create secret generic "${DCS_ENCRYPTION_PROVIDER_SECRET}" \
   --from-file=encryption-provider.conf="${ENCRYPTION_PROVIDER_CONF}" \
   -n cpaas-system \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -2109,9 +2157,25 @@ encryptionProviderConfigRef:
   name: encryption-provider-config
 ```
 
-DCS uses `DCSCluster.spec.encryptionProviderConfigRef` to deliver the disaster recovery encryption provider configuration. Do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for the DCS DR path.
+DCS uses `DCSCluster.spec.encryptionProviderConfigRef` to deliver the disaster recovery encryption provider configuration. The DCS provider reads this Secret every time it builds control-plane bootstrap data. Do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for the DCS DR path.
 
-Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 on both installation environments. Set `PROVIDER_SECRET_NAME` to the same Secret name used by `DCSCluster.spec.credentialSecretRef.name`.
+This Secret must also be included in the DCS `dcs-import-extra-resources` ConfigMap from Step 7. It cannot remain only in the bootstrap cluster because the handed-off `global` cluster keeps the `DCSCluster` object and its `encryptionProviderConfigRef`, and must also have the referenced Secret for later provider reconciliation. The built-in DCS migration flow moves the Cluster API resources but does not copy this Secret.
+
+Create the DCS `dcs-import-extra-resources` ConfigMap on both installation environments, using the DR form of the ConfigMap in Step 7 rather than the normal one. Set `PROVIDER_SECRET_NAME` to the same Secret name used by `DCSCluster.spec.credentialSecretRef.name`, and keep `DCS_ENCRYPTION_PROVIDER_SECRET` aligned with `DCSCluster.spec.encryptionProviderConfigRef.name`.
+
+<Directive type="warning" title="A missing Secret only fails later, when a control-plane machine is replaced">
+  When `DCSCluster.spec.encryptionProviderConfigRef` is set, the DCS provider requires the referenced Secret and does not fall back to generating or reading a configuration. Reconciles that do not create a control-plane machine are unaffected, so an installation whose Secret stayed in the bootstrap cluster looks healthy until something needs a new control-plane machine — a Kubernetes upgrade, a `KubeadmControlPlane` rolling update, or a control-plane node replacement. The new `Machine` then stays in `Provisioning` with no VM created, and the provider logs `failed to create vm: failed to resolve user data: get encryption provider config secret`.
+
+  Check both sides of an existing DR pair, and backfill the Secret if it is missing:
+
+  ```shell
+  kubectl --kubeconfig <global-kubeconfig> -n cpaas-system get dcscluster global \
+    -o jsonpath='{.spec.encryptionProviderConfigRef.name}{"\n"}'
+  kubectl --kubeconfig <global-kubeconfig> -n cpaas-system get secret <name>
+  ```
+
+  Recreate it from the same `encryption-provider.conf` the installation used, so new control-plane machines keep the key the running API servers already use. If that file is no longer on the bootstrap host, copy it from a running control-plane node of the same cluster (`/etc/kubernetes/encryption-provider.conf`). A different key breaks decryption of the etcd data the pair already holds.
+</Directive>
 
   </Tab>
   <Tab label="VMware vSphere">
@@ -2311,14 +2375,14 @@ Use the provider-specific installer configuration differences for both sides:
 
 | Provider | Primary installation | Standby installation |
 |----------|----------------------|----------------------|
-| Huawei DCS | Set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name`. | Set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name`. |
-| VMware vSphere | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the primary HA VIP used by the primary manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. | Set `VSphereCluster.spec.controlPlaneEndpoint.host` to the standby HA VIP used by the standby manifest. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. |
-| Huawei Cloud Stack | Keep `console.host: []`; the primary VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Keep `console.host: []`; the standby VIP is managed by the HCS ELB. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
-| Bare Metal | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the primary control-plane VIP. Set `handoffHook.directAPIServer: true`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.sharedAuthReadOnly: false`. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. | Set `console.host`, `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` to the standby control-plane VIP. Set `handoffHook.directAPIServer: true`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.sharedAuthReadOnly: true`. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. |
+| Huawei DCS | Set `console.host` to the primary control-plane VIP. `cluster.features.ha.vip` uses the same address. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name` and `DCS_ENCRYPTION_PROVIDER_SECRET` aligned with `DCSCluster.spec.encryptionProviderConfigRef.name`. | Set `console.host` to the standby control-plane VIP. `cluster.features.ha.vip` uses the same address. Create the DCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `PROVIDER_SECRET_NAME` aligned with `DCSCluster.spec.credentialSecretRef.name` and `DCS_ENCRYPTION_PROVIDER_SECRET` aligned with `DCSCluster.spec.encryptionProviderConfigRef.name`. |
+| VMware vSphere | Set `console.host` to the primary control-plane VIP. `VSphereCluster.spec.controlPlaneEndpoint.host` uses the same address. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. | Set `console.host` to the standby control-plane VIP. `VSphereCluster.spec.controlPlaneEndpoint.host` uses the same address. Create the VMware vSphere `dcs-import-extra-resources` ConfigMap from Step 7 and keep `global-vsphere-credentials` aligned with `VSphereCluster.spec.identityRef.name`. |
+| Huawei Cloud Stack | Set `console.host` to the primary control-plane VIP. `HCSCluster.spec.controlPlaneLoadBalancer.vipAddress` uses the same address. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. | Set `console.host` to the standby control-plane VIP. `HCSCluster.spec.controlPlaneLoadBalancer.vipAddress` uses the same address. Create the HCS `dcs-import-extra-resources` ConfigMap from Step 7 and keep `HCS_SECRET_NAME` aligned with `HCSCluster.spec.identityRef.name`. |
+| Bare Metal | Set `console.host` to the primary control-plane VIP. `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` use the same address. Set `handoffHook.directAPIServer: true`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.sharedAuthReadOnly: false`. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. | Set `console.host` to the standby control-plane VIP. `cluster.features.ha.vip`, `BaremetalCluster.spec.controlPlaneLoadBalancer.host`, and `handoffHook.controlPlaneVIP` use the same address. Set `handoffHook.directAPIServer: true`, `elemental.systemAgent.splitAuthEnabled: true`, and `elemental.systemAgent.sharedAuthReadOnly: true`. Create the Bare Metal `dcs-import-extra-resources` ConfigMap from Step 7. |
 
-For the primary cluster, make sure the platform domain resolves to the primary HA VIP. In Step 8, set `hostIP` to the primary bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the primary HA VIP. For VMware vSphere, set the control plane endpoint in the primary manifest to the primary HA VIP. For HCS, keep `console.host: []` because the VIP is owned by the HCS ELB. For Bare Metal, set both the manifest VIP and the installer VIP fields to the primary control-plane VIP.
+For the primary cluster, make sure the platform domain resolves to the primary control-plane VIP. In Step 8, set `hostIP` to the primary bootstrap host IP, and set `console.host` and the provider fields listed in the table above to the primary control-plane VIP.
 
-After the primary cluster installation succeeds, switch the platform domain to the standby HA VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. For DCS, set `console.host` and `cluster.features.ha.vip` to the standby HA VIP. For VMware vSphere, set the control plane endpoint in the standby manifest to the standby HA VIP. For HCS, keep `console.host: []`. For Bare Metal, set both the manifest VIP and the installer VIP fields to the standby control-plane VIP, and keep `REGISTRY_DOMAIN` at `${PLATFORM_HOST}:11443` — the same value the primary installation used. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
+After the primary cluster installation succeeds, switch the platform domain to the standby control-plane VIP as required by the DR procedure. Then install the standby cluster. This DNS switch before the standby installation is required because several platform resources are rendered with the platform domain and must resolve to the standby entrance while the standby installer runs. In Step 8 on the standby bootstrap host, set `hostIP` to the standby bootstrap host IP. Set `console.host` and the provider fields listed in the table above to the standby control-plane VIP. For Bare Metal, keep `REGISTRY_DOMAIN` at `${PLATFORM_HOST}:11443` — the same value the primary installation used. Get `INSTALLER_IP` from the `cpaas-installer` Pod on the standby bootstrap host; do not reuse the primary bootstrap host value.
 
 #### Bare Metal: Verify Before Decommissioning Either Bootstrap Cluster \{#bare-metal-dr-verification}
 
@@ -2883,8 +2947,10 @@ After the installer reports success, and after you complete [Prepare the global 
   Also confirm that every imported target object and referenced plan Secret exists in the final cluster. If the current Job failed or timed out, its final validation rejected the ConfigMap, the target set is incomplete, or a referenced plan Secret is missing, keep `minialauda` running and investigate the handoff Job and provider logs.
 </Directive>
 
-<Directive type="info" title="Verify the DCS credential Secret reached the global cluster">
+<Directive type="info" title="Verify the DCS Secrets reached the global cluster">
   The DCS API credential `Secret` is copied to the `global` cluster during installation by the `dcs-import-extra-resources` ConfigMap you create in Step 7 — it imports the Secret named in your `DCSCluster.spec.credentialSecretRef`. Before you remove the bootstrap host, verify it is present: `kubectl --kubeconfig <global-kubeconfig> get secret <name> -n cpaas-system`. If it is missing, copy it over first — without it the `global` cluster's DCS provider has no DCS API credentials and cannot reconcile (for example, scale-out later fails).
+
+  For a DR installation, run the same check for the Secret named in `DCSCluster.spec.encryptionProviderConfigRef`. The `DCSCluster` object survives the handoff with that reference, so once the bootstrap cluster is gone a missing Secret makes every later control-plane machine creation fail — see [Add Provider-Specific DR Fields](#add-provider-specific-dr-fields).
 </Directive>
 
 <Directive type="warning" title="Do not delete the Cluster API objects to clean up">
@@ -3038,10 +3104,13 @@ spec:
     # use contentFrom the dcs-kubernetes-<major.minor>-files Secret. Apply these
     # global / non-DR deltas to that body:
     #   1. Add clusterConfiguration.etcd.local.serverCertSANs:
-    #        ["${CONTROL_PLANE_VIP}", "etcd.kube-system"]
-    #   2. Non-DR: omit the /etc/kubernetes/encryption-provider.conf file AND the
-    #        apiServer.extraArgs.encryption-provider-config argument (keep both for
-    #        DR / at-rest encryption — see the note after this example).
+    #        ["${CONTROL_PLANE_VIP}", "${PLATFORM_HOST}"]
+    #        A DR pair uses a different list — see Optional Disaster Recovery
+    #        Deployment. etcd.kube-system belongs to that list, not this one.
+    #   2. Omit the /etc/kubernetes/encryption-provider.conf files entry: the
+    #        provider writes that file on control-plane nodes and drops any
+    #        files entry for it. Keep apiServer.extraArgs.encryption-provider-
+    #        config — see the note after this example.
 ---
 # 4. DCS infrastructure cluster.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -3111,7 +3180,7 @@ spec:
 
 | Placeholder / variable | Where it comes from |
 |---|---|
-| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}`, `${PROVIDER_SECRET_NAME}` | Exported in Step 1. |
+| `${K8S_VERSION}`, `${CONTROL_PLANE_VIP}`, `${PLATFORM_HOST}`, `${NODE_REGISTRY_ADDRESS}`, `${CLUSTER_CIDR}`, `${SERVICE_CIDR}`, `${PROVIDER_SECRET_NAME}` | Exported in Step 1. |
 | `<dcs-api-user>` / `<dcs-api-password>` / `<dcs-api-host>` / `<dcs-site-id>` | DCS platform credentials and site. They do not appear in the manifest — they go into the credential file used to create `${PROVIDER_SECRET_NAME}` in the prerequisites. See [Cloud Credentials](../infrastructure/huawei-dcs.mdx#using-yaml). |
 | `<vm-template-name>`, `<dns-image-tag>`, `<etcd-image-tag>` | The `cpaas.io/dcs-vm-template` ConfigMap. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders). |
 | `<dcs-cluster-name>`, `<dvswitch-name>`, `<port-group-name>`, `<datastore-name>` | DCS platform objects. Confirm with the DCS administrator. |
@@ -3119,5 +3188,7 @@ spec:
 | `ssh-ed25519 AAAA...` | A real OpenSSH public key. The `ignition` format rejects an empty list; supply any valid key even if you do not plan to SSH in. |
 
 <Directive type="info" title="Secret encryption and disaster recovery">
-  This example does not enable etcd secret encryption-at-rest. To enable it, or to deploy a DR pair, add the `/etc/kubernetes/encryption-provider.conf` file and the `apiServer.extraArgs.encryption-provider-config` argument as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment).
+  This example runs with etcd secret encryption-at-rest enabled. `apiServer.extraArgs.encryption-provider-config` stays in the `clusterConfiguration` you copy from the appendix, and the DCS provider supplies the file it points at: a random key generated for the first control-plane machine, then the running API server's own file for every later one. Do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` — the provider drops any entry for that path. See [How the Encryption Provider Configuration Is Delivered](../create-cluster/huawei-dcs.mdx#encryption-provider-delivery).
+
+  Remove the argument only if you deliberately want to run without at-rest encryption. For a DR pair the key must be identical on both sides, which means pinning it with `DCSCluster.spec.encryptionProviderConfigRef` as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment).
 </Directive>
