@@ -88,7 +88,9 @@ A `SeedImage` built during the bootstrap phase points at the bootstrap endpoint 
 
 **First-boot addressing.**
 
-If the target VM or physical host does not receive an address from DHCP while booted into the live ISO, configure the network manually from the host console before waiting for registration. Check the NetworkManager connection name first, then apply the site-specific address, gateway, and DNS values:
+Whatever a host's network looks like when it registers is what the installed OS keeps: registration captures the host's NetworkManager connection files, and the install replays them on every later boot. Configure the network before the host installs, not after. A host that needs a bond, a second interface for the CNI, or a static address on a segment without DHCP has to be set up from the console first — including gating the automatic install, which otherwise starts as soon as the network comes up. See [Configure Host Networking on Bare-Metal Hosts](../how-to/configure-host-network-bare-metal.mdx).
+
+For the simple case — one NIC, no DHCP on the segment — configure it manually from the host console before waiting for registration. Check the NetworkManager connection name first, then apply the site-specific address, gateway, and DNS values:
 
 ```bash
 nmcli connection show
@@ -409,6 +411,7 @@ spec:
 | `.spec.clusterName` | string | The workload cluster name this pool serves. A `MachineInventory` must not appear in two active pools. | Yes |
 | `.spec.machineInventories[].name` | string | Exact name of a registered `MachineInventory`. | Yes |
 | `.spec.machineInventories[].hostname` | string | Hostname applied during reprovision. Defaults to the inventory name when omitted. | No |
+| `.spec.machineInventories[].networkDevice` | string | CNI interface for this host, overriding the cluster default. Use it when one host names its CNI interface differently — a bond, or a NIC that is not `eth1` on every machine. See [Choose the CNI Network Interface](#cni-network-interface). | No |
 
 Apply and verify:
 
@@ -566,6 +569,10 @@ spec:
 | `cpaas.io/kube-ovn-version` | Recommended | **kube-ovn (chart)** value from the [OS Support Matrix](../overview/os-support-matrix.mdx). | Pins the chart version used when the provider creates `cni-kube-ovn`. If omitted, the provider falls back to the `kube-ovn` `ModulePlugin` version. |
 | `cpaas.io/sentry-deploy-type` | Yes | Literal `Baremetal`. | Marks the cluster for the bare-metal deploy profile. |
 | `cpaas.io/alb-address-type` | Yes | Literal `ClusterAddress`. | ALB address mode used on bare-metal clusters. |
+| `kube-ovn.cpaas.io/transmit-type` | Underlay only | `underlay`. Omit it, or set `overlay`, for the default. | Selects the Kube-OVN network type. The provider refuses to change it on a cluster whose CNI is already deployed. |
+| `kube-ovn.cpaas.io/vlan-id` | Underlay | `0`–`4094` — the VLAN the CNI interface is trunked for. | `VLAN_ID` of the provider network. |
+| `kube-ovn.cpaas.io/gateway` | Underlay | An IPv4 address inside `spec.clusterNetwork.pods.cidrBlocks[0]`. | Default gateway handed to Pods. |
+| `kube-ovn.cpaas.io/exclude-ips` | Underlay, recommended | Comma-separated addresses or `a..b` ranges on the Pod subnet that are already in use. | Keeps Kube-OVN from allocating them. The control-plane VIP is excluded automatically. |
 
 **`BaremetalCluster` parameters:**
 
@@ -577,6 +584,7 @@ spec:
 | `.spec.controlPlaneLoadBalancer.vrid` | int (0–255) | Keepalived `virtual_router_id`. Must be unique in the control-plane Layer-2 domain. Remove the field for `External`. | When `type=Internal` |
 | `.spec.controlPlaneEndpoint` | object | API server endpoint exposed to CAPI. Once set, must not change. Leave empty to let the reconciler backfill it from `controlPlaneLoadBalancer`. | No |
 | `.spec.networkType` | string | CNI implementation managed by the provider. Set it to `kube-ovn`; any other value causes the provider to skip Kube-OVN `AppRelease` reconciliation and node-removal integration. | Yes for Kube-OVN clusters |
+| `.spec.networkDevice` | string | Interface Kube-OVN uses on every node of the cluster. Defaults to `eth0`, the interface that also carries the node address. A pool member can override it per host. See [Choose the CNI Network Interface](#cni-network-interface). | No |
 
 Apply and watch:
 
@@ -596,6 +604,82 @@ Each new control-plane `BaremetalMachine` advances `Pending → Allocated → Re
 
 :::warning
 The bare-metal provider does not support single-node control planes. Provision at least three control-plane replicas (`KubeadmControlPlane.spec.replicas: 3`) so that etcd retains quorum. In `Internal` mode, the same nodes also participate in Alive VIP arbitration.
+:::
+
+### Choose the CNI Network Interface \{#cni-network-interface}
+
+By default Kube-OVN uses `eth0`, the same interface that carries the node address. Set `BaremetalCluster.spec.networkDevice` to give CNI traffic its own interface, and override it per host in the pool when a machine names that interface differently.
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: BaremetalCluster
+metadata:
+  name: <cluster-name>
+  namespace: cpaas-system
+spec:
+  networkType: kube-ovn
+  networkDevice: eth1
+```
+
+The address on that interface comes from the host, never from the provider — see [Configure Host Networking on Bare-Metal Hosts](../how-to/configure-host-network-bare-metal.mdx). In overlay mode the interface must hold an IPv4 address, because it is the Geneve tunnel source. In underlay mode Kube-OVN bridges the interface into `br-provider`, so it may stay address-less.
+
+**Underlay.** Declare the physical network on the `Cluster`:
+
+```yaml
+metadata:
+  annotations:
+    kube-ovn.cpaas.io/transmit-type: underlay
+    kube-ovn.cpaas.io/vlan-id: "100"
+    kube-ovn.cpaas.io/gateway: 172.31.100.1
+    kube-ovn.cpaas.io/exclude-ips: 172.31.100.2..172.31.100.20
+```
+
+`Cluster.spec.clusterNetwork.pods.cidrBlocks[0]` is then the physical subnet the Pods draw addresses from, `gateway` must be an address inside it, and `exclude-ips` must cover every address on that subnet that something else already uses. The provider adds the control-plane VIP to the exclusion list by itself.
+
+Underlay also puts requirements on the physical network:
+
+- The switch port passes the VLAN — trunked, or an access port matching `vlan-id` — with no MAC/IP binding or anti-spoofing applied to the Pod addresses.
+- The Pod subnet's gateway shares a Layer 2 domain with the nodes.
+- **The node network and the Pod subnet must reach each other in both directions.** kubelet probes, the API server calling a webhook, and metrics scraping all reach Pod addresses from the node, and Kube-OVN does not program a node route for an underlay subnet. Without that path Pods still get addresses and reach each other and the gateway, but every probed Pod — CoreDNS, the cert-manager webhook — restarts indefinitely.
+- The CNI interface must differ from the interface that carries the node address and the default route. Kube-OVN would otherwise move that address, and the VIP, into `br-provider`; the provider rejects the configuration instead.
+- A Pod subnet as small as a `/24` leaves the second node without a `Node.spec.podCIDR` (`CIDRNotAvailable` events), because kube-controller-manager still allocates a `/24` per node. Kube-OVN does not use that field, so the cluster works; silence the events by setting `--allocate-node-cidrs=false` or a matching `node-cidr-mask-size` in the `KubeadmControlPlane`.
+
+**Per-host override.** Add the interface name to the host's entry in the pool:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: MachineInventoryPool
+metadata:
+  name: <cluster-name>-worker-pool
+  namespace: cpaas-system
+spec:
+  clusterName: <cluster-name>
+  machineInventories:
+    - name: <inventory>
+      hostname: <host>
+      networkDevice: bond1
+```
+
+The provider checks the resolved interface against the host's registered network before it writes a plan, and puts an override onto the Node as an annotation — `ovn.kubernetes.io/tunnel_interface` in overlay, `provider.provider-network.kubernetes.io/interface` in underlay. Read the outcome on the machine:
+
+```bash
+kubectl -n cpaas-system get baremetalmachines.infrastructure.cluster.x-k8s.io <machine> \
+  -o jsonpath='{range .status.conditions[?(@.type=="NetworkDeviceReady")]}{.status} {.reason}: {.message}{"\n"}{end}'
+```
+
+| `NetworkDeviceReady` reason | Meaning |
+|---|---|
+| `NetworkDeviceValidated` | The host uses the cluster default; nothing is written on the Node |
+| `NodeAnnotationApplied` | The host's override reached its Node |
+| `NodeAnnotationPending` | The Node has not registered yet, or the workload cluster is unreachable; retried |
+| `NetworkDeviceMissing` | No such interface on the host. No plan is written until the name is corrected |
+| `NetworkDeviceIsSlave` | The interface is a bond slave — name the aggregate instead |
+| `NetworkDeviceConflict` | Underlay only: the interface carries the node address and the default route |
+
+`BaremetalCluster.status.conditions[NetworkConfigValid]` carries the cluster-level verdict: invalid annotation values, or a refused attempt to move an existing cluster between overlay and underlay.
+
+:::warning
+**Under underlay a per-host override is a one-shot input.** Kube-OVN folds the annotation into `ProviderNetwork.spec.customInterfaces` and then deletes it from the Node, and it reads the annotation only while that node is absent from `customInterfaces`. Changing `networkDevice` for a host afterwards has no effect — edit `ProviderNetwork` directly. Check the effective state with `kubectl get provider-networks -o yaml`, not with the Node annotation.
 :::
 
 ### Step 4: Deploy Worker Nodes

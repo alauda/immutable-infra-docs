@@ -314,9 +314,9 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/apis/providers/bare-metal/machineinventory.mdx": {
-      "sha256": "a37c082aa7b64cf7915f8c7f9322d91eefe90e4328b74517aede6563badd9a5d",
-      "size": 2503,
-      "description": "CRD reference page for `MachineInventory` in the `elemental.cattle.io/v1beta1` API group, rendered from the live `machineinventories.elemental.cattle.io` CRD schema. MachineInventory is a physical host's long-lived identity, created by `elemental-register` and borrowed by one `BaremetalMachine` at a time. Covers the Alauda-fork `spec.observedNetwork` replayed as cloud-init `network-config` v2, `spec.storage` desired state for up to 32 inventory-owned volumes (`Adopt`/`InitializeIfBlank`, XFS/ext4, mount policy, `retryNonce`), `status.observedStorage` from `elemental-storage-observer.service`, provider-owned `status.storage` lifecycle and plan Secret serialization, and the `machineinventories/storageinitialize` approval gate guarding destructive initialization.",
+      "sha256": "b26e6938440e3b7c754a7648a742fbb1596b607a63c5baf178292abd33349db1",
+      "size": 2677,
+      "description": "CRD reference page for `MachineInventory` in the `elemental.cattle.io/v1beta1` API group, rendered from the live `machineinventories.elemental.cattle.io` CRD schema. MachineInventory is a physical host's long-lived identity, created by `elemental-register` and borrowed by one `BaremetalMachine` at a time. Covers the Alauda-fork `spec.observedNetwork` — links, routes, DNS servers, and the host's NetworkManager connection files captured at registration and fed back to the host during install — `spec.storage` desired state for up to 32 inventory-owned volumes (`Adopt`/`InitializeIfBlank`, XFS/ext4, mount policy, `retryNonce`), `status.observedStorage` from `elemental-storage-observer.service`, provider-owned `status.storage` lifecycle and plan Secret serialization, and the `machineinventories/storageinitialize` approval gate guarding destructive initialization.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
     },
@@ -552,8 +552,8 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/create-cluster/bare-metal.mdx": {
-      "sha256": "b106de67fcfb19f2811f44d01cd2e2e6161c819a62033351ab100163083d6075",
-      "size": 56342,
+      "sha256": "4fa3aa58203e9bc1d0b45b00a22bf5012f5c0f30945a557553f4ee30eb13fede",
+      "size": 63715,
       "description": "YAML-only workflow (no Fleet Essentials UI) for creating bare-metal workload clusters with the Elemental-based Bare Metal Infrastructure Provider: import the paired `base-image`/`base-image-iso`, confirm `elemental-image-catalog` holds every `Machine.spec.version`, then meet the prerequisites — a stage-by-stage network table (DNS, NTP, registration and plan polling on the platform HTTPS port, registry `11443`, control-plane `6443`, and cluster-internal traffic including the Kube-OVN Geneve tunnel), a first-boot firmware-level clock gate, the install device, residual `COS_*` label cleanup, and the `emulate-tpm` decision. Apply `MachineRegistration` and `SeedImage` — sizing `COS_STATE` above the 8 GiB Elemental default before the first install — so booted hosts register as `MachineInventory`, optionally prepare managed data disks, then apply per-role `MachineInventoryPool`, `BaremetalCluster` (`Internal` Alive VIP with `vrid`, or `External` LoadBalancer), `BaremetalMachineTemplate`, `KubeadmControlPlane`, `Cluster`, and the worker `MachineDeployment` — all in `cpaas-system`. Includes placeholder sourcing, verification commands, and a condition-reason failure-mode table.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-09-02T11:04:57Z"
@@ -620,6 +620,11 @@
       "description": "Procedure for pinning the Elemental system disk on multi-disk bare-metal hosts that share one `SeedImage` ISO: set `MachineRegistration.spec.config.elemental.install.device` to the intentionally nonexistent path `/dev/elemental-install-target` so `elemental-register-install.service` fails closed, then per host mask that service from the Live ISO, verify Live-root and mount state, configure `nmcli` networking when DHCP is absent, wipe stale `COS_*` labels with `sgdisk`/`wipefs`, and symlink the gate to the chosen `/dev/disk/by-id/wwn-*` whole disk before starting the installer and checking the resulting `MachineInventory`. Explains why `/dev/sdX` and a size-only `device-selector` are unsafe identities, why the ISO must be rebuilt after editing MachineRegistration, and why `COS_STATE` must be sized consistently before installation.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-31T05:54:15Z"
+    },
+    "docs/en/how-to/configure-host-network-bare-metal.mdx": {
+      "sha256": "3f29f6d19285feb1dc730c00e9c78fa2eb453024f04207883939e0b2aa243748",
+      "size": 11865,
+      "description": "How to build and keep the network of a bare-metal host: registration captures the host's NetworkManager connection files verbatim into `MachineInventory.spec.observedNetwork.connections`, the install writes them into `/oem/elemental-network.yaml`, and every boot replays that file while the provider disables cloud-init networking and writes no `network-config`. Covers gating `elemental-register-install.service` from the `SeedImage` so an operator has a window on a DHCP segment, building bonds and a separate CNI interface from the console with `nmcli` (deleting automatic connections rather than modifying them), reading the captured snapshot back, MAC-reserved addressing with `cloned-mac-address` on DHCP segments, the five-step procedure for changing the network after install but before cluster creation, a failure-mode table, and the boundary of what the provider never does to host networking."
     },
     "docs/en/how-to/control-plane-endpoint.mdx": {
       "sha256": "22180d357da94ada2deca077d5e8b28c6b4965148da75051bf915bae672e53f2",
@@ -839,8 +844,8 @@
       "updated_at": "2026-08-31T05:54:15Z"
     },
     "docs/en/manage-nodes/bare-metal.mdx": {
-      "sha256": "f88c7bf97ea5ebf685b89295d84531006bf28c9747091e9bd44637b375340027",
-      "size": 21519,
+      "sha256": "8c8b3db97964bc40eac11bc855d005cbb8da61064d1d1e6cf31423bcbb9ec581",
+      "size": 21819,
       "description": "Worker node operations on the bare-metal provider: deploy, scale, replace failed hosts, and swap templates through Cluster API `Machine` objects, where the provider binds each `Machine` to one `MachineInventory` and drives the host with `clean` and `reprovision` plans. Covers the four-resource model (`MachineInventoryPool`, pool-only `BaremetalMachineTemplate`, a `KubeadmConfigTemplate` whose hostname, `provider-id`, and `criSocket` the provider normalizes, and a `MachineDeployment` requiring `maxSurge: 0` with `maxUnavailable` greater than zero), `elemental-image-catalog` version keys, `StoragePrepared`/`StorageActive` gating of allocation, targeted removal via the `cluster.x-k8s.io/delete-machine` annotation, the `baremetal.alauda.io/*` inventory annotations, and a condition-based failure-mode table. Points hosts added after delivery at the same first-boot network and clock prerequisites as the original nodes.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-28T14:49:02Z"
@@ -902,9 +907,9 @@
       "updated_at": "2026-08-31T06:17:57Z"
     },
     "docs/en/overview/providers/bare-metal.mdx": {
-      "sha256": "4a40ea157dd978f2386c533f7d4faaf7cf47cfe6c1a58494db1555980dd50828",
-      "size": 19052,
-      "description": "Overview of the Bare Metal Infrastructure Provider, which composes `elemental-operator` (host registration, `SeedImage` ISO build, long-lived `MachineInventory`) with `cluster-api-provider-baremetal` (`BaremetalCluster`, `BaremetalMachine`, `BaremetalMachineTemplate`, `MachineInventoryPool`). Hosts are installed once and are never created or deleted by the provider; node attach and detach run `reprovision` and `clean` plans through the inventory's single plan secret. Documents the `elemental-image-catalog` version-to-upgrade-image mapping, `Internal` (`alive` VIP) versus `External` control-plane LB modes, `observedNetwork` address preservation, inventory-owned managed data disks with `storage-prepare`/`storage-release` plans, and the YAML-only workflow with no Fleet Essentials UI.",
+      "sha256": "a5f25806e7c13aa181c6496e5be397fe0e97493e43572a123482f00dae3fa1a3",
+      "size": 20202,
+      "description": "Overview of the Bare Metal Infrastructure Provider, which composes `elemental-operator` (host registration, `SeedImage` ISO build, long-lived `MachineInventory`) with `cluster-api-provider-baremetal` (`BaremetalCluster`, `BaremetalMachine`, `BaremetalMachineTemplate`, `MachineInventoryPool`). Hosts are installed once and are never created or deleted by the provider; node attach and detach run `reprovision` and `clean` plans through the inventory's single plan secret. Documents the `elemental-image-catalog` version-to-upgrade-image mapping, `Internal` (`alive` VIP) versus `External` control-plane LB modes, host-owned networking captured in `observedNetwork` and replayed from `/oem` rather than rewritten by the provider, inventory-owned managed data disks with `storage-prepare`/`storage-release` plans, and the YAML-only workflow with no Fleet Essentials UI.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
     },
