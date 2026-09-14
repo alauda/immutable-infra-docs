@@ -60,6 +60,8 @@ kubectl -n cpaas-system get machineinventorypools.infrastructure.cluster.x-k8s.i
 
 A host added this way goes through the same first boot as the original nodes, so it has to meet the same prerequisites: the network paths in [Network Connectivity](../create-cluster/bare-metal.mdx#network-connectivity) and the clock gate in [Host Time Synchronization](../create-cluster/bare-metal.mdx#host-time-synchronization). Confirm both for the new host rather than assuming the approval obtained at delivery time covers its subnet and its hardware clock.
 
+When the new host names its CNI interface differently from the rest of the cluster — a bond, or a NIC that is not the cluster default — set `networkDevice` on its entry in `spec.machineInventories`. See [Choose the CNI Network Interface](../create-cluster/bare-metal.mdx#cni-network-interface).
+
 ### Step 2: Configure the Worker `BaremetalMachineTemplate`
 
 ```yaml
