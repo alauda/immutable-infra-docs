@@ -950,7 +950,7 @@ Use the DCS resource fields from [Creating Clusters on Huawei DCS](../create-clu
 - With DCS Provider `v1.0.22`, use an external LoadBalancer and set `DCSCluster.spec.controlPlaneLoadBalancer.type: external`, or use `type: internal` Self-built VIP when paired with ACP `v4.4+`. For internal mode, reserve an IPv4 VIP in the control-plane Layer 2 network and use the YAML workflow in [Creating Clusters on Huawei DCS](../create-cluster/huawei-dcs.mdx#self-built-vip). For external mode, validate the listener, backends, health check, and reachability in [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
 - Keep the `KubeadmControlPlane.spec.kubeadmConfigSpec.users` entry with a non-empty `sshAuthorizedKeys` list (the `boot` user). The DCS `ignition` format rejects an empty SSH key list, so this field is required even for a `global` cluster you do not plan to access over SSH. See [Resolving Placeholder Values](../create-cluster/huawei-dcs.mdx#resolving-placeholders) for what to supply when no interactive key is needed.
 - Keep the non-encryption kubeadm files, kubelet patches, audit policy, and installer RBAC entries. The file contents (the PodSecurity admission config, the kubelet patch, and the audit policy), together with the full `clusterConfiguration`, `preKubeadmCommands`, `postKubeadmCommands`, and the init and join node-registration patches, are identical to a workload cluster. Copy them from the [Complete KubeadmControlPlane Configuration](../create-cluster/huawei-dcs.mdx#complete-kubeadmcontrolplane-configuration) appendix, or reference the `dcs-kubernetes-<major.minor>-files` Secret documented there. The wiring fragment below shows only the `global`-specific fields layered on top of that base.
-- For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef` and do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`.
+- For a normal non-DR deployment, do not set `DCSCluster.spec.encryptionProviderConfigRef`. Keep `clusterConfiguration.apiServer.extraArgs.encryption-provider-config` as the appendix has it: the DCS provider writes `/etc/kubernetes/encryption-provider.conf` onto every control-plane node itself — a random key for the first machine, the running API server's file for the rest — so the argument resolves and the `global` cluster runs with etcd secret encryption-at-rest. Do not add that file to `KubeadmControlPlane.spec.kubeadmConfigSpec.files`; the provider drops any entry for that path, so one added there is silently unused. See [How the Encryption Provider Configuration Is Delivered](../create-cluster/huawei-dcs.mdx#encryption-provider-delivery).
 - Keep `/var/cpaas` as platform state. If you need the disk to survive rolling replacement, declare it in `DCSIpHostnamePool.spec.pool[].persistentDisk`; do not rely on `DCSMachineTemplate` template disks as preserved state.
 - Use concrete `datastoreName` values for DCS local storage unless you have verified that the selected datastore cluster can place volumes on hosts that can run the target VM.
 
@@ -3075,9 +3075,10 @@ spec:
     # global / non-DR deltas to that body:
     #   1. Add clusterConfiguration.etcd.local.serverCertSANs:
     #        ["${CONTROL_PLANE_VIP}", "etcd.kube-system"]
-    #   2. Non-DR: omit the /etc/kubernetes/encryption-provider.conf file AND the
-    #        apiServer.extraArgs.encryption-provider-config argument (keep both for
-    #        DR / at-rest encryption — see the note after this example).
+    #   2. Omit the /etc/kubernetes/encryption-provider.conf files entry: the
+    #        provider writes that file on control-plane nodes and drops any
+    #        files entry for it. Keep apiServer.extraArgs.encryption-provider-
+    #        config — see the note after this example.
 ---
 # 4. DCS infrastructure cluster.
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
@@ -3155,5 +3156,7 @@ spec:
 | `ssh-ed25519 AAAA...` | A real OpenSSH public key. The `ignition` format rejects an empty list; supply any valid key even if you do not plan to SSH in. |
 
 <Directive type="info" title="Secret encryption and disaster recovery">
-  This example does not enable etcd secret encryption-at-rest. To enable it, or to deploy a DR pair, add the `/etc/kubernetes/encryption-provider.conf` file and the `apiServer.extraArgs.encryption-provider-config` argument as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment).
+  This example runs with etcd secret encryption-at-rest enabled. `apiServer.extraArgs.encryption-provider-config` stays in the `clusterConfiguration` you copy from the appendix, and the DCS provider supplies the file it points at: a random key generated for the first control-plane machine, then the running API server's own file for every later one. Do not add `/etc/kubernetes/encryption-provider.conf` to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` — the provider drops any entry for that path. See [How the Encryption Provider Configuration Is Delivered](../create-cluster/huawei-dcs.mdx#encryption-provider-delivery).
+
+  Remove the argument only if you deliberately want to run without at-rest encryption. For a DR pair the key must be identical on both sides, which means pinning it with `DCSCluster.spec.encryptionProviderConfigRef` as described in [Optional Disaster Recovery Deployment](#optional-disaster-recovery-deployment).
 </Directive>
