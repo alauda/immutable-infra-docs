@@ -631,7 +631,46 @@ Upload the packages.
   -r "${LOCAL_REGISTRY_ADDRESS}" -c "${KUBEADM_PROVIDER_PACK}"
 ```
 
+Import the Bare Metal Alauda OS images into the same local registry. The provider package does not contain them. The Bare Metal OS download is an archive of one OCI image layout that holds two images with the same tag, and both are required — see [Image Format by Provider](../overview/os-support-matrix.mdx#image-format-by-provider):
+
+| Image | Used by |
+|---|---|
+| `baremetal-base-image` | `elemental-image-catalog`, when a host is reprovisioned into a `global` node. |
+| `baremetal-base-image-iso` | `SeedImage.spec.baseImage`, when the installation ISO for the `global` hosts is built. |
+
+Import the archive into a dedicated containerd namespace on the bootstrap host with `ctr`, and list the image names it creates. `/var/lib/containerd` needs free space of at least the archive size:
+
+```shell
+export OS_IMAGE_ARCHIVE="/root/<bare-metal-os-archive>.tar"
+
+ctr -n bare-metal-os images import --all-platforms --no-unpack "${OS_IMAGE_ARCHIVE}"
+ctr -n bare-metal-os images ls -q
+```
+
+The output lists both images with the same tag:
+
+```text
+baremetal-base-image-iso:<os-image-tag>
+baremetal-base-image:<os-image-tag>
+```
+
+Set `OS_IMAGE_TAG` to that tag, then push both images and confirm that the registry lists the tag for each of them:
+
+```shell
+export OS_IMAGE_TAG="<os-image-tag>"
+
+for repo in baremetal-base-image baremetal-base-image-iso; do
+  ctr -n bare-metal-os images push --plain-http \
+    "${LOCAL_REGISTRY_ADDRESS}/tkestack/${repo}:${OS_IMAGE_TAG}" "${repo}:${OS_IMAGE_TAG}"
+  curl -s "http://${LOCAL_REGISTRY_ADDRESS}/v2/tkestack/${repo}/tags/list"
+done
+```
+
+If the bootstrap Registry requires authentication, pass its credentials to both commands with `-u <username>:<password>`. Keep the images in the `bare-metal-os` namespace: [Upload the base image to the global Registry](#upload-os-images-to-global-registry) pushes them again after installation.
+
 Create and apply the AppRelease resources for the Kubeadm provider and the Bare Metal provider.
+
+The Bare Metal provider AppRelease also fills the image catalog. The chart creates the `elemental-image-catalog` ConfigMap with no entries, so `provider.imageCatalog.images` must map `${K8S_VERSION}` to the `baremetal-base-image` imported above; the chart prefixes the repository with `global.registry.address`. Without that entry, every `global` `BaremetalMachine` enters `Failed` with `ImageResolved=False / Reason=ImageCatalogMiss` and no node is provisioned.
 
 <Directive type="warning" title="Bare Metal Bootstrap Endpoint">
   During bootstrap, the `global` cluster has not handed control to the final VIP yet. Keep the bare-metal registration path on the bootstrap host: `global.platformUrl` points to the bootstrap host, and `elemental.server.url` points to `https://<bootstrap-host-ip>:12443`. Do not set `baremetal.cluster.io/system-agent-server-url` on the `MachineRegistration` used for the `global` machines during this phase. For Bare Metal DR, add `baremetal.cluster.io/system-agent-auth-scope: global` to that bootstrap `MachineRegistration`; this is the only DR-specific system-agent annotation required before handoff. The DR handoff job later moves those machines to the local direct API endpoint at `https://<CONTROL_PLANE_VIP>:6443`.
@@ -845,6 +884,12 @@ spec:
         address: ${BOOTSTRAP_REGISTRY_ADDRESS}
       replicas: 1
       scheme: https
+    provider:
+      imageCatalog:
+        images:
+          ${K8S_VERSION}:
+            repository: tkestack/baremetal-base-image
+            tag: ${OS_IMAGE_TAG}
     handoffHook:
       # Normal non-DR bootstrap baseline. Bare Metal DR must patch this to true
       # before calling the installer API, as shown in Optional Disaster Recovery Deployment.
@@ -892,7 +937,10 @@ After the provider starts, verify that the chart values were accepted. A CrashLo
 ```shell
 kubectl -n cpaas-system get pods | grep -E 'cluster-api-provider-baremetal|elemental'
 kubectl -n cpaas-system logs deploy/elemental-operator --tail=100
+kubectl -n cpaas-system get configmap elemental-image-catalog -o jsonpath='{.data}'
 ```
+
+The catalog output must contain `${K8S_VERSION}` as a key. Empty output or `{}` means the `provider.imageCatalog.images` value did not reach the release; fix the AppRelease before you apply the `global` manifest.
 
   </Tab>
 </Tabs>
@@ -1253,6 +1301,7 @@ Use [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx), [Managi
 - Set `Cluster.metadata.name` and `BaremetalCluster.metadata.name` to `global`. Prefix every other CAPI, bare-metal, and elemental resource with `global-`.
 - Add `Cluster.metadata.labels.cluster-type: ProviderBaremetal`.
 - Add `Cluster.metadata.annotations["cpaas.io/registry-address"]` with `${NODE_REGISTRY_ADDRESS}`.
+- Set `SeedImage.spec.baseImage` to `${BOOTSTRAP_REGISTRY_ADDRESS}/tkestack/baremetal-base-image-iso:${OS_IMAGE_TAG}`, the ISO image imported in Step 3. The reprovision image comes from the `elemental-image-catalog` entry set in Step 3; the provider replaces the registry portion of that entry with the `cpaas.io/registry-address` annotation, so the hosts pull it from `${NODE_REGISTRY_ADDRESS}`.
 - Add `Cluster.metadata.annotations["cpaas.io/kube-ovn-join-cidr"]`, `Cluster.metadata.annotations["cpaas.io/sentry-deploy-type"]: Baremetal`, and `Cluster.metadata.annotations["cpaas.io/alb-address-type"]: ClusterAddress`.
 - Set `KubeadmControlPlane.spec.kubeadmConfigSpec.format: cloud-config`, or leave it unset when the provider defaults this API field to `cloud-config`. The resulting data is processed by `cloud-init` on the node.
 - Set `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0`. Bare-metal pools cannot over-provision physical hosts.
@@ -2823,14 +2872,16 @@ Set the values this section uses. Run it once per `global` cluster, with
 
 ```shell
 export GLOBAL_KUBECONFIG="<path-to-this-global-kubeconfig>"
-# Tag of the Alauda OS image used for this installation, for example v4.4.0-1.35.6-acp.1.
+# Tag of the Bare Metal Alauda OS images imported in Step 3.
 export OS_IMAGE_TAG="<os-image-tag>"
 ```
 
-Read the Registry password of the cluster you are preparing from its own
-`cpaas-system/registry-admin` Secret:
+Read the Registry address and password of the cluster you are preparing from its own
+`ProductBase` and `cpaas-system/registry-admin` Secret:
 
 ```shell
+GLOBAL_REGISTRY_ADDRESS="$(kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" \
+  get productbase.product.alauda.io base -o jsonpath='{.spec.registry.address}')"
 GLOBAL_REGISTRY_PASSWORD="$(kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system \
   get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)"
 ```
@@ -2870,52 +2921,63 @@ kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system \
   get secret dex.tls -o jsonpath='{.data}' | jq -r 'keys | join(",")'
 ```
 
-### Upload the base image to the global Registry
+### Upload the base image to the global Registry \{#upload-os-images-to-global-registry}
 
 Workload `SeedImage` builds run on the `global` cluster and pull the base ISO from the Registry
-recorded in `ProductBase.spec.registry.address`. The base images uploaded during Step 3 live in the
-bootstrap Registry only, so the build fails with `MANIFEST_UNKNOWN` until you copy them across:
+recorded in `ProductBase.spec.registry.address`. After handoff, reprovisioning a `global` node also
+pulls `baremetal-base-image` from that Registry, because the installer rewrites the `global`
+cluster's `cpaas.io/registry-address` annotation to it. The images imported in Step 3 live in the
+bootstrap Registry only, so the ISO build fails with `MANIFEST_UNKNOWN` until you push both of them
+to the `global` Registry. On the bootstrap host, push them from the `bare-metal-os` containerd
+namespace. `--skip-verify` requires `--local`:
 
 ```shell
-skopeo copy --all --dest-tls-verify=false \
-  --dest-creds "admin:${GLOBAL_REGISTRY_PASSWORD}" \
-  "docker://${BOOTSTRAP_REGISTRY_ADDRESS}/tkestack/baremetal-base-image-iso:${OS_IMAGE_TAG}" \
-  "docker://${PLATFORM_HOST}:11443/tkestack/baremetal-base-image-iso:${OS_IMAGE_TAG}"
+for repo in baremetal-base-image baremetal-base-image-iso; do
+  ctr -n bare-metal-os images push --local --skip-verify \
+    -u "admin:${GLOBAL_REGISTRY_PASSWORD}" \
+    "${GLOBAL_REGISTRY_ADDRESS}/tkestack/${repo}:${OS_IMAGE_TAG}" "${repo}:${OS_IMAGE_TAG}"
+  curl -sk -u "admin:${GLOBAL_REGISTRY_PASSWORD}" \
+    "https://${GLOBAL_REGISTRY_ADDRESS}/v2/tkestack/${repo}/tags/list"
+done
 ```
 
-Repeat for `tkestack/baremetal-base-image`, which the image catalog below references.
+Each response must list `${OS_IMAGE_TAG}`. After that, remove the local copies with
+`ctr -n bare-metal-os images rm "baremetal-base-image:${OS_IMAGE_TAG}" "baremetal-base-image-iso:${OS_IMAGE_TAG}"`.
+If the images are no longer on the bootstrap host, import them from the OS archive instead, as
+described in [OS Images Imported and Image Catalog Populated](../create-cluster/bare-metal.mdx#os-images-and-image-catalog).
 
 ### Create the elemental image catalog
 
 The provider maps a Kubernetes version to an elemental upgrade image through a ConfigMap located by
 `--image-catalog-namespace` and `--image-catalog-name`, which default to `cpaas-system` and
-`elemental-image-catalog`. On the `global` cluster this ConfigMap has no version entries, and the
-first `BaremetalMachine` of a workload cluster fails immediately:
+`elemental-image-catalog`. The provider chart creates this ConfigMap with no version entries, and
+the `global` cluster does not inherit the entry you set on the bootstrap release. Until you add an
+entry, the first `BaremetalMachine` of a workload cluster fails immediately:
 
 ```text
 ImageResolved=False  ImageCatalogMiss:
   no elemental upgrade image mapped for Kubernetes version "<version>"
 ```
 
-Create it with one entry per Kubernetes version you intend to deploy, using the same Registry
-address as `ProductBase.spec.registry.address`:
+Add one entry per Kubernetes version that this `global` cluster manages, including `${K8S_VERSION}`
+for its own nodes. Patch the existing ConfigMap rather than replacing it, so that entries added
+earlier are kept:
 
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: elemental-image-catalog
-  namespace: cpaas-system
-data:
-  <k8s-version>: <platform-host>:11443/tkestack/baremetal-base-image:<os-image-tag>
+```shell
+kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system \
+  patch configmap elemental-image-catalog --type merge \
+  -p "{\"data\":{\"${K8S_VERSION}\":\"${GLOBAL_REGISTRY_ADDRESS}/tkestack/baremetal-base-image:${OS_IMAGE_TAG}\"}}"
+
+kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system \
+  get configmap elemental-image-catalog -o jsonpath='{.data}'
 ```
 
 <Directive type="warning" title="ImageCatalogMiss does not recover on its own">
   A `BaremetalMachine` that hit `ImageCatalogMiss` stays `Failed` after you fix the catalog.
   Re-reconciling the object and restarting the provider both leave it unchanged; the reconciler
   deliberately treats a missing mapping as terminal rather than falling back to a default image.
-  Delete the `Machine` so that `KubeadmControlPlane` recreates it. Create the catalog before you
-  apply the first workload cluster manifest to avoid this entirely.
+  Delete the `Machine` so that its owner, `KubeadmControlPlane` or the `MachineSet`, recreates it.
+  Populate the catalog before you apply the first workload cluster manifest to avoid this entirely.
 </Directive>
 
 ### Workload registrations use the platform domain

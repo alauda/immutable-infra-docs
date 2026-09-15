@@ -552,11 +552,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/create-cluster/bare-metal.mdx": {
-      "sha256": "b106de67fcfb19f2811f44d01cd2e2e6161c819a62033351ab100163083d6075",
-      "size": 56342,
-      "description": "YAML-only workflow (no Fleet Essentials UI) for creating bare-metal workload clusters with the Elemental-based Bare Metal Infrastructure Provider: import the paired `base-image`/`base-image-iso`, confirm `elemental-image-catalog` holds every `Machine.spec.version`, then meet the prerequisites — a stage-by-stage network table (DNS, NTP, registration and plan polling on the platform HTTPS port, registry `11443`, control-plane `6443`, and cluster-internal traffic including the Kube-OVN Geneve tunnel), a first-boot firmware-level clock gate, the install device, residual `COS_*` label cleanup, and the `emulate-tpm` decision. Apply `MachineRegistration` and `SeedImage` — sizing `COS_STATE` above the 8 GiB Elemental default before the first install — so booted hosts register as `MachineInventory`, optionally prepare managed data disks, then apply per-role `MachineInventoryPool`, `BaremetalCluster` (`Internal` Alive VIP with `vrid`, or `External` LoadBalancer), `BaremetalMachineTemplate`, `KubeadmControlPlane`, `Cluster`, and the worker `MachineDeployment` — all in `cpaas-system`. Includes placeholder sourcing, verification commands, and a condition-reason failure-mode table.",
+      "sha256": "40f379e9e55c9a64a6266a7a552efaa546ef6bd28cb664358eeab9cddca59a0d",
+      "size": 60435,
+      "description": "YAML-only workflow (no Fleet Essentials UI) for creating bare-metal workload clusters with the Elemental-based Bare Metal Infrastructure Provider: import the paired `baremetal-base-image`/`baremetal-base-image-iso` from the OS archive with `ctr`, add every `Machine.spec.version` to the initially empty `elemental-image-catalog`, then meet the prerequisites — a stage-by-stage network table (DNS, NTP, registration and plan polling on the platform HTTPS port, registry `11443`, control-plane `6443`, and cluster-internal traffic including the Kube-OVN Geneve tunnel), a first-boot firmware-level clock gate, the install device, residual `COS_*` label cleanup, and the `emulate-tpm` decision. Apply `MachineRegistration` and `SeedImage` — sizing `COS_STATE` above the 8 GiB Elemental default before the first install — so booted hosts register as `MachineInventory`, optionally prepare managed data disks, then apply per-role `MachineInventoryPool`, `BaremetalCluster` (`Internal` Alive VIP with `vrid`, or `External` LoadBalancer), `BaremetalMachineTemplate`, `KubeadmControlPlane`, `Cluster`, and the worker `MachineDeployment` — all in `cpaas-system`. Includes placeholder sourcing, verification commands, and a condition-reason failure-mode table.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-02T11:04:57Z"
+      "updated_at": "2026-09-15T07:01:08Z"
     },
     "docs/en/create-cluster/huawei-cloud-stack.mdx": {
       "sha256": "a79ee99b13ded3515a9bbd93e24abaf6bc95604712230f8d1ddd68856d16dc92",
@@ -601,15 +601,15 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "55c69d2db70d96ef26491b7230e363fce51e446a2050a7f9a6d0eb76a6bcb08d",
-      "size": 161372,
-      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers bootstrap host hardware, operating system, network requirements, provider-package delivery, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification, provider-resource handoff, optional DR inputs, and final decommissioning gates.",
+      "sha256": "321dceb7f0469e7c932eb4f2bf99c91c34829a0966fa2fa4d6c4b049bd7d1fb6",
+      "size": 172756,
+      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers bootstrap host hardware, operating system, network requirements, provider-package delivery, Bare Metal OS image import and image catalog preparation, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification, provider-resource handoff, optional DR inputs, and final decommissioning gates.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-02T11:04:57Z"
+      "updated_at": "2026-09-15T07:01:08Z"
     },
     "docs/en/global/upgrade.mdx": {
-      "sha256": "cf02bb8490b733af781d5c579f101c9a213e792da158541baa4245f93b52e265",
-      "size": 21259,
+      "sha256": "31f29703232fb8de969d32a9f2519efde28e3c181867990ab1e76485cf2a2337",
+      "size": 21813,
       "description": "Phase 2 (Kubernetes and Alauda OS image) of the two-phase `global` cluster upgrade on Immutable Infrastructure, for Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal: upgrade Kube-OVN first, then create new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources for the target image (Bare Metal resolves it from `Machine.spec.version` through `elemental-image-catalog`), retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment`, set CoreDNS and etcd tags from the OS Support Matrix row, add the `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch when targeting Kubernetes 1.35, and keep `rollingUpdate.maxSurge: 0` so pool-declared persistent disks and fixed identities are reused. Includes stage-based recovery rules and the single-control-plane HCS exclusion.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
@@ -748,11 +748,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/install/bare-metal.mdx": {
-      "sha256": "f1d0b5f8d7ef4d81a6748a482bfb4d67c2069246cb41e2da7b357cd63d6b171f",
-      "size": 3168,
-      "description": "Installing the Bare Metal Infrastructure Provider as a cluster plugin on the `global` cluster: download the **Alauda Container Platform Kubeadm Provider** and the **Bare Metal Infrastructure Provider** umbrella chart (which ships the `cluster-api-provider-baremetal-manager` and `elemental-operator` subcharts plus the `elemental-image-catalog` ConfigMap), run the shared ACP `upload_package` and `cluster_plugin` flows, then verify both controllers are Running, that the `baremetalclusters`/`baremetalmachines`/`baremetalmachinetemplates`/`machineinventorypools.infrastructure.cluster.x-k8s.io` and `machineinventories`/`machineregistrations`/`seedimages.elemental.cattle.io` CRDs are registered, and that the image catalog contains every `Machine.spec.version` you intend to deploy.",
+      "sha256": "a9dedc68dd0f1d1d09785118604be013703c8807606723e74c451550de97e8ea",
+      "size": 3568,
+      "description": "Installing the Bare Metal Infrastructure Provider as a cluster plugin on the `global` cluster: download the **Alauda Container Platform Kubeadm Provider** and the **Bare Metal Infrastructure Provider** umbrella chart (which ships the `cluster-api-provider-baremetal-manager` and `elemental-operator` subcharts plus an empty `elemental-image-catalog` ConfigMap), run the shared ACP `upload_package` and `cluster_plugin` flows, then verify both controllers are Running, that the `baremetalclusters`/`baremetalmachines`/`baremetalmachinetemplates`/`machineinventorypools.infrastructure.cluster.x-k8s.io` and `machineinventories`/`machineregistrations`/`seedimages.elemental.cattle.io` CRDs are registered, then import the OS images and add every `Machine.spec.version` you intend to deploy to the image catalog.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-09-15T07:01:08Z"
     },
     "docs/en/install/huawei-cloud-stack.mdx": {
       "sha256": "c841b42763c88609af5f1c457590a6af56bd3e827f29091c5bcdfa2582a7757a",
@@ -895,15 +895,15 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/overview/os-support-matrix.mdx": {
-      "sha256": "936c6422ecb64e570ca886fc3088c8d82cb48d31d782b51a03ee6c33d165d324",
-      "size": 5423,
+      "sha256": "b111ece72b5ff9484102415c935a108ab3b5bb2c092954214adfbdd5ea4ba7bc",
+      "size": 5615,
       "description": "Maps 19 listed ACP releases between `v4.0.9` and `v4.4.0` — the range is not continuous — to the Kubernetes, containerd, CoreDNS, etcd, pause `3.10`, and Kube-OVN chart versions carried by its Alauda OS image. Also documents the `x86-64-v2` CPU baseline, image-format requirements, DCS Provider `v1.0.21+` pairing for ACP `v4.3.2+`, and the additional DCS Self-built VIP requirement of provider `v1.0.22+` with ACP `v4.4+`.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-31T06:17:57Z"
     },
     "docs/en/overview/providers/bare-metal.mdx": {
-      "sha256": "4a40ea157dd978f2386c533f7d4faaf7cf47cfe6c1a58494db1555980dd50828",
-      "size": 19052,
+      "sha256": "bdcab694d8299fb14a85b194317270ef7a8a5014b281f3e9ab57706aaf9e57b1",
+      "size": 19257,
       "description": "Overview of the Bare Metal Infrastructure Provider, which composes `elemental-operator` (host registration, `SeedImage` ISO build, long-lived `MachineInventory`) with `cluster-api-provider-baremetal` (`BaremetalCluster`, `BaremetalMachine`, `BaremetalMachineTemplate`, `MachineInventoryPool`). Hosts are installed once and are never created or deleted by the provider; node attach and detach run `reprovision` and `clean` plans through the inventory's single plan secret. Documents the `elemental-image-catalog` version-to-upgrade-image mapping, `Internal` (`alive` VIP) versus `External` control-plane LB modes, `observedNetwork` address preservation, inventory-owned managed data disks with `storage-prepare`/`storage-release` plans, and the YAML-only workflow with no Fleet Essentials UI.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
@@ -984,11 +984,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/upgrade-cluster/bare-metal.mdx": {
-      "sha256": "cce22323369ff0389e906d3977d804918c234153c54479f93825726ae94143db",
-      "size": 27753,
-      "description": "Phase 2 Kubernetes upgrade for bare-metal clusters, which replaces every node instead of running `kubeadm upgrade`: CAPI deletes a `Machine`, the provider writes a `clean` plan, reallocates an `Available` inventory from the same pool, and writes a `reprovision` plan that runs `elemental upgrade --system <new-image>`, with initramfs clearing `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes` while declared managed volumes are only deactivated. Covers the management-cluster-first sequence, verifying or extending the `elemental-image-catalog` ConfigMap, the shared Kube-OVN step, patching `KubeadmControlPlane.spec.version` with matching `dns` and `etcd.local` image tags (no new `BaremetalMachineTemplate` for a version-only hop), worker `MachineDeployment` rollouts at `maxSurge: 0`, storage compatibility limits on pre-storage hosts, cross-version hops, staged recovery, plan/inventory verification, and the `no space left on device` failure caused by an 8 GiB `COS_STATE`, including partial-snapshot cleanup and the reinstall needed on hosts installed before COS_STATE sizing was applied.",
+      "sha256": "fef7deddb917321e734c951030727ac6b5bd507e35f2961dde87da7052e9314a",
+      "size": 28132,
+      "description": "Phase 2 Kubernetes upgrade for bare-metal clusters, which replaces every node instead of running `kubeadm upgrade`: CAPI deletes a `Machine`, the provider writes a `clean` plan, reallocates an `Available` inventory from the same pool, and writes a `reprovision` plan that runs `elemental upgrade --system <new-image>`, with initramfs clearing `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes` while declared managed volumes are only deactivated. Covers the management-cluster-first sequence, importing the target OS images and adding the version to `elemental-image-catalog`, which never gains versions on its own, the shared Kube-OVN step, patching `KubeadmControlPlane.spec.version` with matching `dns` and `etcd.local` image tags (no new `BaremetalMachineTemplate` for a version-only hop), worker `MachineDeployment` rollouts at `maxSurge: 0`, storage compatibility limits on pre-storage hosts, cross-version hops, staged recovery, plan/inventory verification, and the `no space left on device` failure caused by an 8 GiB `COS_STATE`, including partial-snapshot cleanup and the reinstall needed on hosts installed before COS_STATE sizing was applied.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-28T14:49:02Z"
+      "updated_at": "2026-09-15T07:01:08Z"
     },
     "docs/en/upgrade-cluster/huawei-cloud-stack.mdx": {
       "sha256": "4eea091db52b64831e2bcb8274d197bddd2d29e076bb837da362aaebf9d09e60",

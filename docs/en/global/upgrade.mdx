@@ -193,14 +193,14 @@ Do not treat HCS `dataVolumes[]` as preserved state during node replacement. Thi
 
 This YAML workflow requires Bare Metal provider `v1.0.0` or later. Use it only after that provider package and the target OS Support Matrix row are available in the installed release. Before editing Cluster API resources, confirm that the provider `AppRelease` requested and installed revisions match and its chart phase is `Success`.
 
-Verify that the target Kubernetes version exists in `elemental-image-catalog`:
+Import the target release's Bare Metal OS images into the `global` cluster's registry and add the target Kubernetes version to its `elemental-image-catalog`, as described in [OS Images Imported and Image Catalog Populated](../create-cluster/bare-metal.mdx#os-images-and-image-catalog). Neither the provider plugin nor the Distribution Version upgrade adds the version for you. In a DR pair, do this on both `global` clusters. Then verify the catalog:
 
 ```shell
 kubectl --kubeconfig <global-kubeconfig> -n cpaas-system \
   get configmap elemental-image-catalog -o yaml
 ```
 
-The target version must appear as a key with a reachable base-image reference. The Bare Metal provider resolves the replacement image from `Machine.spec.version`; a Kubernetes-only upgrade does not require a new `BaremetalMachineTemplate` unless the control plane or workers must move to a different `MachineInventoryPool`.
+The target version must appear as a key with a reachable base-image reference. A replacement `Machine` created while the key is missing leaves its `BaremetalMachine` in `Failed` with `Reason=ImageCatalogMiss`, and adding the key afterwards does not recover it. The Bare Metal provider resolves the replacement image from `Machine.spec.version`; a Kubernetes-only upgrade does not require a new `BaremetalMachineTemplate` unless the control plane or workers must move to a different `MachineInventoryPool`.
 
 Update the existing `KubeadmControlPlane` manifest with values from the same OS Support Matrix row. Preserve all fields not shown here:
 
