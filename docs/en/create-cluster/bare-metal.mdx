@@ -31,24 +31,53 @@ Install the following plugins on the `global` cluster:
 
 See the [Installation Guide](../install/bare-metal.mdx) for details.
 
-### 2. OS Images Imported and Image Catalog Confirmed
+### 2. OS Images Imported and Image Catalog Populated \{#os-images-and-image-catalog}
 
-Before creating any cluster resources, obtain the matching OS image pair from Alauda technical support and import **both** images into the target platform registry. Importing only one image is not sufficient:
+Before creating any cluster resources, import **both** bare-metal OS images into the target platform registry, then add the target Kubernetes version to `elemental-image-catalog`. Neither step happens on its own: the provider package contains no OS image, and the provider chart creates the image catalog with no entries.
 
 | Image | Used by | Purpose |
 |---|---|---|
-| OS image (`base-image`) | `elemental-image-catalog` | Reprovisions a registered host with the Kubernetes-specific root filesystem. |
-| OS ISO image (`base-image-iso`) | `SeedImage.spec.baseImage` | Builds the live ISO used for initial host installation and registration. |
+| OS image (`base-image`), repository `baremetal-base-image` | `elemental-image-catalog` | Reprovisions a registered host with the Kubernetes-specific root filesystem. |
+| OS ISO image (`base-image-iso`), repository `baremetal-base-image-iso` | `SeedImage.spec.baseImage` | Builds the live ISO used for initial host installation and registration. |
 
-Use the image references in the target platform registry after the import completes. Do not point cluster resources at a build registry, derive one image reference from the other, or substitute an independently built image. Verify in the registry or from the image-import result that both final references exist before continuing. Adding an image-catalog entry or a `SeedImage` reference does **not** import the corresponding image.
+Importing only one image is not sufficient. Adding an image-catalog entry or a `SeedImage` reference does **not** import the corresponding image.
 
-The bare-metal provider chart ships an `elemental-image-catalog` ConfigMap that maps `Machine.spec.version` to the `elemental upgrade` image used to (re)provision a node. You do **not** need to create this ConfigMap separately — confirm that the target Kubernetes version is present:
+**Import the images.** The Bare Metal OS download for your ACP release is an archive of one OCI image layout that holds both images under the same tag; see [Image Format by Provider](../overview/os-support-matrix.mdx#image-format-by-provider). Run the import as root on a host that has containerd and can reach the platform registry, such as a `global` control-plane node; Alauda OS ships `ctr` but not `skopeo`. `/var/lib/containerd` needs free space of at least the archive size. Import the archive into a dedicated containerd namespace and list the image names it creates:
 
 ```bash
+ctr -n bare-metal-os images import --all-platforms --no-unpack <bare-metal-os-archive>
+ctr -n bare-metal-os images ls -q
+```
+
+The output lists `baremetal-base-image:<os-image-tag>` and `baremetal-base-image-iso:<os-image-tag>`. Push both images and confirm that the registry lists the tag for each of them. `--skip-verify` requires `--local`:
+
+```bash
+for repo in baremetal-base-image baremetal-base-image-iso; do
+  ctr -n bare-metal-os images push --local --skip-verify \
+    -u "<registry-username>:<registry-password>" \
+    "<registry-address>/tkestack/${repo}:<os-image-tag>" "${repo}:<os-image-tag>"
+  curl -sk -u "<registry-username>:<registry-password>" \
+    "https://<registry-address>/v2/tkestack/${repo}/tags/list"
+done
+
+ctr -n bare-metal-os images rm \
+  "baremetal-base-image:<os-image-tag>" "baremetal-base-image-iso:<os-image-tag>"
+```
+
+The last command removes the local copies after both pushes succeed. For the registry of the `global` cluster, the `admin` password is stored in the `cpaas-system/registry-admin` Secret. In a disaster recovery pair, import the images into the registry of both `global` clusters; see [Prepare the global Cluster as a Management Cluster](../global/install.mdx#prepare-global-as-management-cluster).
+
+After the import, `<base-image>` is `<registry-address>/tkestack/baremetal-base-image:<os-image-tag>` and `<base-image-iso>` is `<registry-address>/tkestack/baremetal-base-image-iso:<os-image-tag>`. Take both images from the same archive. Do not point cluster resources at a build registry, pair images from different archives, or substitute an independently built image.
+
+**Populate the image catalog.** The `elemental-image-catalog` ConfigMap in `cpaas-system` maps `Machine.spec.version` to the `elemental upgrade` image used to (re)provision a node. The provider chart creates it with no entries, so no node can be provisioned until you add the target version. Patch the ConfigMap rather than replacing it, so that existing entries are kept, then check the result:
+
+```bash
+kubectl -n cpaas-system patch configmap elemental-image-catalog --type merge \
+  -p '{"data":{"<kubernetes-version>":"<base-image>"}}'
+
 kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```
 
-Every value used as `Machine.spec.version` (for both the control plane and worker `MachineDeployment` resources) must appear as a key in this ConfigMap, with the leading `v` preserved. Confirm that the key resolves to the imported `base-image` in the target platform registry. The provider resolves the image at reprovision time by substituting the platform registry address for the registry portion of the entry. If a target version is missing, no `reprovision` plan is written and `BaremetalMachine` ends up in `Failed / Reason=ImageCatalogMiss` until the entry is added.
+Every value used as `Machine.spec.version` (for both the control plane and worker `MachineDeployment` resources) must appear as a key in this ConfigMap, with the leading `v` preserved, and resolve to the imported `base-image`. The provider resolves the image at reprovision time by substituting the platform registry address for the registry portion of the entry. If a target version is missing, no `reprovision` plan is written and `BaremetalMachine` ends up in `Failed / Reason=ImageCatalogMiss`. Adding the entry afterwards does not clear that state; delete the affected `Machine` so that its owner recreates it.
 
 ### 3. Network Connectivity \{#network-connectivity}
 
@@ -163,7 +192,7 @@ When using YAML, import the paired OS images first, then proceed through five re
 
 | Step | Apply or perform | Result |
 |---|---|---|
-| 0 | Import the matching `base-image` and `base-image-iso` into the target platform registry | Both OS images are available before `SeedImage` build or host reprovisioning starts. |
+| 0 | Import `base-image` and `base-image-iso` into the target platform registry and add the target Kubernetes version to `elemental-image-catalog` — see [OS Images Imported and Image Catalog Populated](#os-images-and-image-catalog) | Both OS images are available and the catalog resolves every `Machine.spec.version` before `SeedImage` build or host reprovisioning starts. |
 | 1 | `MachineRegistration` and `SeedImage` | `elemental-operator` builds the bootable ISO. |
 | 2 | Boot the ISO on each physical host | The host runs `elemental install` and registers as a `MachineInventory`. |
 | 2a (optional) | Declare and prepare `MachineInventory.spec.storage` | Explicit data volumes are validated and prepared while the inventory is unallocated. |
@@ -190,9 +219,12 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 | Placeholder | Source of truth | How to retrieve |
 |---|---|---|
 | `<cluster-name>` | Operator-supplied workload cluster name. Must not be `global`. | Choose once and use consistently for `Cluster`, `BaremetalCluster`, pools, templates, and registration resources. |
-| `<kubernetes-version>` | `elemental-image-catalog` ConfigMap key (with leading `v`, for example `v1.33.7-2`). | `kubectl -n cpaas-system get cm elemental-image-catalog -o yaml` |
-| `<base-image>` | Imported OS image used by the image catalog for host reprovisioning. | Obtain the supported pair from Alauda technical support, import it, and use its final target-platform registry reference. |
-| `<base-image-iso>` | Imported OS ISO image paired with `<base-image>`. | Import the supported image and use its final target-platform registry reference; do not derive it from `<base-image>`. |
+| `<kubernetes-version>` | Kubernetes version of the imported OS image, added as an `elemental-image-catalog` ConfigMap key (with leading `v`, for example `v1.33.7-2`). | [OS Support Matrix](../overview/os-support-matrix.mdx) for the value; `kubectl -n cpaas-system get cm elemental-image-catalog -o yaml` to confirm the key. |
+| `<bare-metal-os-archive>` | Bare Metal OS archive for the target ACP release. | Download page listed in [OS Support Matrix](../overview/os-support-matrix.mdx). |
+| `<os-image-tag>` | Tag shared by both images in the archive. | `ctr -n bare-metal-os images ls -q` after the import. |
+| `<registry-username>` / `<registry-password>` | Account that can push to `<registry-address>`. | For the `global` cluster's registry, user `admin` with the password from `kubectl -n cpaas-system get secret registry-admin -o jsonpath='{.data.password}' \| base64 -d`. |
+| `<base-image>` | Imported OS image used by the image catalog for host reprovisioning. | `<registry-address>/tkestack/baremetal-base-image:<os-image-tag>` after the import in [OS Images Imported and Image Catalog Populated](#os-images-and-image-catalog). |
+| `<base-image-iso>` | Imported OS ISO image paired with `<base-image>`. | `<registry-address>/tkestack/baremetal-base-image-iso:<os-image-tag>`, imported from the same archive as `<base-image>`. |
 | `<registry-address>` | Target platform registry into which both OS images are imported (same value as `global.registry.address` on the install chart). | `kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'` (when one exists). |
 | `<control-plane-load-balancer-type>` | Operator decision. Use `Internal` for provider-managed Alive or `External` for an existing load balancer. | Review [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). |
 | `<control-plane-vip>` / `<control-plane-port>` | Operator-supplied stable endpoint. For `Internal`, use an unused IPv4 VIP in the control-plane Layer-2 domain. For `External`, use the load balancer frontend address. | n/a |
@@ -217,7 +249,7 @@ The example manifests below use `<placeholder>` syntax for environment-specific 
 
 Create a `MachineRegistration` that describes the registration URL and first-install cloud-config, and a `SeedImage` that points `elemental-operator` at the matching ISO base image.
 
-Set `SeedImage.spec.baseImage` to the final target-platform registry reference of the imported `base-image-iso`. It must be paired with the imported `base-image` used by the image catalog for later reprovisioning; do not construct the ISO reference by changing the repository name or tag yourself.
+Set `SeedImage.spec.baseImage` to the final target-platform registry reference of the imported `base-image-iso`. It must be paired with the imported `base-image` used by the image catalog for later reprovisioning: take both images from the same OS archive, never from different archives.
 
 ```yaml title="01-machineregistration-seedimage.yaml"
 apiVersion: elemental.cattle.io/v1beta1
@@ -677,7 +709,7 @@ A successfully created cluster shows:
 | `BaremetalMachine` stuck in `Pending`, `InventoryAllocated=False / Reason=PoolMissing` | `BaremetalMachineTemplate.spec.template.spec.machineInventoryPoolRef.name` points at a non-existent pool. | Pool name + namespace. |
 | `BaremetalMachine` stuck in `Pending`, `InventoryAllocated=False / Reason=PoolExhausted` | Pool has no `Available` inventory left. | `MachineInventoryPool.status.available`; allocation annotations on each member. |
 | `BaremetalMachine` stuck after allocation, `BootstrapReady=False / Reason=BootstrapWaiting` | KubeadmConfig has not produced a bootstrap data secret yet. | `Machine.spec.bootstrap.dataSecretName`. |
-| `BaremetalMachine` in `Failed`, `ImageResolved=False / Reason=ImageCatalogMiss` | The target `Machine.spec.version` is not a key in `elemental-image-catalog`. | `kubectl -n cpaas-system get cm elemental-image-catalog -o yaml`. |
+| `BaremetalMachine` in `Failed`, `ImageResolved=False / Reason=ImageCatalogMiss` | The target `Machine.spec.version` is not a key in `elemental-image-catalog`. The chart creates the catalog with no entries. | `kubectl -n cpaas-system get cm elemental-image-catalog -o yaml`. Add the key as in [OS Images Imported and Image Catalog Populated](#os-images-and-image-catalog), then delete the affected `Machine`; the `BaremetalMachine` does not leave `Failed` on its own. |
 | `ImageResolved=False / Reason=ImageRegistryMissing` | Neither the optional `cpaas.io/registry-address` annotation nor the platform registry-credential Secret resolves a registry address. | Cluster annotations; platform registry-credential Secret. |
 | Inventory is registered but not counted as `Available` | Its managed storage declaration has not reached `StoragePrepared=True`, or the host storage observation is missing or stale. | `MachineInventory.status.storage`, `status.observedStorage`, `elemental-storage-observer.service`, and the `storage-prepare` plan output. |
 | `BaremetalMachine` waits with `StorageReady=False` | A required managed volume did not activate or no fresh post-reboot observation confirms its mount. | `BaremetalMachine.status.conditions[StorageReady]`, `MachineInventory.status.storage`, and host mount units. |
