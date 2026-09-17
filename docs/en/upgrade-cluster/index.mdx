@@ -83,7 +83,7 @@ Use this section as the authoritative Kube-OVN procedure for workload and `globa
 
 Run provider-version checks and `Cluster` or infrastructure-cluster commands against the management cluster. Run `cni-kube-ovn` `AppRelease` commands against the cluster being upgraded. When upgrading the `global` cluster, both resources are on the `global` cluster, so use the `global` kubeconfig for all commands.
 
-#### Identify the Installed Provider Version
+#### Identify the Installed Provider Version \{#identify-the-installed-provider-version}
 
 Do not infer the provider version from the ACP Distribution Version. Inspect the provider `AppRelease` on the management cluster. The resource name can vary, so the following command finds the provider by chart name and prints the requested and installed revisions:
 

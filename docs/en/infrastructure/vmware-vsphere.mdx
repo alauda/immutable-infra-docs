@@ -7,11 +7,13 @@ queries:
   - vmware vsphere cluster parameter checklist
   - prepare values for capv cluster
   - vsphere cluster prerequisites
+  - vsphere self-built vip prerequisites
+  - vsphere persistent disk sizing and unit number
 ---
 
 # VMware vSphere Infrastructure Preparation
 
-This document helps you prepare the infrastructure and collect the values required to create a VMware vSphere workload cluster. Complete this checklist before you apply the manifests in [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere.mdx). The provider behavior and fields on this page are validated against VMware vSphere Provider `v1.0.16`.
+This document helps you prepare the infrastructure and collect the values required to create a VMware vSphere workload cluster. Complete this checklist before you apply the manifests in [Creating Clusters on VMware vSphere](../create-cluster/vmware-vsphere.mdx). The provider behavior and fields on this page are validated against VMware vSphere Provider `v1.0.17`.
 
 ## Scenarios
 
@@ -197,34 +199,36 @@ The template should also meet the following requirements:
 
 ## Load Balancer Prerequisites
 
-VMware vSphere Provider `v1.0.16` uses an external LoadBalancer. The provider does not deploy a Self-built VIP component. Provision the endpoint before cluster creation and follow [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx).
+This section covers the external LoadBalancer endpoint, which the baseline cluster uses. Provision it before cluster creation and follow [Plan the Control Plane Endpoint](../how-to/control-plane-endpoint.mdx). A cluster can instead be created with the provider-managed Self-built VIP, which needs no external LoadBalancer and requires ACP `v4.4` or later; see [Control Plane Endpoint Modes](../create-cluster/vmware-vsphere.mdx#control-plane-endpoint-modes).
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| Control plane VIP or FQDN | `<vip>` | Yes | The frontend address is allocated and stable. If it is an FQDN, DNS and API server certificate SAN planning are complete. | `10.10.10.10` | - |
+| Control plane VIP or FQDN | `<vip>` | Yes | The frontend address is allocated and stable. An FQDN is accepted for an external LoadBalancer only, and requires DNS and API server certificate SAN planning; a Self-built VIP must be IPv4. | `10.10.10.10` | - |
 | API server port | `<api_server_port>` | Yes | The default port is `6443`. | `6443` | - |
 | Listener mode | - | Yes | Layer 4 TCP forwarding with TLS passthrough. | `TCP` | - |
 | Backends | - | Yes | Every planned control-plane node IP is registered on backend port `6443`; worker IPs are excluded. | `3 control-plane IPs` | - |
 | Health check | - | Yes | Prefer HTTPS `/healthz` with HTTP `200`. Record when the device can perform only a TCP-connect check. | `HTTPS /healthz` | - |
 | Endpoint connectivity | - | Yes | The `global` cluster and every control-plane node can reach `<vip>:6443`. | `Yes` | - |
 | Backend maintenance ownership | - | Yes | Identify who updates backends after control-plane scale, replacement, or deletion. | `Platform team` | - |
+| Virtual router ID | `<vrid>` | When the cluster uses the Self-built VIP | Keepalived `virtual_router_id`, `1`–`255`, unique in the control-plane Layer-2 domain. | `51` | - |
+| VIP interface | `<vip_interface>` | When the cluster uses the Self-built VIP | Host interface that carries the VIP, at most 15 characters. Leave empty to let the provider match the interface holding the node's primary IP; set it explicitly on multi-NIC nodes, because it cannot be changed later. | `ens192` | - |
 
 ## Cluster Baseline Parameters
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
 | Cluster name | `<cluster_name>` | Yes | Use the same value in all manifests. | `demo-cluster` | - |
-| Kubernetes version | `<k8s_version>` | Yes | Use the version required by the target platform release. The baseline manifests omit `imagePullCredentialsVerificationPolicy` for Kubernetes 1.34 or earlier. For Kubernetes 1.35 or later, add `imagePullCredentialsVerificationPolicy: NeverVerify` to the kubelet patch in both the control-plane and worker manifests. | `v1.33.7-2` | - |
-| Control plane replicas | `<cp_replicas>` | Yes | The baseline topology uses `3`. | `3` | - |
+| Kubernetes version | `<k8s_version>` | Yes | Use the version required by the target platform release. The baseline manifests omit `imagePullCredentialsVerificationPolicy` for Kubernetes 1.34 or earlier. For Kubernetes 1.35 or later, add `imagePullCredentialsVerificationPolicy: NeverVerify` to the kubelet patch in both the control-plane and worker manifests. | `v1.35.6-acp.1` (needs the Kubernetes 1.35 kubelet patch) | - |
+| Control plane replicas | `<cp_replicas>` | Yes | Must be `3` or more. The provider's admission webhook rejects a pool-backed `KubeadmControlPlane` with fewer replicas, and a `replicas: 1` control plane cannot be upgraded later. See [Provider Requirements](../create-cluster/vmware-vsphere.mdx#provider-requirements). | `3` | - |
 | Worker replicas | `<worker_replicas>` | Yes | The baseline topology uses `1`. | `1` | - |
 | Pod CIDR | `<pod_cidr>` | Yes | Must not overlap with existing networks. | `10.244.0.0/16` | - |
 | Service CIDR | `<service_cidr>` | Yes | Must not overlap with existing networks. | `10.96.0.0/12` | - |
 | Image registry | `<image_registry>` | Yes | Registry address used by kubeadm `imageRepository`, without a URL scheme or `/v2/`. The value becomes `<image_registry>/tkestack`. | `registry.example.local:11443` | - |
 | Cluster Registry address | `<registry_address>` | Yes | Permanent Registry address reachable from workload nodes. Use `<host>:<port>` only for `cpaas.io/registry-address`; do not use the retired bootstrap Registry and do not append `/v2/`. | `registry.example.local:11443` | - |
-| `kube-ovn` version | `<kube_ovn_version>` | Yes | Must match the platform network plugin requirements. | `v4.2.26` | - |
+| `kube-ovn` version | `<kube_ovn_version>` | Yes | Must match the platform network plugin requirements. | `v4.4.1` | - |
 | `kube-ovn-join-cidr` | `<kube_ovn_join_cidr>` | Yes | Must not overlap with other networks. | `100.64.0.0/16` | - |
-| CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `1.12.4` | - |
-| etcd image tag | `<etcd_image_tag>` | Yes | Use the tag approved for the Kubernetes version. | `v3.5.0` | - |
+| CoreDNS image tag | `<dns_image_tag>` | Yes | Use the tag published for the target ACP release, copied verbatim with its `-v<acp>` suffix: at ACP `v4.4` and later, the tag staged under `acp/coredns`; below `v4.4`, the one under `tkestack/coredns`. The provider reads the suffix to select that repository, so a tag without it resolves to `tkestack/coredns` and fails to pull on ACP `v4.4` or later. Leave `dns.imageRepository` unset; see [Provider-managed fields on your manifests](../create-cluster/vmware-vsphere.mdx#provider-managed-fields). | `1.14.3-v4.4.6` | - |
+| etcd image tag | `<etcd_image_tag>` | Yes | Use the tag approved for the Kubernetes version. Take it from the same [OS Support Matrix](../overview/os-support-matrix.mdx) row as the other version values. | `v3.6.13-acp.0` | - |
 | Encryption provider secret | `<encryption_provider_secret>` | Yes | Base64-encoded AES key for secret encryption at rest. Generate with `head -c 32 /dev/urandom \| base64`. Do not reuse example values. | *(generated)* | - |
 
 ### Registry tag validation
@@ -242,10 +246,21 @@ The Secret command verifies existence only and does not print credential data. E
 ```bash
 export CLUSTER_REGISTRY_ADDRESS="<registry_address>"
 export IMAGE_REGISTRY_ADDRESS="<image_registry>"
-curl -sk "https://${CLUSTER_REGISTRY_ADDRESS}/v2/acp/chart-cpaas-kube-ovn/tags/list"
-curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/tkestack/coredns/tags/list"
+# Repository names depend on the target version. The values below are the
+# ACP v4.4 and later ones; for an earlier target, change them to:
+#   Kube-OVN chart -> acp/chart-cpaas-kube-ovn
+#   CoreDNS        -> tkestack/coredns
+export KUBE_OVN_CHART_REPO="acp/chart-kube-ovn"
+export COREDNS_REPO="acp/coredns"
+
+curl -sk "https://${CLUSTER_REGISTRY_ADDRESS}/v2/${KUBE_OVN_CHART_REPO}/tags/list"
+curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/${COREDNS_REPO}/tags/list"
 curl -sk "https://${IMAGE_REGISTRY_ADDRESS}/v2/ait/cloud-provider-vsphere/tags/list"
 ```
+
+A `NAME_UNKNOWN` response means the repository name does not match the target version; correct `KUBE_OVN_CHART_REPO` or `COREDNS_REPO` from the mapping above and retry, rather than reading it as a missing tag.
+
+The authoritative chart-name boundary is in [Upgrade Kube-OVN Before the Control Plane](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane).
 
 The `/v2/` segment belongs only to these Registry HTTP API URLs. Image references use `<registry>/<repository>:<tag>`, and the Cluster annotation uses `<host>:<port>`.
 
@@ -349,18 +364,27 @@ Set `cpaas.io/registry-address` in the workload `Cluster` annotation to `<regist
 
 ### Disk sizing model
 
-`VSphereMachineTemplate.spec.template.spec.diskGiB` and `VSphereMachineConfigPool.spec.configs[].persistentDisks[]` define different disks.
+`VSphereMachineTemplate.spec.template.spec.diskGiB` and the two disk lists under `VSphereMachineConfigPool.spec.configs[]` define different disks.
 
 | Field | Disk type | Meaning |
 |-------|-----------|---------|
 | `VSphereMachineTemplate.spec.template.spec.diskGiB` | System disk | Sets the VM root or system disk size when the VM is created by `fullClone`. The value must be greater than or equal to the system disk size in the OS image template. It is not the sum of all disks. |
-| `VSphereMachineConfigPool.spec.configs[].persistentDisks[]` | Persistent/data disks | Defines extra VMDKs attached to the node slot, such as `/var/cpaas`, `/var/lib/containerd`, and `/var/lib/etcd`. These disks are separate from the system disk. |
+| `VSphereMachineConfigPool.spec.configs[].persistentDisks[]` | Persistent data disks | Extra VMDKs bound to the node slot and reattached to the replacement VM, such as `/var/cpaas`. Separate from the system disk. |
+| `VSphereMachineConfigPool.spec.configs[].ephemeralDisks[]` | Ephemeral data disks | Extra VMDKs created empty with the VM and deleted with it, such as `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/lib/etcd`. Separate from the system disk. |
 
-Do not add the persistent disk sizes to `diskGiB`. For example, if the OS image has a 100 GiB system disk and the node also needs three 100 GiB persistent disks, use a system disk value that is at least 100 GiB, and define the three 100 GiB data disks under `persistentDisks`. Setting `diskGiB` to 400 GiB would create a 400 GiB system disk in addition to the three data disks.
+Do not add the data disk sizes to `diskGiB`. For example, if the OS image has a 100 GiB system disk and the node also needs a 100 GiB persistent disk plus three ephemeral disks, use a system disk value that is at least 100 GiB and declare the data disks in `persistentDisks` and `ephemeralDisks`. Setting `diskGiB` to the combined size would create an oversized system disk in addition to the data disks.
 
-### Standard data disks
+### Standard data disks \{#standard-data-disks}
 
-Each node role requires a set of dedicated data disks. The disks listed below are the minimum required disks. You can append additional disks to the `persistentDisks` list if your workload requires them.
+Each node role requires a set of dedicated data disks. The disks listed below are the minimum required disks. You can append additional disks to either list if your workload requires them. An allocated slot still accepts new entries in both lists — they take effect when the VM is next recreated — but it never accepts removing or reshaping a disk, so plan sizes and mount paths before the first Machine takes the slot.
+
+The split follows the same model as the Huawei Cloud Stack and Huawei DCS providers: only platform state that must survive VM replacement (`/var/cpaas`) is a persistent disk, while the rebuildable runtime directories (`/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`) are recreated with every VM.
+
+:::warning
+**The split applies to new clusters only**
+
+`ephemeralDisks[]` is new in provider `v1.0.17`, so this layout is a creation-time choice. A cluster created on an earlier provider declares `/var/cpaas`, `/var/lib/containerd`, and `/var/lib/etcd` as persistent disks, with `wipeFilesystem: true` on the etcd disk, and it keeps that layout. A provider upgrade migrates no disk, and a slot that is already `InUse` or `Released` rejects the removal or the reshaping of a disk in either list, so a declared disk cannot be moved from one list to the other. See [Upgrading the Provider](../install/vmware-vsphere.mdx#upgrade-the-provider).
+:::
 
 #### Persistent disk fields
 
@@ -369,18 +393,27 @@ Each node role requires a set of dedicated data disks. The disks listed below ar
 | `name` | Yes | — | Unique disk name within the slot. |
 | `sizeGiB` | Yes | — | Disk size in GiB. |
 | `mountPath` | No | (empty) | Mount path inside the guest OS. If empty, the disk is attached as a raw device with a symlink at `/dev/disk/by-capv/<name>` but is not formatted or mounted. This is useful when an external process manages the disk at runtime. |
+| `mountOptions` | No | (empty) | Mount options applied when `mountPath` is set. |
 | `fsFormat` | No | `ext4` (when `mountPath` is set) | Filesystem format. Ignored when `mountPath` is empty. |
-| `wipeFilesystem` | No | `false` | When `true`, disk content is wiped on the first boot of a new VM. Reboots and manual service restarts are not affected. Use for etcd disks to prevent stale data from blocking `kubeadm join` during rolling updates. |
+| `wipeFilesystem` | No | `false` | When `true`, disk content is wiped on the first boot of a new VM. Reboots and manual service restarts are not affected. The standard disk set does not use it: the only persistent disk, `/var/cpaas`, is meant to keep its contents across replacement, and every disk that must start empty is declared in `ephemeralDisks[]`. |
+| `unitNumber` | No | (controller-assigned) | SCSI unit that keeps guest device ordering stable across VM recreations. Between `0` and `15`, never `7` (reserved for the SCSI controller), unique within the slot, and immutable once the slot is allocated. |
 | `datastore` | No | (pool default) | Override the datastore for this disk. |
+| `storagePolicy` | No | (pool default) | Override the vSphere storage policy for this disk. |
+
+#### Ephemeral disk fields
+
+`ephemeralDisks[]` mirrors the guest-facing fields of a persistent disk — `name`, `sizeGiB`, `mountPath`, `mountOptions`, `fsFormat`, `datastore`, and `storagePolicy` — and drops the persistence fields. There is no `wipeFilesystem`, because the backing VMDK is always newly created and formatted from scratch, and no `unitNumber`, because the controller assigns the SCSI unit at clone time and reports it in `status.ephemeralDiskStatuses[]`.
+
+Disk names and mount paths share one namespace across both lists within a slot. For the field-by-field comparison and the guidance on which list to use, see [Choose persistent or ephemeral](../create-cluster/vmware-vsphere.mdx#choose-persistent-or-ephemeral).
 
 #### Persistent disk lifecycle \{#persistent-disk-lifecycle}
 
-Persistent disks are owned by a slot in one specific `VSphereMachineConfigPool`, not by the short-lived VM. A slot in another pool is a different allocation even when it declares the same hostname, IP address, or disk names. For vSphere Provider `v1.0.16`, the expected replacement lifecycle is:
+Persistent disks are owned by a slot in one specific `VSphereMachineConfigPool`, not by the short-lived VM. A slot in another pool is a different allocation even when it declares the same hostname, IP address, or disk names. The expected replacement lifecycle is:
 
 1. While a Machine uses the slot, `status.configStatuses[].state` is `InUse` and the VMDKs are attached to its VM.
 2. When the Machine and VM are deleted, the slot becomes `Released`. The VMDKs remain available for replacement and are not permanent orphaned disks.
 3. A replacement Machine that references the same existing pool can reuse the `Released` slot immediately. The provider selects a released slot before an unused slot and reattaches the declared persistent VMDKs to the replacement VM. `releaseDelayHours` is not a wait time for reuse.
-4. If the slot remains unused until `releaseDelayHours` expires, the controller can make it generally available and reclaim persistent VMDKs only after it confirms they are no longer attached. Asynchronous progress appears in `status.configStatuses[].reclaimStatus`.
+4. If the slot remains unused until `releaseDelayHours` expires, the controller can make it generally available and reclaim persistent VMDKs only after it confirms they are no longer attached. Asynchronous progress appears in `status.persistentDiskStatuses[].phase`.
 
 `wipeFilesystem` controls data handling after a persistent disk is attached to a new VM; it does not control slot selection or datastore reclamation. `false` preserves the existing filesystem contents. `true` deletes the mounted contents during the new VM's first boot; it does not make VMDK reclamation faster and must not be treated as a datastore-capacity setting.
 
@@ -394,6 +427,7 @@ Use these rules when retrying or tearing down a deployment:
 - If a new deployment intentionally uses a new pool name, include the new pool's complete persistent-disk allocation in datastore capacity planning. Do not assume matching hostnames or disk names enable reuse across pools.
 - Before starting another deployment against a capacity-constrained datastore, verify that earlier pool objects have completed deletion and that their VMDKs have been reclaimed. Pool deletion is asynchronous because the finalizer waits for Machines to be removed and for persistent-disk reclaim to finish.
 - Do not remove the pool finalizer or manually delete backing VMDKs to accelerate teardown. If reclaim does not progress, collect the pool status, Events, provider-controller logs, and vCenter attachment state before treating the condition as a provider defect.
+- Size the datastore for both lists. Ephemeral VMDKs occupy datastore space for as long as their VM exists, but they are deleted with it, so they never accumulate across pools and never hold a slot release. Only persistent VMDKs survive a teardown and wait for provider-managed reclaim.
 
 Use the following fields when you investigate a released slot or a datastore capacity alert:
 
@@ -401,10 +435,9 @@ Use the following fields when you investigate a released slot or a datastore cap
 |---|---|
 | `state` | Slot allocation state: `Available`, `InUse`, or `Released`. |
 | `lastReleasedTime` | When the slot entered `Released`. Compare this with `releaseDelayHours`. |
-| `reclaimStatus.state` | Reclaim task state: `Running`, `Failed`, or `Completed`. |
-| `reclaimStatus.volumePath` | VMDK currently being reclaimed. |
-| `reclaimStatus.lastError` | Latest reclaim failure. |
-| `reclaimStatus.retryAfter` | Earliest time the controller will retry after a failure. |
+| `reclaimStatus.*` | Deprecated. The provider folds it into `status.persistentDiskStatuses[]` on upgrade and then clears it. |
+
+Read per-disk state from `status.persistentDiskStatuses[]`. Its `phase` field carries `Creating`, `Attached`, `Available`, `Reclaiming`, `Reclaimed`, or `Error`, and each entry also reports `lastError`, `retryAfter`, `taskRef`, and the owning machine. The `status.configStatuses[].reclaimStatus` subtree and the `spec.configs[].persistentDisks[].volumePath` and `.diskUUID` fields are deprecated, frozen, and scheduled for removal. Existing pools are migrated onto `persistentDiskStatuses[]` by the provider itself; see [Upgrading the Provider](../install/vmware-vsphere.mdx#upgrade-the-provider).
 
 Inspect the pool and related Events without reading credentials:
 
@@ -416,32 +449,36 @@ kubectl -n <namespace> get events \
 ```
 
 :::warning
-Do not manually delete a VMDK while its slot is `Released` or while `reclaimStatus` is `Running` or `Failed`. A replacement Machine may still reuse it, or the provider may be retrying a verified reclaim operation. Confirm the pool state, retention window, attachment state, and controller status before performing any manual datastore cleanup.
+Do not manually delete a VMDK while its slot is `Released`, or while its `persistentDiskStatuses[].phase` is `Reclaiming` or `Error`. A replacement Machine may still reuse it, or the provider may be retrying a verified reclaim operation. Confirm the pool state, retention window, attachment state, and controller status before performing any manual datastore cleanup.
 :::
 
-#### Control plane nodes (3 disks per node)
+#### Control plane nodes (4 disks per node)
 
-| Disk Name | Mount Path | `wipeFilesystem` | Purpose | Recommended Minimum Size | Placeholder |
-|-----------|------------|-------------------|---------|--------------------------|-------------|
-| `var-cpaas` | `/var/cpaas` | `false` | Stores logs, audit data, and other platform data | 100 GiB | `<cp_var_cpaas_size_gib>` |
-| `var-lib-containerd` | `/var/lib/containerd` | `false` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<cp_var_lib_containerd_size_gib>` |
-| `var-lib-etcd` | `/var/lib/etcd` | **`true`** | Stores etcd data. Must set `wipeFilesystem: true` to allow `kubeadm join` during rolling updates. | 100 GiB | `<cp_var_lib_etcd_size_gib>` |
+| Disk Name | Mount Path | Disk List | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|-----------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | `persistentDisks[]` | Stores logs, audit data, and other platform data | 100 GiB | `<cp_var_cpaas_size_gib>` |
+| `var-lib-kubelet` | `/var/lib/kubelet` | `ephemeralDisks[]` | Stores kubelet working data, including pod volumes and plugin sockets | 100 GiB | `<cp_var_lib_kubelet_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | `ephemeralDisks[]` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<cp_var_lib_containerd_size_gib>` |
+| `var-lib-etcd` | `/var/lib/etcd` | `ephemeralDisks[]` | Stores etcd data. The disk is created empty for every new VM, so a replacement control-plane node never carries stale member data into `kubeadm join`. | 20 GiB | `<cp_var_lib_etcd_size_gib>` |
 
-#### Worker nodes (2 disks per node)
+#### Worker nodes (3 disks per node)
 
-| Disk Name | Mount Path | `wipeFilesystem` | Purpose | Recommended Minimum Size | Placeholder |
-|-----------|------------|-------------------|---------|--------------------------|-------------|
-| `var-cpaas` | `/var/cpaas` | `false` | Stores logs, audit data, and other platform data | 100 GiB | `<worker_var_cpaas_size_gib>` |
-| `var-lib-containerd` | `/var/lib/containerd` | `false` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<worker_var_lib_containerd_size_gib>` |
+| Disk Name | Mount Path | Disk List | Purpose | Recommended Minimum Size | Placeholder |
+|-----------|------------|-----------|---------|--------------------------|-------------|
+| `var-cpaas` | `/var/cpaas` | `persistentDisks[]` | Stores logs, audit data, and other platform data | 100 GiB | `<worker_var_cpaas_size_gib>` |
+| `var-lib-kubelet` | `/var/lib/kubelet` | `ephemeralDisks[]` | Stores kubelet working data, including pod volumes and plugin sockets | 100 GiB | `<worker_var_lib_kubelet_size_gib>` |
+| `var-lib-containerd` | `/var/lib/containerd` | `ephemeralDisks[]` | Stores containerd runtime data (images, layers, snapshots) | 100 GiB | `<worker_var_lib_containerd_size_gib>` |
 
 #### Size parameters
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
 | CP `/var/cpaas` size GiB | `<cp_var_cpaas_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| CP `/var/lib/kubelet` size GiB | `<cp_var_lib_kubelet_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
 | CP `/var/lib/containerd` size GiB | `<cp_var_lib_containerd_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
-| CP `/var/lib/etcd` size GiB | `<cp_var_lib_etcd_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| CP `/var/lib/etcd` size GiB | `<cp_var_lib_etcd_size_gib>` | Yes | Recommended minimum 20 GiB. | `20` | - |
 | Worker `/var/cpaas` size GiB | `<worker_var_cpaas_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
+| Worker `/var/lib/kubelet` size GiB | `<worker_var_lib_kubelet_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
 | Worker `/var/lib/containerd` size GiB | `<worker_var_lib_containerd_size_gib>` | Yes | Recommended minimum 100 GiB. | `100` | - |
 
 ### vSphere CPI parameters
@@ -499,7 +536,7 @@ Before you start the deployment, confirm all of the following items:
 2. The two cluster plugins are installed: Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider.
 3. `ClusterResourceSet=true` is enabled.
 4. The vCenter server, username, password, and thumbprint are collected.
-5. The external LoadBalancer satisfies the Layer 4 listener, backend, health-check, ownership, and reachability contract.
+5. The external LoadBalancer satisfies the Layer 4 listener, backend, health-check, ownership, and reachability contract. If the cluster uses the Self-built VIP instead, the [Self-built VIP prerequisites](../create-cluster/vmware-vsphere.mdx#self-built-vip-prerequisites) are met and `<vrid>` and `<vip_interface>` are decided.
 6. The Pod CIDR, Service CIDR, and `kube-ovn-join-cidr` do not overlap with existing networks.
 7. The VM template is available in every required datacenter.
 8. The required datastores and vCenter resource pool paths are confirmed.
@@ -508,7 +545,7 @@ Before you start the deployment, confirm all of the following items:
 11. The `cpaas.io/registry-address` value is planned as `<registry_address>` without a scheme or `/v2/` path.
 12. The control plane and worker bootstrap manifests both write `/etc/resolv.conf` through kubeadm `files`.
 13. The machine config pool values for the minimum single-datacenter topology are complete.
-14. The baseline system disk and data disk sizing is confirmed, and persistent disk sizes are not added into `diskGiB`.
+14. The baseline system disk and data disk sizing is confirmed, each required disk is declared in the correct list (`/var/cpaas` persistent; `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/lib/etcd` ephemeral), and data disk sizes are not added into `diskGiB`.
 15. `releaseDelayHours`, same-pool persistent-disk reuse, new-pool capacity allocation, and provider-managed teardown reclaim are understood before datastore capacity is allocated.
 16. Every required parameter has a real value.
 
