@@ -1,0 +1,530 @@
+---
+weight: 28
+title: Deploy Bare Metal on Alauda OS alaudaos.k.25 (Preview)
+queries:
+  - alaudaos.k.25 bare metal
+  - install global on alaudaos.k.25
+  - bare metal a/b root partition os
+  - kbosctl upgrade bare metal
+  - persist-preflight
+  - os.baremetal.alauda.io/id alaudaos.k.25
+---
+
+# Deploy Bare Metal on Alauda OS `alaudaos.k.25` (Preview)
+
+This guide is the end-to-end procedure for running Bare Metal clusters on the Alauda OS variant with OS identifier `alaudaos.k.25`: installing the `global` cluster, preparing it as the management cluster, creating workload clusters, and operating the nodes afterwards. It follows the structure of [Installing the global Cluster](../global/install.mdx) and [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx) and spells out every place where `alaudaos.k.25` differs from the SLE Micro-based variant `alaudaos.m.55` those pages describe.
+
+To mix x86_64 and Arm hosts, also read [Deploy Mixed x86_64 and Arm Bare-Metal Clusters](./deploy-mixed-architecture-bare-metal.mdx). The procedure below is written so that it works for one architecture or both.
+
+:::warning
+**Preview build.** The provider and OS artifacts are built from branches that are not merged or released yet. Use them for evaluation and testing only. [Validation Status](#validation-status) lists which parts of this guide were exercised end to end and which were not.
+:::
+
+## How `alaudaos.k.25` Differs
+
+The Cluster API resources (`MachineInventoryPool`, `BaremetalCluster`, `BaremetalMachineTemplate`, `KubeadmControlPlane`, `MachineDeployment`) and the registration flow are the same for both variants. The provider selects the host-side behaviour from the inventory label `os.baremetal.alauda.io/id`.
+
+| Area | `alaudaos.m.55` | `alaudaos.k.25` |
+|---|---|---|
+| Base OS | SLE Micro 5.5 | UOS Server 25 |
+| Root filesystem | btrfs snapshots in `COS_STATE` | Two fixed root partitions (A/B, 20000 MiB each), read-only root, persistent data in `/persist` |
+| Install from the live ISO | `elemental install` | The register's install backend writes the image from `install.system-uri` to disk |
+| OS switch on every reprovision | `elemental upgrade` | `kbosctl upgrade` writes the inactive A/B slot, then the host reboots into it |
+| Catalog key | `<version>`, `<version>_<arch>` or `<version>_<arch>_alaudaos.m.55` | Only `<version>_<arch>_alaudaos.k.25` |
+| OS images in the archive | `baremetal-base-image`, `baremetal-base-image-iso`, tagged with the archive name | Root filesystem and ISO images tagged with the literal `baremetal` |
+| `COS_STATE` sizing | Required in `SeedImage` | Not applicable |
+| NIC names | As configured by the image | Predictable names (`enp1s0` and so on); set `networkDevice` |
+| Writable paths | `/oem`, persistent overlays | `/var`, `/opt`, `/etc`, `/home`, `/root` (overlays on `/persist`); `/usr` is read-only |
+
+## Artifacts
+
+Every file has a checksum next to it at `<url>.checksum` (format `sha256: <hex>`). Take the provider chart, the provider images, and the OS images from this list together.
+
+| Component | File | SHA-256 |
+|---|---|---|
+| Platform installer, mixed architecture | [installer-core-v4.4.0-hybrid.tar](http://package-minio.alauda.cn:9199/packages/acp/v4.4/installer-core-v4.4.0-hybrid.tar) | `b18db08c647a3c3b5bde8bf2158b27c2b022ddf40491b6515aa9fa4f992cf32a` |
+| Kubeadm provider | [cluster-api-provider-kubeadm.ALL.v1.0.14.tgz](http://package-minio.alauda.cn:9199/packages/cluster-api-provider-kubeadm/v1.0/cluster-api-provider-kubeadm.ALL.v1.0.14.tgz) | `7b23a79676f2dbae1891aa81cb954e9334d736ed321ec8f58fcfccb0b2a690da` |
+
+{/* lint disable no-legacy-os-names */}
+
+| Component | File | SHA-256 |
+|---|---|---|
+| Bare Metal provider, all architectures | [cluster-api-provider-baremetal.ALL.v1.0.0-fix.51.7.g41764fd0-feat-kubeos-support.tgz](http://package-minio.alauda.cn:9199/packages/cluster-api-provider-baremetal/fix/cluster-api-provider-baremetal.ALL.v1.0.0-fix.51.7.g41764fd0-feat-kubeos-support.tgz) | `39e5a4793f3946479de65856087c4718c17caaced949a14004325aa77087fc7b` |
+| Bare Metal provider, x86_64 only | [cluster-api-provider-baremetal.amd64.v1.0.0-fix.51.7.g41764fd0-feat-kubeos-support.tgz](http://package-minio.alauda.cn:9199/packages/cluster-api-provider-baremetal/fix/cluster-api-provider-baremetal.amd64.v1.0.0-fix.51.7.g41764fd0-feat-kubeos-support.tgz) | `955416b4bfb58e2d5ec7a0d23d258f09313f9aba82ecefcacac363998f7e2bea` |
+| Bare Metal provider, Arm only | [cluster-api-provider-baremetal.arm64.v1.0.0-fix.51.7.g41764fd0-feat-kubeos-support.tgz](http://package-minio.alauda.cn:9199/packages/cluster-api-provider-baremetal/fix/cluster-api-provider-baremetal.arm64.v1.0.0-fix.51.7.g41764fd0-feat-kubeos-support.tgz) | `ee0c1ea0646e8a8f37461cb9bcb8b4e085acdfcdac03dd018f4f9aa76c822227` |
+| OS archive, x86_64 | [alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.x86_64.tar](http://package-minio.alauda.cn:9199/packages/alaudaos/rc/feat-kubeos-provider-integration/x86_64/alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.x86_64.tar) | `5ecefa2cbbbbc43fcd4cbb6b44d88558d3e2a8d167a94c3e7340d7ff0c2b98db` |
+| OS archive, aarch64 | [alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.aarch64.tar](http://package-minio.alauda.cn:9199/packages/alaudaos/rc/feat-kubeos-provider-integration/aarch64/alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.aarch64.tar) | `f4704696da4e44a4e217360bb0b47ed3379f1ced884d6c6a60b77c03a4099792` |
+
+{/* lint enable no-legacy-os-names */}
+
+The OS archives are ACP v4.4.0 with Kubernetes `v1.35.6-acp.1`. Use the single-architecture installer (`installer-core-v4.4.0-x86.tar` or `-arm.tar` in the same directory) and provider package when every node has the same architecture; use the `hybrid` installer and the `ALL` packages when they do not.
+
+## Host Requirements
+
+The common Bare Metal host preparation applies unchanged. Complete it from these pages; this guide does not repeat it:
+
+| Topic | Where |
+|---|---|
+| Network paths between hosts, the platform, and the registry; configuring the live ISO network by hand with `nmcli` when a segment has no DHCP | [Network Connectivity](../create-cluster/bare-metal.mdx#network-connectivity) |
+| Firmware clock before the first boot | [Host Time Synchronization](../create-cluster/bare-metal.mdx#host-time-synchronization) |
+| Install device, residual labels, multi-disk hosts | [Host Disk and Boot Preparation](../create-cluster/bare-metal.mdx#host-disk-and-boot-preparation) and [Select a Fixed System Disk on Multi-Disk Bare-Metal Hosts](./configure-fixed-install-disk-bare-metal.mdx) |
+| Control-plane VIP or external load balancer | [Plan the Control Plane Endpoint](./control-plane-endpoint.mdx) |
+| Workload cluster registry | [Choose the Image Registry for a Workload Cluster](./workload-cluster-image-registry.mdx) |
+
+A network configured by hand in the live ISO is kept by the installed system, so configure it once, before the host registers.
+
+In addition, `alaudaos.k.25` needs:
+
+- **UEFI boot.** The ISO and the installed system boot through UEFI.
+- **System disk.** The installer creates the two 20000 MiB root partitions and gives the rest of the disk to `/persist`, which holds `/var` (including containerd and etcd data) and the provider's state. Every reprovision first checks that `/persist` has more free space than one root partition plus 2 GiB (`persist-preflight`). The preview was tested with 200 GiB disks; use at least 100 GiB.
+- **TPM.** `emulate-tpm: false` needs a real TPM 2.0. On any host without one, set `emulate-tpm: true` with `emulated-tpm-seed: -1`: the seed is derived from the SMBIOS system UUID, so it is stable and unique per host.
+- **SMBIOS.** Registration reads host identity with `dmidecode`. On Arm, check once from the live ISO console that `/sys/firmware/dmi/tables/` exists.
+- **NIC name.** `alaudaos.k.25` keeps predictable interface names. Every node of a cluster must use the same name for the Kube-OVN interface, because `BaremetalCluster.spec.networkDevice` is cluster-wide.
+
+## Part 1: Install the `global` Cluster
+
+Follow [Installing the global Cluster](../global/install.mdx), Bare Metal tab, with the changes below. Step numbers match that page.
+
+### Step 1 — Variables
+
+Set the common variables from that page, plus:
+
+{/* lint disable no-legacy-os-names */}
+
+```shell
+export K8S_VERSION="v1.35.6-acp.1"
+export OS_ID="alaudaos.k.25"
+export OS_IMAGE_TAG="alaudaos-feat-kubeos-provider-integration.ku.202609281026-0"
+export NETWORK_DEVICE="enp1s0"          # the Kube-OVN interface name on every node
+export ARCHES="x86_64"                  # or "x86_64 aarch64" for mixed architecture
+```
+
+{/* lint enable no-legacy-os-names */}
+
+`K8S_VERSION` must equal the version the OS archive was built for, including the `-acp.1` suffix.
+
+### Step 2 — Bootstrap Cluster
+
+No change. Use the installer package that matches your architectures.
+
+### Step 3 — Provider Packages, OS Images, Certificate, AppRelease
+
+**Provider packages.** Push the Bare Metal and Kubeadm packages as described. On a mixed-architecture platform, use the `ALL` packages.
+
+**OS images.** The archive's image names differ from `alaudaos.m.55`, and every archive uses the same names, so push the images under an architecture-suffixed tag, one architecture at a time:
+
+{/* lint disable no-legacy-os-names */}
+
+```shell
+for arch in ${ARCHES}; do
+  ctr -n bare-metal-os images rm kubeos-rootfs:baremetal kubeos-iso:baremetal 2>/dev/null || true
+  ctr -n bare-metal-os images import --all-platforms --no-unpack "/root/${OS_IMAGE_TAG}.${arch}.tar"
+  for repo in kubeos-rootfs kubeos-iso; do
+    ctr -n bare-metal-os images push --plain-http \
+      "${LOCAL_REGISTRY_ADDRESS}/tkestack/${repo}:${OS_IMAGE_TAG}.${arch}" "${repo}:baremetal"
+  done
+done
+
+for repo in kubeos-rootfs kubeos-iso; do
+  curl -s "http://${LOCAL_REGISTRY_ADDRESS}/v2/tkestack/${repo}/tags/list"
+done
+```
+
+{/* lint enable no-legacy-os-names */}
+
+Push with `ctr` only. The installer reads the image manifest as a single line; a manifest reformatted by `docker push` makes the install fail after the disk has already been partitioned. Keep the archives: Part 2 pushes the images again.
+
+**Bootstrap certificate.** Create `dex.tls` exactly as described on that page. The `elemental-operator` does not start without it.
+
+**AppRelease.** Use the AppRelease from that page and replace `provider.imageCatalog.images` with one three-segment key per architecture:
+
+{/* lint disable no-legacy-os-names */}
+
+```yaml
+    provider:
+      imageCatalog:
+        images:
+          "v1.35.6-acp.1_amd64_alaudaos.k.25":
+            repository: tkestack/kubeos-rootfs
+            tag: alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.x86_64
+          # Only for mixed architecture:
+          "v1.35.6-acp.1_arm64_alaudaos.k.25":
+            repository: tkestack/kubeos-rootfs
+            tag: alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.aarch64
+```
+
+{/* lint enable no-legacy-os-names */}
+
+A key without the OS segment never matches an `alaudaos.k.25` host. Check the result with `kubectl -n cpaas-system get configmap elemental-image-catalog -o jsonpath='{.data}'`.
+
+### Step 4 — The `global` Manifest
+
+Build the manifest as described on that page, with these resources for `alaudaos.k.25`.
+
+**Registration and ISO, one pair per architecture.** Hosts register and install through the bootstrap host, whose registry is plain HTTP:
+
+{/* lint disable no-legacy-os-names */}
+
+```yaml
+apiVersion: elemental.cattle.io/v1beta1
+kind: MachineRegistration
+metadata:
+  name: global-registration             # global-registration-arm64 for the Arm pair
+  namespace: cpaas-system
+  labels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+spec:
+  machineName: "global-${System Information/UUID}"
+  machineInventoryLabels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+    pool.baremetal.alauda.io/eligible: "true"
+    elemental.cattle.io/serial-number: "${System Information/Serial Number}"
+    os.baremetal.alauda.io/id: alaudaos.k.25
+    os.baremetal.alauda.io/arch: "${Runtime/Architecture}"
+  machineInventoryAnnotations:
+    elemental.cattle.io/machine-uuid: "${System Information/UUID}"
+  config:
+    elemental:
+      install:
+        device: /dev/vda
+        system-uri: ${NODE_REGISTRY_ADDRESS}/tkestack/kubeos-rootfs:${OS_IMAGE_TAG}.x86_64
+        eject-cd: true
+        reboot: true
+      registration:
+        emulate-tpm: false              # true + emulated-tpm-seed: -1 without a TPM
+---
+apiVersion: elemental.cattle.io/v1beta1
+kind: SeedImage
+metadata:
+  name: global-registration-iso
+  namespace: cpaas-system
+  labels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+spec:
+  type: iso
+  baseImage: ${BOOTSTRAP_REGISTRY_ADDRESS}/tkestack/kubeos-iso:${OS_IMAGE_TAG}.x86_64
+  registrationRef:
+    apiVersion: elemental.cattle.io/v1beta1
+    kind: MachineRegistration
+    name: global-registration
+    namespace: cpaas-system
+  targetPlatform: linux/amd64           # linux/arm64 for the Arm pair
+  size: 20Gi
+  cleanupAfterMinutes: 240
+  cloud-config:
+    name: live-registry
+    stages:
+      network:
+        - files:
+            - path: /etc/containers/registries.conf.d/99-bootstrap-registry.conf
+              permissions: 0644
+              content: |
+                [[registry]]
+                location = "${NODE_REGISTRY_ADDRESS}"
+                insecure = true
+```
+
+{/* lint enable no-legacy-os-names */}
+
+- `system-uri` uses `${NODE_REGISTRY_ADDRESS}` because the host pulls it; `baseImage` uses `${BOOTSTRAP_REGISTRY_ADDRESS}` because the ISO is built inside the bootstrap cluster.
+- `targetPlatform` is required: the ISO image has no shell of its own.
+- Leave out `install.snapshotter` and the `COS_STATE` sizing fragment; they do not apply.
+- The `stages.network` file must be there: the live ISO pulls the root filesystem during `network.after`, and the bootstrap registry is plain HTTP.
+
+Wait for the ISO (`kubectl -n cpaas-system get seedimage -o custom-columns=NAME:.metadata.name,URL:.status.downloadURL`), boot each host from the ISO of its architecture, and check the inventories. If a host gets no DHCP address in the live ISO, configure its network from the console as described in [Network Connectivity](../create-cluster/bare-metal.mdx#network-connectivity) before registration continues.
+
+```shell
+kubectl -n cpaas-system get machineinventories.elemental.cattle.io \
+  -o custom-columns='NAME:.metadata.name,ARCH:.metadata.labels.os\.baremetal\.alauda\.io/arch,OS:.metadata.labels.os\.baremetal\.alauda\.io/id,PLAN:.status.plan.state,NIC:.spec.observedNetwork.interfaces[0].name'
+```
+
+Each host registers, installs to disk, reboots once into the installed system, and shows `PLAN` `Applied`. Every row must show `alaudaos.k.25`, its architecture, and the same NIC name.
+
+**Cluster API resources.** Use the fragment from that page with these additions:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: BaremetalCluster
+metadata:
+  name: global
+  namespace: cpaas-system
+spec:
+  controlPlaneLoadBalancer:
+    type: Internal
+    host: ${CONTROL_PLANE_VIP}
+    port: 6443
+    vrid: <unique-vrid>
+  networkType: kube-ovn
+  # Required: an empty value means eth0, which does not exist on alaudaos.k.25.
+  networkDevice: ${NETWORK_DEVICE}
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: global-kcp
+  namespace: cpaas-system
+  annotations:
+    controlplane.cluster.x-k8s.io/skip-kube-proxy: ""
+spec:
+  replicas: 3
+  version: "${K8S_VERSION}"
+  rolloutStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+  machineTemplate:
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: BaremetalMachineTemplate
+      name: global-control-plane-template
+  kubeadmConfigSpec:
+    format: cloud-config
+    files:
+      - path: /etc/kubernetes/patches/kubeletconfiguration0+strategic.json
+        owner: "root:root"
+        permissions: "0644"
+        content: |
+          {
+            "apiVersion": "kubelet.config.k8s.io/v1beta1",
+            "kind": "KubeletConfiguration",
+            "imagePullCredentialsVerificationPolicy": "NeverVerify"
+          }
+    clusterConfiguration:
+      imageRepository: cloud.alauda.io/alauda
+      dns:
+        imageTag: 1.14.3-v4.4.6
+      etcd:
+        local:
+          imageTag: v3.6.13-acp.0
+          serverCertSANs:
+            - "${CONTROL_PLANE_VIP}"
+            - "${PLATFORM_HOST}"
+      controllerManager:
+        extraArgs:
+          # Required: /usr is read-only, so the default flexvolume host path cannot be created.
+          flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+    initConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+    joinConfiguration:
+      patches:
+        directory: /etc/kubernetes/patches
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "kube-ovn/role=master"
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+```
+
+- The flexvolume settings are mandatory. Without them `kube-controller-manager` fails with `mkdir /usr/libexec/kubernetes: read-only file system` and `kubeadm init` never completes.
+- `imagePullCredentialsVerificationPolicy: NeverVerify` is required on Kubernetes 1.35; without it the platform registry cannot pull its own images and the installation stops at deploying the cluster version operator. Merge it into your full kubelet patch if you use the hardening profile from [Complete KubeadmControlPlane Configuration](../create-cluster/bare-metal.mdx#complete-kubeadmcontrolplane-configuration).
+- The `dns` and `etcd` image tags are the ones preloaded in this OS build.
+- `MachineInventoryPool` lists the inventory names from the check above. In a mixed-architecture cluster, one pool can hold both architectures.
+
+### Step 5 and Step 6 — Apply and Wait
+
+No change. The control-plane `BaremetalMachine` objects reprovision one at a time, about five minutes each: `Allocated`, `Reprovisioning` (the host writes the other A/B slot and reboots), then `Running`. Nodes stay `NotReady` until all control-plane nodes have joined, because Kube-OVN is deployed only then. This is expected; do not intervene.
+
+Check the catalog key each host used:
+
+```shell
+kubectl -n cpaas-system logs deploy/cluster-api-provider-baremetal-manager --all-containers \
+  | grep 'resolved OS image' | grep -o '"machineInventory": "[^"]*"\|"catalogKey": "[^"]*"'
+```
+
+### Step 7 — Import Provider Resources
+
+No change. In a mixed-architecture installation, list both bootstrap `MachineRegistration` objects under `machineregistrations.elemental.cattle.io`.
+
+### Step 8 — Trigger the Installation
+
+No change.
+
+### Step 9 — Monitor
+
+Two stalls were observed during the preview. Both are platform-side and independent of the OS variant:
+
+| Symptom | Check | Recovery |
+|---|---|---|
+| Progress stays at `8.Install Platform [Error]`, retrying `failed calling webhook "mproductbase.kb.io" ... request canceled` | `kubectl -n kube-system get ds kube-proxy -o jsonpath='{.spec.template.spec.imagePullSecrets}'` is empty on the new cluster while `kube-proxy` Pods on one node are in `ImagePullBackOff` | On the bootstrap cluster: `kubectl -n cpaas-system annotate baremetalcluster global resync=$(date +%s) --overwrite`. The provider re-reconciles, adds the pull Secret, and the installer continues. |
+| `cert-manager` Pods of the new ReplicaSet in `ImagePullBackOff` with `pull access denied` after step 6 | `cert-manager/global-registry-auth` on the new cluster still contains the bootstrap registry, while `kube-system/global-registry-auth` contains `${PLATFORM_HOST}:11443` | Copy `.data[".dockerconfigjson"]` from `kube-system/global-registry-auth` into `cert-manager/global-registry-auth`, then delete the failing Pods. |
+
+After success, verify the handoff: the `cpaas-system/baremetal-system-agent-handoff` ConfigMap on the new cluster has `ready: "true"`, and the control-plane `MachineInventory` objects exist on the new cluster with `PLAN` `Applied`.
+
+### After Installation — Console
+
+The Core package does not contain the console. Until you install it, the platform address returns an error. Push the `console` and `console-central` packages for ACP v4.4.0 (`ALL` packages on a mixed-architecture platform) with `violet push --platform-address https://${PLATFORM_HOST} --platform-username admin@cpaas.io --platform-password <password> --clusters global`, and wait for both `ModuleInfo` objects to reach `Running`.
+
+## Part 2: Prepare `global` as the Management Cluster
+
+Follow [Prepare the global Cluster as a Management Cluster](../global/install.mdx#prepare-global-as-management-cluster) with these changes.
+
+**Providers.** Push both provider packages to the platform, then install them with `ModuleInfo`, using the same system-agent values as the bootstrap AppRelease:
+
+```yaml
+apiVersion: cluster.alauda.io/v1alpha1
+kind: ModuleInfo
+metadata:
+  name: global-capi-baremetal
+  labels:
+    cpaas.io/cluster-name: global
+    cpaas.io/module-name: cluster-api-provider-baremetal
+    cpaas.io/module-type: plugin
+spec:
+  version: <baremetal-provider-chart-version>
+  config:
+    elemental:
+      systemAgent:
+        splitAuthEnabled: false
+        sharedAuthReadOnly: false
+```
+
+Create the Kubeadm provider `ModuleInfo` the same way with `config: {}`. Wait until `kubectl get moduleconfig cluster-api-provider-baremetal-<version>` exists before you create the `ModuleInfo`; it is generated asynchronously after the push.
+
+**OS images.** Push the images again, now to the `global` registry, with the `registry-admin` credential:
+
+{/* lint disable no-legacy-os-names */}
+
+```shell
+GLOBAL_REGISTRY_ADDRESS="$(kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" \
+  get productbase.product.alauda.io base -o jsonpath='{.spec.registry.address}')"
+GLOBAL_REGISTRY_PASSWORD="$(kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system \
+  get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)"
+
+for arch in ${ARCHES}; do
+  ctr -n bare-metal-os images rm kubeos-rootfs:baremetal kubeos-iso:baremetal 2>/dev/null || true
+  ctr -n bare-metal-os images import --all-platforms --no-unpack "/root/${OS_IMAGE_TAG}.${arch}.tar"
+  for repo in kubeos-rootfs kubeos-iso; do
+    ctr -n bare-metal-os images push --local --skip-verify -u "admin:${GLOBAL_REGISTRY_PASSWORD}" \
+      "${GLOBAL_REGISTRY_ADDRESS}/tkestack/${repo}:${OS_IMAGE_TAG}.${arch}" "${repo}:baremetal"
+  done
+done
+```
+
+**Catalog.** Add the three-segment keys on `global`:
+
+```shell
+kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system patch configmap elemental-image-catalog --type merge -p '{"data":{
+  "v1.35.6-acp.1_amd64_alaudaos.k.25": "'"${GLOBAL_REGISTRY_ADDRESS}"'/tkestack/kubeos-rootfs:'"${OS_IMAGE_TAG}"'.x86_64",
+  "v1.35.6-acp.1_arm64_alaudaos.k.25": "'"${GLOBAL_REGISTRY_ADDRESS}"'/tkestack/kubeos-rootfs:'"${OS_IMAGE_TAG}"'.aarch64"
+}}'
+```
+
+{/* lint enable no-legacy-os-names */}
+
+Keep only the keys for the architectures you deploy. `dex.tls` on `global` already carries `ca.crt`, so the default `caCertSecretKey` works.
+
+## Part 3: Create a Workload Cluster
+
+Follow [Creating Clusters on Bare Metal](../create-cluster/bare-metal.mdx) with these changes.
+
+**Registration on `global`.** Create one `MachineRegistration` and `SeedImage` pair per architecture on the `global` cluster. They are the Step 4 resources with three differences:
+
+- `system-uri` and `baseImage` use `${GLOBAL_REGISTRY_ADDRESS}`.
+- The `stages.network` file declares `${GLOBAL_REGISTRY_ADDRESS}` as `insecure = true` (self-signed certificate). No login is needed: `tkestack/*` allows anonymous pulls.
+- Name the resources `<cluster-name>-registration` and `<cluster-name>-registration-arm64`.
+
+The registration URL of a workload host is the platform domain. The listed OS archives resolve it in the live ISO without extra configuration.
+
+**Cluster resources.** Apply the pools, `BaremetalCluster`, `BaremetalMachineTemplate`, `KubeadmControlPlane`, and `Cluster` from that page, with the same three additions as in Part 1 Step 4: `networkDevice`, the flexvolume settings, and the `NeverVerify` kubelet patch. Choose a VIP, VRID, and CIDRs that differ from `global`.
+
+**Workers.** Use the worker templates from [Managing Nodes on Bare Metal](../manage-nodes/bare-metal.mdx#worker-node-deployment), and add to the `KubeadmConfigTemplate`:
+
+```yaml
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
+```
+
+Workers of the `global` cluster are added the same way, with the registration created on `global`.
+
+## Part 4: Day-2 Operations
+
+### What a Reprovision Does on the Host
+
+Every allocation, replacement, and upgrade reprovisions the host with a plan. On `alaudaos.k.25` the plan:
+
+{/* lint disable no-legacy-os-names */}
+
+| Step | Effect |
+|---|---|
+| `persist-preflight` | Fails the plan early if `/persist` has less free space than one root partition plus 2 GiB. The plan Secret's `failed-output` shows the available, needed, and root sizes. |
+| Cleanup drop-in | Writes `/etc/kubeos-initrd.d/90-baremetal-cleanup.sh`, which removes the previous Kubernetes state in the initrd of the next boot and logs one line to `/etc/baremetal-initrd-cleanup.log`. |
+| `ensure-resolv-conf` | Links `/etc/resolv.conf` to the NetworkManager runtime file if it is missing. |
+| `kbosctl upgrade` | Writes the catalog image to the inactive root partition. Retried up to three times; the attempt count is kept in `/persist/baremetal-provider-plan-state/*.attempts`. |
+| Reboot | The host boots the new slot, cloud-init runs the kubeadm bootstrap data, and the node joins. |
+
+{/* lint enable no-legacy-os-names */}
+
+The plan state is kept in `/persist/baremetal-provider-plan-state/`, not in `/run/elemental/persistent/`.
+
+### Upgrading Kubernetes
+
+The flow is the one in [Upgrading Bare Metal Clusters](../upgrade-cluster/bare-metal.mdx): import the OS archive of the new version, add its three-segment catalog key for every architecture in the cluster, then change `KubeadmControlPlane.spec.version` and the `MachineDeployment` versions. Each node is reprovisioned onto the other A/B slot. An upgrade to a different Kubernetes version was **not** exercised in this preview.
+
+### Replacing a Node
+
+Same as [Replacing a Single Failed Node](../manage-nodes/bare-metal.mdx#replacing-a-node). Not exercised in this preview.
+
+### Data Disks
+
+Managed data volumes follow [Manage Data Disks on Bare-Metal Hosts](./manage-bare-metal-storage.mdx), with one restriction: the root filesystem is read-only, so mount points must be under a writable path — `/var/*`, `/opt/*`, `/mnt/*`, `/home/*`, or `/root/*`. A mount point such as `/data` is rejected with `MountPathNotWritable`. Not exercised in this preview.
+
+### Manual Rollback
+
+There is no automatic rollback. The previous slot stays on disk; `kbosctl rollback && reboot` boots it. The provider is not told about a manual rollback, so the `BaremetalMachine` status no longer matches the host. Use it only to recover a host by hand.
+
+## Troubleshooting
+
+Look at these first:
+
+```shell
+# Plan result and write-back (global or bootstrap cluster)
+kubectl -n cpaas-system get machineinventory <name> -o jsonpath='{.status.plan}{"\n"}'
+kubectl -n cpaas-system get secret <plan-secret> -o go-template='{{index .data "failed-output" | base64decode}}'
+
+# On the host
+systemctl status elemental-system-agent
+journalctl -u elemental-system-agent -n 100
+
+# In the live ISO (registration and install)
+journalctl -u elemental-register-install -n 200
+```
+
+| Symptom | Cause | Action |
+|---|---|---|
+| `BaremetalMachine` `Failed / OSFamilyUnknown` | The `os.baremetal.alauda.io/id` label is not `alaudaos.k.25` or `alaudaos.m.55`. | Fix `machineInventoryLabels`, rebuild the ISO, and register again. |
+| `Failed / ImageCatalogMiss` naming a three-segment key | The catalog has no key for that version, architecture, and OS. | Add the key, then delete the `Machine` so its owner recreates it. |
+| Install fails after the disk is partitioned, with `rootfs.tar: Cannot open` | The root filesystem image was pushed with `docker push`. | Push it again with `ctr` from the archive. |
+| `kubeadm init` never completes; `kube-controller-manager` reports `read-only file system` | Flexvolume settings missing. | Add them to the `KubeadmControlPlane`. |
+| `NetworkDeviceReady=False`, reason `NetworkDeviceMissing` for `eth0` | `networkDevice` not set. | Set it to the host's interface name. |
+| Live ISO: `registering machine: ... lookup <domain> on [::1]:53 ... connection refused` | OS archive built before `ku.202609281026-0`. | Use the listed archives, or add `commands: [ln -sfn /run/NetworkManager/resolv.conf /etc/resolv.conf]` to the `SeedImage` `stages.network` step. |
+| `persist-preflight` fails | `/persist` is too small or full. | Free space on `/persist` or use a larger disk. |
+| `kbosctl upgrade` fails three times, then `Failed` | Image not reachable, or no space. | Fix the cause, delete the `.attempts` file in `/persist/baremetal-provider-plan-state/`, and let the plan retry. |
+| Registration fails before an inventory appears | No TPM with `emulate-tpm: false`, or no SMBIOS tables. | Set `emulate-tpm: true` with `emulated-tpm-seed: -1`; check `/sys/firmware/dmi/tables/`. |
+
+## Validation Status \{#validation-status}
+
+Validated on 2026-09-28 with virtual machines on one Layer-2 network (x86_64 on KVM, Arm on Kunpeng 920 KVM), ACP v4.4.0, Kubernetes `v1.35.6-acp.1`, and the artifacts listed above:
+
+| Area | Status |
+|---|---|
+| `global` install from the `hybrid` installer, 2 x86_64 + 1 Arm control plane | Tested |
+| Handoff to `global`, preparing `global` as the management cluster | Tested |
+| `global` worker (Arm) added after installation | Tested |
+| Workload cluster, 1 x86_64 + 2 Arm control plane in one pool | Tested |
+| Registration through the platform domain from the live ISO, x86_64 and Arm | Tested |
+| Emulated TPM (Arm) and real TPM 2.0 (x86_64, virtual) | Tested |
+| `global` install with single-architecture installer, 3 x86_64 control plane | Tested on 2026-09-25 with an earlier build |
+| Kubernetes version upgrade | Not tested |
+| Node replacement | Not tested |
+| Managed data disks | Not tested |
+| Disaster recovery pair | Not tested |
+| Physical servers | Not tested (virtual machines only) |
