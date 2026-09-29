@@ -50,7 +50,7 @@ Upgrade bare-metal clusters in the following order:
 
 1. **(Prerequisite)** Upgrade the ACP platform on the `global` cluster. This brings the bare-metal provider, `elemental-operator`, and the related CAPI components to versions that understand the new schema. Trigger workload-cluster upgrades only after the management-side controllers have rolled out and become Ready.
 2. Upgrade the Distribution Version (Aligned Extensions) on the workload cluster. See [Upgrading Distribution Version](index.mdx).
-3. Ensure the target Kubernetes version is present in `elemental-image-catalog` (and the matching `-iso` repository is available for any future host re-registration).
+3. Import the target Alauda OS image pair into the platform registry and add the target Kubernetes version to `elemental-image-catalog`. See [Update the Image Catalog](#update-the-image-catalog).
 4. Upgrade Kube-OVN to the chart version required by the target ACP release and wait for the `AppRelease` to reach `Success`.
 5. Upgrade the control plane Kubernetes version (replaces all control-plane nodes one at a time).
 6. Upgrade worker nodes to the target Kubernetes version (replaces all worker nodes within the `maxUnavailable` budget).
@@ -78,7 +78,7 @@ For the preparation and validation procedure, see [Manage Data Disks on Bare-Met
 Before you start, ensure all of the following prerequisites are met:
 
 - The Distribution Version upgrade is complete.
-- The installed Bare Metal provider is `v0.0.1` or later and its `AppRelease` reports the same requested and installed revision with `phase=Success`.
+- The installed Bare Metal provider is `v1.0.0` or later and its `AppRelease` reports the same requested and installed revision with `phase=Success`.
 - The control plane is reachable through the existing `<control-plane-vip>:<control-plane-port>`.
 - All current nodes are healthy and `Ready`.
 - Before changing Kube-OVN or reprovisioning any node, use <ExternalSiteLink name="acp" href="/configure/backup/etcd.html" children="ACP Cluster Enhancer" /> to create a current on-demand etcd backup. Verify that the newest `status.records` entry reports `result: Success`, record its `backupTimestamp` and `fileName`, and confirm that the corresponding backup archive exists and will remain retrievable if any control-plane node is reprovisioned or becomes unavailable.
@@ -142,8 +142,10 @@ If the host still has less than 4 GiB free after every partial snapshot is gone,
 `elemental-image-catalog` is the resource that introduces a Kubernetes version to the bare-metal provider.
 
 :::info
-In most upgrades you do not edit this ConfigMap by hand. The bare-metal provider plugin re-renders `elemental-image-catalog` with the Kubernetes versions shipped by the new distribution when it is reapplied during the Distribution Version upgrade (Phase 1). Your task is normally just to **verify** that the target version is present (see the verification step below). The two options that follow are only needed when technical support supplies an approved out-of-band image reference.
+The bare-metal provider plugin does not carry any Kubernetes version or OS image. Its chart creates `elemental-image-catalog` with no entries, and upgrading the plugin or the Distribution Version does not add one. Every new Kubernetes version must be added explicitly, after its OS images are in the platform registry.
 :::
+
+First import the target release's `baremetal-base-image` and `baremetal-base-image-iso` from the Bare Metal OS archive into the platform registry, as described in [OS Images Imported and Image Catalog Populated](../create-cluster/bare-metal.mdx#os-images-and-image-catalog). Then add the version with either option below.
 
 **Option A — Add a chart override.** Append the new version under `provider.imageCatalog.images` (uses `global.registry.address` as the registry):
 
@@ -158,7 +160,7 @@ provider:
 
 Reapply the bare-metal provider plugin. The chart re-renders the ConfigMap; the provider's in-process watch hot-reloads the cache without restarting.
 
-**Option B — Patch the ConfigMap directly.** Use this only for an approved image reference that must be pinned directly in the catalog:
+**Option B — Patch the ConfigMap directly.** Use this when the plugin was installed without a chart override, or for an approved image reference that must be pinned directly in the catalog:
 
 ```bash
 kubectl -n cpaas-system patch configmap elemental-image-catalog \
@@ -172,13 +174,13 @@ In either case, verify before continuing:
 kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```
 
-The key must include the leading `v` (for example `v1.34.5`). If the key is missing when CAPI creates the replacement `Machine`, the resulting `BaremetalMachine` enters `Failed` with `ImageResolved=False / Reason=ImageCatalogMiss` and no `reprovision` plan is written — adding the key later restarts the reconciliation automatically.
+The key must include the leading `v` (for example `v1.34.5`). If the key is missing when CAPI creates the replacement `Machine`, the resulting `BaremetalMachine` enters `Failed` with `ImageResolved=False / Reason=ImageCatalogMiss` and no `reprovision` plan is written. Adding the key later does **not** restart it: the `BaremetalMachine` stays `Failed` until you delete that `Machine` and its owner creates a new one. With `maxSurge: 0` the node being replaced is already gone at that point, so add the key before you change any version.
 
-When the new version corresponds to a new Alauda OS release, obtain the matching `base-image` and `base-image-iso` references from Alauda technical support. The bare-metal provider uses `base-image` for reprovisioning and does not rebuild SeedImages automatically. Before future host onboarding, refresh `MachineRegistration` / `SeedImage` with the supported `base-image-iso` reference. Do not derive one image reference from the other or substitute an independently built image.
+The bare-metal provider uses `base-image` for reprovisioning and does not rebuild SeedImages automatically. Before future host onboarding, refresh `MachineRegistration` / `SeedImage` with the `base-image-iso` imported from the same archive. Do not pair images from different archives or substitute an independently built image.
 
 ## Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
 
-Follow the Bare Metal `v0.0.1+` flow in [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane). Bare Metal has no earlier supported provider flow in this documentation.
+Follow the Bare Metal `v1.0.0+` flow in [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane). Bare Metal has no earlier supported provider flow in this documentation.
 
 The shared procedure verifies `BaremetalCluster.spec.networkType`, updates the CAPI `Cluster` annotation, lets the provider reconcile the complete chart source and specification, and checks the chart name, requested revision, installed revision, phase, and conditions. Do not patch the `AppRelease` source manually.
 
@@ -250,7 +252,7 @@ Kubernetes control planes must move through supported minor-version hops. Use [P
 
 For each intermediate row, and finally for the target row:
 
-1. Ensure that row's Kubernetes version exists in `elemental-image-catalog`.
+1. Import that row's OS image pair and add its Kubernetes version to `elemental-image-catalog`, as described in [Update the Image Catalog](#update-the-image-catalog).
 2. Upgrade Kube-OVN to that row's **kube-ovn (chart)** version and wait for `phase=Success`.
 3. Upgrade the control plane to that row's Kubernetes version and wait for every control-plane node to become `Ready`.
 4. Upgrade every worker `MachineDeployment` to the same Kubernetes version and wait for the rollout to complete before starting the next hop.
@@ -303,7 +305,7 @@ For an inventory with managed volumes, also verify `status.storage.phase=Active`
 
 | Issue | What to check |
 |---|---|
-| The Kube-OVN annotation changed but the chart name, target revision, or installed revision did not converge | Confirm that the installed Bare Metal provider is `v0.0.1` or later, then inspect the `AppRelease` conditions and provider logs. Follow the shared [Kube-OVN verification](./index.mdx#verify-the-kube-ovn-apprelease); do not patch the source manually. |
+| The Kube-OVN annotation changed but the chart name, target revision, or installed revision did not converge | Confirm that the installed Bare Metal provider is `v1.0.0` or later, then inspect the `AppRelease` conditions and provider logs. Follow the shared [Kube-OVN verification](./index.mdx#verify-the-kube-ovn-apprelease); do not patch the source manually. |
 | Rollout stuck on the first new node | `BaremetalMachine.status.conditions[ImageResolved]` — confirm the new key is in `elemental-image-catalog` and that the `Cluster` carries `cpaas.io/registry-address`. |
 | Inventory does not become allocatable after clean | Check `MachineInventory.status.storage` and `status.observedStorage`. Managed volumes must be confirmed inactive and Prepared from a fresh host observation before the inventory can return to the allocation set. |
 | Replacement Machine waits on `StorageReady` | Verify that the selected inventory is the intended one, required device IDs and filesystem UUIDs still match, required mount units are active, and the host produced a fresh post-reboot observation. |

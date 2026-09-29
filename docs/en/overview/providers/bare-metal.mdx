@@ -118,7 +118,7 @@ Phase transitions: `Pending → Allocated → Reprovisioning → Running`; delet
 
 #### Image catalog \{#image-catalog}
 
-A cluster-scoped `ConfigMap` (default name `elemental-image-catalog` in `cpaas-system`) that maps `Machine.spec.version` to an `elemental upgrade` image. The bare-metal provider chart renders this ConfigMap from `provider.imageCatalog.images` (`global.registry.address` is prepended to each repository) and from `provider.imageCatalog.data` (for fully-qualified overrides such as digest-pinned images). The reconciler hot-reloads the ConfigMap; a missing key is a terminal `Failed` state, not a fallback to a default image.
+A cluster-scoped `ConfigMap` (default name `elemental-image-catalog` in `cpaas-system`) that maps `Machine.spec.version` to an `elemental upgrade` image. The bare-metal provider chart renders this ConfigMap from `provider.imageCatalog.images` (`global.registry.address` is prepended to each repository) and from `provider.imageCatalog.data` (for fully-qualified overrides such as digest-pinned images). Both values are empty by default, so the ConfigMap has no entries until you add them; see [OS Images Imported and Image Catalog Populated](../../create-cluster/bare-metal.mdx#os-images-and-image-catalog). The reconciler hot-reloads the ConfigMap; a missing key is a terminal `Failed` state, not a fallback to a default image.
 
 Obtain the matching `base-image` and `base-image-iso` references from Alauda technical support. The image catalog uses `base-image` for reprovisioning, while `SeedImage.spec.baseImage` uses `base-image-iso` for live installation. Do not derive one reference from the other or substitute an independently built image.
 
