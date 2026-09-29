@@ -1,18 +1,20 @@
 ---
 weight: 29
-title: Deploy Mixed x86_64 and Arm Bare-Metal Clusters on KubeOS (Preview)
+title: Deploy Mixed x86_64 and Arm Bare-Metal Clusters on Alauda OS alaudaos.k.25 (Preview)
 queries:
-  - bare metal kubeos
   - mixed architecture bare metal cluster
   - x86 and arm nodes in one cluster
   - arm64 bare metal control plane
-  - heterogeneous bare metal kubeos
+  - heterogeneous bare metal cluster
+  - alaudaos.k.25 bare metal
   - os.baremetal.alauda.io/arch
 ---
 
-# Deploy Mixed x86_64 and Arm Bare-Metal Clusters on KubeOS (Preview)
+# Deploy Mixed x86_64 and Arm Bare-Metal Clusters on Alauda OS `alaudaos.k.25` (Preview)
 
-Use this guide to build Bare Metal clusters whose nodes run KubeOS (`alaudaos.k.25`) and mix x86_64 and Arm (aarch64) hosts, including in the same control plane. It covers the preview artifacts, the image and catalog layout that two architectures need, per-architecture registration, and the KubeOS-specific settings for `KubeadmControlPlane` and worker templates.
+Use this guide to build Bare Metal clusters whose nodes run the Alauda OS variant with OS identifier `alaudaos.k.25` and mix x86_64 and Arm (aarch64) hosts, including in the same control plane. It covers the preview artifacts, the image and catalog layout that two architectures need, per-architecture registration, and the settings this OS variant needs in `KubeadmControlPlane` and worker templates.
+
+In this guide, **`alaudaos.k.25`** is the OS variant built on UOS Server 25 with A/B root partitions, and **`alaudaos.m.55`** is the SLE Micro 5.5-based variant that the rest of the Bare Metal documentation describes. The OS identifier is the value of the `os.baremetal.alauda.io/id` inventory label.
 
 :::warning
 **Preview build.** The provider and OS artifacts below are built from branches that are not merged or released yet. Use them for evaluation and testing only. The resource shapes on this page match the tested build; field names and defaults can change before release.
@@ -28,6 +30,8 @@ All files are on `package-minio`. Every file has a checksum next to it at `<url>
 |---|---|
 | [installer-core-v4.4.0-hybrid.tar](http://package-minio.alauda.cn:9199/packages/acp/v4.4/installer-core-v4.4.0-hybrid.tar) | `b18db08c647a3c3b5bde8bf2158b27c2b022ddf40491b6515aa9fa4f992cf32a` |
 
+{/* lint disable no-legacy-os-names */}
+
 **Provider plugins.** Use the `ALL` package on a mixed-architecture platform; the `amd64` and `arm64` packages carry only one architecture.
 
 | File | SHA-256 |
@@ -37,14 +41,16 @@ All files are on `package-minio`. Every file has a checksum next to it at `<url>
 | [cluster-api-provider-baremetal.arm64.v1.0.0-fix.51.7.g41764fd0-feat-kubeos-support.tgz](http://package-minio.alauda.cn:9199/packages/cluster-api-provider-baremetal/fix/cluster-api-provider-baremetal.arm64.v1.0.0-fix.51.7.g41764fd0-feat-kubeos-support.tgz) | `ee0c1ea0646e8a8f37461cb9bcb8b4e085acdfcdac03dd018f4f9aa76c822227` |
 | [cluster-api-provider-kubeadm.ALL.v1.0.14.tgz](http://package-minio.alauda.cn:9199/packages/cluster-api-provider-kubeadm/v1.0/cluster-api-provider-kubeadm.ALL.v1.0.14.tgz) | `7b23a79676f2dbae1891aa81cb954e9334d736ed321ec8f58fcfccb0b2a690da` |
 
-**KubeOS OS archives** (Kubernetes `v1.35.6-acp.1`), one per architecture:
+**OS archives** (`alaudaos.k.25`, Kubernetes `v1.35.6-acp.1`), one per architecture:
 
 | File | SHA-256 |
 |---|---|
 | [alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.x86_64.tar](http://package-minio.alauda.cn:9199/packages/alaudaos/rc/feat-kubeos-provider-integration/x86_64/alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.x86_64.tar) | `5ecefa2cbbbbc43fcd4cbb6b44d88558d3e2a8d167a94c3e7340d7ff0c2b98db` |
 | [alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.aarch64.tar](http://package-minio.alauda.cn:9199/packages/alaudaos/rc/feat-kubeos-provider-integration/aarch64/alaudaos-feat-kubeos-provider-integration.ku.202609281026-0.aarch64.tar) | `f4704696da4e44a4e217360bb0b47ed3379f1ced884d6c6a60b77c03a4099792` |
 
-Each archive is one OCI image layout with two images: the root filesystem that reprovisioning installs (`kubeos-rootfs`) and the live ISO image that `SeedImage` builds from (`kubeos-iso`). Unlike the SLE Micro archives, both images are named with the literal tag `baremetal`, not the archive name.
+Each archive is one OCI image layout with two images: the root filesystem that reprovisioning installs (`kubeos-rootfs`) and the live ISO image that `SeedImage` builds from (`kubeos-iso`). Unlike the `alaudaos.m.55` archives, both images are named with the literal tag `baremetal`, not the archive name.
+
+{/* lint enable no-legacy-os-names */}
 
 ## How Architecture Is Resolved
 
@@ -64,11 +70,13 @@ In a mixed pool you do not choose which architecture a new `Machine` lands on: t
 - Any other plugin you install afterwards, for example `console` and `console-central`, also comes from its `ALL` package. A single-architecture package leaves its Pods unable to start on the other architecture's nodes.
 - **Arm hosts expose SMBIOS.** `elemental-register` reads host identity with `dmidecode`, which needs `/sys/firmware/dmi/tables/`. UEFI Arm servers normally provide it; check once from the live ISO console with `ls /sys/firmware/dmi/tables/`. Without it, registration fails.
 - **TPM.** Keep `emulate-tpm: false` only for hosts with a real TPM 2.0. For any host without one, including Arm hosts and VMs without a virtual TPM, set `emulate-tpm: true` with `emulated-tpm-seed: -1`, which derives a stable per-host seed from the SMBIOS system UUID.
-- **The CNI interface has the same name on every host.** KubeOS keeps predictable interface names (for example `enp1s0`, not `eth0`), and `BaremetalCluster.spec.networkDevice` applies to the whole cluster. Confirm the name from each registered inventory's `spec.observedNetwork` before you create the cluster.
+- **The CNI interface has the same name on every host.** `alaudaos.k.25` keeps predictable interface names (for example `enp1s0`, not `eth0`), and `BaremetalCluster.spec.networkDevice` applies to the whole cluster. Confirm the name from each registered inventory's `spec.observedNetwork` before you create the cluster.
 
 ## Step 1: Import the OS Images for Both Architectures
 
-Import both archives into the target platform registry. The two archives use the same image names (`kubeos-rootfs:baremetal` and `kubeos-iso:baremetal`), so import and push one architecture at a time, and give the pushed images an architecture-specific tag:
+Import both archives into the target platform registry. The two archives use the same image names, so import and push one architecture at a time, and give the pushed images an architecture-specific tag:
+
+{/* lint disable no-legacy-os-names */}
 
 ```bash
 export OS_IMAGE_TAG="alaudaos-feat-kubeos-provider-integration.ku.202609281026-0"
@@ -89,13 +97,17 @@ for repo in kubeos-rootfs kubeos-iso; do
 done
 ```
 
-Each list must show both the `.x86_64` and the `.aarch64` tag. Push with `ctr` as shown. Do not re-push the images with `docker push`: the KubeOS installer reads the image manifest as a single line, and a reformatted manifest makes the install fail only after the disk has been partitioned.
+{/* lint enable no-legacy-os-names */}
+
+Each list must show both the `.x86_64` and the `.aarch64` tag. Push with `ctr` as shown. Do not re-push the images with `docker push`: the `alaudaos.k.25` installer reads the image manifest as a single line, and a reformatted manifest makes the install fail only after the disk has been partitioned.
 
 Run the import on a host with containerd, such as a `global` control-plane node, or on the bootstrap host during Global installation. The rest of [OS Images Imported and Image Catalog Populated](../create-cluster/bare-metal.mdx#os-images-and-image-catalog) applies unchanged.
 
 ## Step 2: Add a Catalog Entry per Architecture
 
 Add one catalog entry for each architecture you deploy, with the three-segment key `<kubernetes-version>_<arch>_alaudaos.k.25`:
+
+{/* lint disable no-legacy-os-names */}
 
 ```bash
 kubectl -n cpaas-system patch configmap elemental-image-catalog --type merge -p '{"data":{
@@ -106,11 +118,15 @@ kubectl -n cpaas-system patch configmap elemental-image-catalog --type merge -p 
 kubectl -n cpaas-system get configmap elemental-image-catalog -o jsonpath='{.data}'
 ```
 
-The version segment must equal `Machine.spec.version`, including the `v` prefix and the `-acp.1` suffix. A KubeOS host never falls back to a key without the OS segment, so every KubeOS entry needs all three segments. Point the catalog and the `SeedImage` at images from the same archive.
+{/* lint enable no-legacy-os-names */}
+
+The version segment must equal `Machine.spec.version`, including the `v` prefix and the `-acp.1` suffix. An `alaudaos.k.25` host never falls back to a key without the OS segment, so every entry for it needs all three segments. Point the catalog and the `SeedImage` at images from the same archive.
 
 ## Step 3: Register Hosts, One Registration per Architecture
 
 `install.system-uri` names the root filesystem the live ISO installs, and that image is architecture-specific, so create one `MachineRegistration` and one `SeedImage` per architecture. The architecture label itself is identical in both: the register fills it in.
+
+{/* lint disable no-legacy-os-names */}
 
 ```yaml title="01-registration.yaml"
 apiVersion: elemental.cattle.io/v1beta1
@@ -126,7 +142,7 @@ spec:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
     pool.baremetal.alauda.io/eligible: "true"
     elemental.cattle.io/serial-number: "${System Information/Serial Number}"
-    # OS identifier: selects the KubeOS host contract.
+    # OS identifier: selects the alaudaos.k.25 host contract.
     os.baremetal.alauda.io/id: alaudaos.k.25
     # Architecture, reported by the register on every host.
     os.baremetal.alauda.io/arch: "${Runtime/Architecture}"
@@ -158,12 +174,12 @@ spec:
     kind: MachineRegistration
     name: <cluster-name>-registration-arm64
     namespace: cpaas-system
-  # Required for KubeOS: kubeos-iso is built FROM scratch. linux/amd64 for the x86_64 variant.
+  # Required: the ISO image is built FROM scratch. linux/amd64 for the x86_64 variant.
   targetPlatform: linux/arm64
   size: 20Gi
   cleanupAfterMinutes: 120
   cloud-config:
-    name: kubeos-live-registry
+    name: live-registry
     stages:
       network:
         # The live ISO installs from the platform registry, which uses a self-signed certificate.
@@ -176,25 +192,26 @@ spec:
                 insecure = true
 ```
 
-Differences from the SLE Micro registration in [Create Cluster → Step 1](../create-cluster/bare-metal.mdx#step-1-machineregistration-seedimage):
+{/* lint enable no-legacy-os-names */}
 
-| Field | KubeOS value | Why |
+Differences from the `alaudaos.m.55` registration in [Create Cluster → Step 1](../create-cluster/bare-metal.mdx#step-1-machineregistration-seedimage):
+
+| Field | `alaudaos.k.25` value | Why |
 |---|---|---|
-| `machineInventoryLabels["os.baremetal.alauda.io/id"]` | `alaudaos.k.25` | Without it the provider renders the SLE Micro contract. |
+| `machineInventoryLabels["os.baremetal.alauda.io/id"]` | `alaudaos.k.25` | Without it the provider renders the `alaudaos.m.55` contract. |
 | `machineInventoryLabels["os.baremetal.alauda.io/arch"]` | `"${Runtime/Architecture}"` | Per-host catalog lookup. |
-| `install.system-uri` | Architecture-specific `kubeos-rootfs` image | The KubeOS installer pulls the root filesystem from the registry. |
-| `install.snapshotter` | Omit | Ignored by the KubeOS installer. |
+| `install.system-uri` | Architecture-specific root filesystem image | The installer pulls the root filesystem from the registry. |
+| `install.snapshotter` | Omit | Ignored by this OS variant's installer. |
 | `SeedImage.spec.targetPlatform` | `linux/arm64` or `linux/amd64` | Required: the ISO image has no shell of its own. |
-| `SeedImage.spec.cloud-config` `stages.boot` `COS_STATE` sizing | Omit | KubeOS uses fixed A/B root partitions and `/persist`, not `COS_STATE`. |
+| `SeedImage.spec.cloud-config` `stages.boot` `COS_STATE` sizing | Omit | This OS variant uses fixed A/B root partitions and `/persist`, not `COS_STATE`. |
 | `stages.network` registry entry | Add | The live ISO must trust the platform registry before it installs. |
 
-The `tkestack/*` repositories allow anonymous pulls, so the live ISO needs no registry login. The KubeOS archives listed above give the live ISO a working `/etc/resolv.conf`, so registration by the platform domain name works without extra configuration.
+The `tkestack/*` repositories allow anonymous pulls, so the live ISO needs no registry login. The OS archives listed above give the live ISO a working `/etc/resolv.conf`, so registration by the platform domain name works without extra configuration.
 
 Boot each host from the ISO of its architecture, then check the labels:
 
 ```bash
 kubectl -n cpaas-system get machineinventories.elemental.cattle.io \
-  -L os.baremetal.alauda.io/arch -L os.baremetal.alauda.io/id \
   -o custom-columns='NAME:.metadata.name,ARCH:.metadata.labels.os\.baremetal\.alauda\.io/arch,PLAN:.status.plan.state,NIC:.spec.observedNetwork.interfaces[0].name'
 ```
 
@@ -221,10 +238,10 @@ spec:
       hostname: <cluster-name>-cp-3
 ```
 
-KubeOS needs three additions to the manifests on that page:
+`alaudaos.k.25` needs three additions to the manifests on that page:
 
-1. **`BaremetalCluster.spec.networkDevice`** set to the interface name from Step 3. An empty value means `eth0`, which does not exist on KubeOS, and the cluster stops at `NetworkDeviceReady=False`.
-2. **The flexvolume directory in `KubeadmControlPlane`.** `/usr` is read-only on KubeOS, so `kube-controller-manager` cannot create its default flexvolume host path and `kubeadm init` never completes. Move the directory under `/opt`:
+1. **`BaremetalCluster.spec.networkDevice`** set to the interface name from Step 3. An empty value means `eth0`, which does not exist on this OS variant, and the cluster stops at `NetworkDeviceReady=False`.
+2. **The flexvolume directory in `KubeadmControlPlane`.** `/usr` is read-only on this OS variant, so `kube-controller-manager` cannot create its default flexvolume host path and `kubeadm init` never completes. Move the directory under `/opt`:
 
    ```yaml
    kubeadmConfigSpec:
@@ -244,7 +261,7 @@ KubeOS needs three additions to the manifests on that page:
 
 3. **The same `volume-plugin-dir` in the worker `KubeadmConfigTemplate`**, under `spec.template.spec.joinConfiguration.nodeRegistration.kubeletExtraArgs`. The rest of the worker template is as in [Managing Nodes on Bare Metal](../manage-nodes/bare-metal.mdx#step-3-configure-bootstrap-template).
 
-These apply to the `KubeadmControlPlane` of the `global` cluster as well when its nodes run KubeOS.
+These apply to the `KubeadmControlPlane` of the `global` cluster as well when its nodes run `alaudaos.k.25`.
 
 ## Verification
 
@@ -267,8 +284,8 @@ kubectl get pods -A -o wide | grep -v -E 'Running|Completed'
 | Symptom | Cause | Action |
 |---|---|---|
 | `BaremetalMachine` `Failed / ImageCatalogMiss` naming `..._arm64_alaudaos.k.25` | No Arm catalog entry. | Add the entry (Step 2), then delete the `Machine` so its owner recreates it. |
-| An inventory has no `os.baremetal.alauda.io/arch` label | The ISO carries a register older than this preview. | Rebuild the ISO from the listed `kubeos-iso` images. |
-| Live ISO console: `registering machine: ... lookup <domain> on [::1]:53 ... connection refused` | KubeOS archive built before `ku.202609281026-0`: its live ISO has no `/etc/resolv.conf`. | Use the listed archives. With an older archive, add `commands: [ln -sfn /run/NetworkManager/resolv.conf /etc/resolv.conf]` to the `stages.network` step of the `SeedImage`. |
+| An inventory has no `os.baremetal.alauda.io/arch` label | The ISO carries a register older than this preview. | Rebuild the ISO from the listed OS archives. |
+| Live ISO console: `registering machine: ... lookup <domain> on [::1]:53 ... connection refused` | OS archive built before `ku.202609281026-0`: its live ISO has no `/etc/resolv.conf`. | Use the listed archives. With an older archive, add `commands: [ln -sfn /run/NetworkManager/resolv.conf /etc/resolv.conf]` to the `stages.network` step of the `SeedImage`. |
 | Registration fails on an Arm host before any inventory appears | No SMBIOS tables, or `emulate-tpm: false` without a TPM. | Check `/sys/firmware/dmi/tables/`; set `emulate-tpm: true` with `emulated-tpm-seed: -1`. |
 | `kubeadm init` never completes; `kube-controller-manager` reports `mkdir /usr/libexec/kubernetes: read-only file system` | Flexvolume directory not moved. | Add the Step 4 settings. |
 | Pods of one plugin stay in `ImagePullBackOff` only on Arm nodes | The plugin was installed from a single-architecture package. | Install the plugin's `ALL` package. |

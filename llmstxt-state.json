@@ -635,12 +635,12 @@
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
     },
-    "docs/en/how-to/deploy-kubeos-mixed-architecture-bare-metal.mdx": {
-      "sha256": "9453f69a798e48e7b305ad0d2e5dbbe1ce9c84648410d86431e0e06a2611d93c",
-      "size": 17955,
-      "description": "Preview guide for Bare Metal clusters whose nodes run KubeOS (`alaudaos.k.25`) and mix x86_64 and Arm (aarch64) hosts, including in one control plane. Lists the preview artifacts with SHA-256 (ACP v4.4.0 `hybrid` installer, `ALL`/`amd64`/`arm64` provider packages, per-architecture KubeOS OS archives for Kubernetes `v1.35.6-acp.1`), explains per-host architecture resolution (`elemental-register` reports `${Runtime/Architecture}` into the `os.baremetal.alauda.io/arch` inventory label; the provider looks up `elemental-image-catalog` by `<version>_<arch>_<os-id>`, so one `MachineInventoryPool` may mix architectures and a missing Arm key fails with `ImageCatalogMiss`), and walks through importing both archives with architecture-suffixed tags, one catalog entry per architecture, one `MachineRegistration`/`SeedImage` per architecture (`system-uri`, `targetPlatform`, emulated TPM, insecure registry), and the KubeOS additions to `BaremetalCluster.networkDevice`, `KubeadmControlPlane` and worker templates (flexvolume directory under `/opt`). Includes verification commands, a failure-mode table, and the tested topology.",
+    "docs/en/how-to/deploy-mixed-architecture-bare-metal.mdx": {
+      "sha256": "94bae9770c35334408ac3bbfd80a4978c809fc17854620a7d5f550c414d3678c",
+      "size": 18629,
+      "description": "Preview guide for Bare Metal clusters whose nodes run the Alauda OS variant `alaudaos.k.25` (UOS Server 25, A/B root partitions) and mix x86_64 and Arm (aarch64) hosts, including in one control plane. Lists the preview artifacts with SHA-256 (ACP v4.4.0 `hybrid` installer, `ALL`/`amd64`/`arm64` provider packages, per-architecture OS archives for Kubernetes `v1.35.6-acp.1`), explains per-host architecture resolution (`elemental-register` reports `${Runtime/Architecture}` into the `os.baremetal.alauda.io/arch` inventory label; the provider looks up `elemental-image-catalog` by `<version>_<arch>_<os-id>`, so one `MachineInventoryPool` may mix architectures and a missing Arm key fails with `ImageCatalogMiss`), and walks through importing both archives with architecture-suffixed tags, one catalog entry per architecture, one `MachineRegistration`/`SeedImage` per architecture (`system-uri`, `targetPlatform`, emulated TPM, insecure registry), and the additions this OS variant needs in `BaremetalCluster.networkDevice`, `KubeadmControlPlane` and worker templates (flexvolume directory under `/opt`). Includes verification commands, a failure-mode table, and the tested topology.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-29T02:34:16Z"
+      "updated_at": "2026-09-29T02:56:21Z"
     },
     "docs/en/how-to/hcs_persistent_disk_upgrade.mdx": {
       "sha256": "6d6977cbcbac28a0dc487878a0b0667e2fb88be74b3f5dd1ab86006f79efd5c8",
