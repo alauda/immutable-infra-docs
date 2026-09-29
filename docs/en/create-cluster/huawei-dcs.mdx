@@ -265,7 +265,6 @@ The example manifests below use `<placeholder>` syntax for values that are envir
 | `<dns-image-tag>` | Same ConfigMap, `data.corednsTag`. | Same `kubectl get cm` query as above. |
 | `<etcd-image-tag>` | Same ConfigMap, `data.etcdTag`. | Same `kubectl get cm` query as above. |
 | `<vm-template-name>` (in `DCSMachineTemplate.spec.template.spec.vmTemplateName`) | The ConfigMap's `cpaas.io/dcs-vm-template` label value (must match the VM template name registered in the DCS platform). | Same `kubectl get cm` query — read the label. |
-| `<base64-encoded-secret>` in `encryption-provider.conf` | Generated locally; treat as a real cluster secret. | `head -c 32 /dev/urandom \| base64` — store securely and reuse across control-plane replicas of the same cluster. |
 | `<ssh-authorized-keys>` | Operator-supplied. Each entry is a single-line OpenSSH-format public key (`ssh-ed25519 AAAA…` / `ssh-rsa AAAA…`). The field is required by the ignition validator and must be non-empty. For test or PoC clusters that do not need interactive SSH, supply any syntactically valid public key (you do not need to hold the matching private key); for production, use the operator team's signing key. | n/a — generated or sourced from the operator. |
 | `<auth-secret-name>` | The Secret you authored in [Infrastructure → Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). | `kubectl -n cpaas-system get secret <name>` |
 | `<cluster-name>` | Operator-chosen; must satisfy DNS-1123 and **must not** be `global` (that name is reserved for the `global` cluster). Reused across `Cluster`, `DCSCluster`, and the `cluster.x-k8s.io/cluster-name` label on every `Machine`. The `KubeadmControlPlane` uses the prefixed form `<cluster-name>-kcp`. See [Workload Cluster Naming](#workload-cluster-naming) for the full convention. | n/a |
@@ -580,6 +579,8 @@ spec:
 
 The example above shows three annotations, but a complete `Cluster` resource carries a few more. The table below lists the annotations the **operator authors** (some others are written by ACP controllers and you should not pre-set them):
 
+{/* lint disable no-legacy-os-names */}
+
 | Annotation | Required | Value source | Purpose |
 |---|---|---|---|
 | `capi.cpaas.io/resource-group-version` | Yes | Literal `infrastructure.cluster.x-k8s.io/v1beta1` | Tells the CAPI infrastructure binding which API group to use. |
@@ -589,6 +590,9 @@ The example above shows three annotations, but a complete `Cluster` resource car
 | `cpaas.io/kube-ovn-version` | Yes | The kube-ovn release the `global` cluster ships with. Read it from the `cpaas.io/kube-ovn-version` annotation on the `global` CAPI `Cluster` (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/kube-ovn-version}'`). The same value lives on every healthy workload cluster on the same `global` cluster, so you can also read it from any of those if they exist. | Pin the kube-ovn version installed into the workload cluster. |
 | `cpaas.io/registry-address` | Yes | The image registry the `global` cluster uses (typically `<registry-host>:11443`). Read it from the `cpaas.io/registry-address` annotation on the `global` CAPI `Cluster` (`kubectl get cluster global -n cpaas-system -o jsonpath='{.metadata.annotations.cpaas\.io/registry-address}'`). | Lets day-2 reconcilers resolve images while the cluster is being provisioned. This annotation does not select a registry credential: to pull platform images from a dedicated registry, use the `cpaas.io/registry-reference` label described below. |
 | `cpaas.io/nodes-mode` | Yes | Literal `self-managed` for clusters that DCS Provider provisions. | Marks the cluster as having its node lifecycle managed by CAPI + this provider. |
+| `cpaas.io/os-family` | KubeOS only | Literal `kubeos` when the cluster's DCS VM template is built from a KubeOS image. Omit it for Alauda OS: DCS Provider handles an unset value, or any value other than `kubeos`, as `slemicro`. Requires DCS Provider `v1.0.19` or later. | Tells DCS Provider not to render the `/home` mount into the node Ignition config. A KubeOS node that receives that mount fails early in Ignition and does not boot. Set it when you create the `Cluster`, before any machine is provisioned. |
+
+{/* lint enable no-legacy-os-names */}
 
 ACP controllers may write additional read-only annotations (`cpaas.io/cpu-cores-number`, `cpaas.io/memories`, `cpaas.io/nodes-number`, and so on) after the cluster is up — these are computed and **must not** be pre-set in the YAML you apply.
 
@@ -746,21 +750,6 @@ spec:
           "streamingConnectionIdleTimeout": "5m",
           "clientCAFile": "/etc/kubernetes/pki/ca.crt"
         }
-    - path: /etc/kubernetes/encryption-provider.conf
-      owner: "root:root"
-      append: false
-      permissions: "0644"
-      content: |
-        apiVersion: apiserver.config.k8s.io/v1
-        kind: EncryptionConfiguration
-        resources:
-        - resources:
-          - secrets
-          providers:
-          - aescbc:
-              keys:
-              - name: key1
-                secret: <base64-encoded-secret>
     - path: /etc/kubernetes/audit/policy.yaml
       owner: "root:root"
       append: false
@@ -975,24 +964,9 @@ files:
   owner: "root:root"
   path: /etc/kubernetes/audit/policy.yaml
   permissions: "0644"
-- path: /etc/kubernetes/encryption-provider.conf
-  owner: "root:root"
-  append: false
-  permissions: "0644"
-  content: |
-    apiVersion: apiserver.config.k8s.io/v1
-    kind: EncryptionConfiguration
-    resources:
-    - resources:
-      - secrets
-      providers:
-      - aescbc:
-          keys:
-          - name: key1
-            secret: <base64-encoded-secret>
 ```
 
-`encryption-provider.conf` is not provided by the Secret. You can either keep it inline as shown above (and supply your own `<base64-encoded-secret>`), or omit the inline file entirely and rely on the version that the DCS VM template image already bakes in — both are valid; the latter is simpler when the VM template's default key is acceptable for your environment.
+`encryption-provider.conf` is not part of this Secret, and it is not part of `files` at all — the DCS provider delivers it. See [How the Encryption Provider Configuration Is Delivered](#encryption-provider-delivery).
 
 **Minimum plugin version**: This Secret is shipped by the DCS Provider plugin starting from `v1.0.13`. On older plugin versions the Secret does not exist; keep the inline `content:` form in that case. To check whether the Secret is present on the target cluster before deciding which form to use:
 
@@ -1005,6 +979,24 @@ kubectl -n cpaas-system get secret "dcs-kubernetes-${K8S_MM}-files" >/dev/null 2
   || echo "Secret missing — use inline content form"
 ```
 :::
+
+### How the Encryption Provider Configuration Is Delivered \{#encryption-provider-delivery}
+
+`/etc/kubernetes/encryption-provider.conf` is owned by the DCS provider, not by `KubeadmControlPlane`. When the provider builds a control-plane machine's Ignition config it writes the file itself, and it removes any entry for that path that arrives from `kubeadmConfigSpec.files`. An entry you add there has no effect — it is neither merged nor applied, so a key written into it is silently unused.
+
+What the provider writes depends on the cluster:
+
+| Condition | File content |
+| :--- | :--- |
+| `DCSCluster.spec.encryptionProviderConfigRef` is set | The `encryption-provider.conf` key of the referenced Secret. Used for disaster recovery, where both sides must hold the same key. The Secret must exist in the cluster the provider runs in; see [Optional Disaster Recovery Deployment](../global/install.mdx#optional-disaster-recovery-deployment) |
+| Not set, and the control plane is not yet initialized (the first control-plane machine) | A freshly generated random AES-CBC key |
+| Not set, and the control plane is already running (every later control-plane machine) | The file read back from the running `kube-apiserver`, so all control-plane nodes share one key |
+
+Worker nodes never receive the file.
+
+`clusterConfiguration.apiServer.extraVolumes` mounts `/etc/kubernetes` into the API server container, so `apiServer.extraArgs.encryption-provider-config: /etc/kubernetes/encryption-provider.conf` resolves on every control-plane node. Keep that argument — as the appendix has it — to run with etcd secret encryption-at-rest. Removing it turns encryption-at-rest off; the provider still writes the file, the API server just stops using it.
+
+This behavior applies to DCS Provider `v1.0.10` and later, which covers every version this documentation supports.
 
 ---
 
