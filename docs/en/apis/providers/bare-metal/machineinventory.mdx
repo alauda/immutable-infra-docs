@@ -9,7 +9,7 @@ weight: 70
 The bare-metal provider and its host-side observer use these parts of the resource:
 
 - `metadata.name` — must appear in a `MachineInventoryPool.spec.machineInventories[].name` entry for the host to be allocatable.
-- `spec.observedNetwork` — an Alauda-fork-only field captured during registration; the provider replays it as cloud-init `network-config` v2 on every reprovision, so the host comes back with the same interface/bond/VLAN/IP layout as when it was first inventoried.
+- `spec.observedNetwork` — an Alauda-fork-only field captured during registration: the host's links, routes, DNS servers, and its NetworkManager connection files verbatim. The install feeds those files back to the host, so the installed OS keeps the same interface, bond, VLAN, and address layout it had in the live ISO; afterwards the field is an observation the provider reads to pin the node address and to validate the CNI interface.
 - `spec.storage` — optional operator-authored desired state for up to 32 inventory-owned data volumes. It selects devices by stable IDs, defines `Adopt` or `InitializeIfBlank`, XFS or ext4, mount paths, required behavior, and a retry nonce.
 - `status.observedStorage` — objective devices, identities, signatures, filesystems, mounts, multipath health, and observation watermark reported by `elemental-storage-observer.service`.
 - `status.storage` — provider-owned lifecycle state and journal for Prepare, Activate, Deactivate, and Release, including applied volume identities and `StoragePrepared` / `StorageActive` conditions.

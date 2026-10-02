@@ -32,7 +32,7 @@ The provider currently follows a YAML-only workflow. There is no Fleet Essential
 - **Cluster API native object tree** — uses upstream `Cluster`, `KubeadmControlPlane`, `MachineDeployment`, `Machine`. The provider only owns the infrastructure tree (`BaremetalCluster`, `BaremetalMachine`, `BaremetalMachineTemplate`, `MachineInventoryPool`). There is no custom control-plane CRD.
 - **Image-catalog driven Kubernetes versions** — the provider keeps a cluster-scoped `elemental-image-catalog` ConfigMap that maps `Machine.spec.version` to an `elemental upgrade` image. Upgrades become "patch the version, controller resolves the matching image, reprovisions the node."
 - **Two control-plane endpoint modes** — `BaremetalCluster.spec.controlPlaneLoadBalancer.type: Internal` deploys Alive (keepalived + IPVS + `kube-lock` Lease arbitration) and reconciles the Self-built VIP. `External` skips Alive and uses a pre-provisioned Layer 4 TCP LoadBalancer whose backends are maintained outside the cluster. See [Plan the Control Plane Endpoint](../../how-to/control-plane-endpoint.mdx).
-- **Network identity preservation** — `elemental-register` reports the live-ISO observed network as `MachineInventory.spec.observedNetwork`. The first `elemental install` and every later `reprovision` plan replay that snapshot as cloud-init `network-config v2`, so a host keeps its address, default route, and DNS across the entire lifecycle.
+- **Host-owned networking** — `elemental-register` reports the live-ISO network as `MachineInventory.spec.observedNetwork`, including the host's NetworkManager connection files verbatim. The first `elemental install` writes those files into `/oem/elemental-network.yaml`, and every boot replays it; `reprovision` plans disable cloud-init networking and write no `network-config`, so a bond, a VLAN, or a multi-NIC layout comes back exactly as the operator built it. See [Configure Host Networking on Bare-Metal Hosts](../../how-to/configure-host-network-bare-metal.mdx).
 - **Inventory-owned managed data disks** — an operator can declare up to 32 XFS or ext4 data volumes in `MachineInventory.spec.storage`. The provider prepares them before allocation, activates their mount units before kubelet during reprovision, deactivates them during node removal, and preserves their filesystems and data for reuse of the same inventory. See [Manage Data Disks on Bare-Metal Hosts](../../how-to/manage-bare-metal-storage.mdx).
 
 ## Differences from VM-Based Providers
@@ -77,7 +77,7 @@ The long-lived host identity object. The provider relies on the following parts 
 - `status.plan.secretRef` — the single default plan secret owned by `elemental-operator`.
 - `status.plan.state` — `Applied` / `Failed` transitions used to drive the `BaremetalMachine` state machine.
 - `status.conditions` — host-side readiness signals.
-- `spec.observedNetwork` — fork-only field populated by `elemental-register` from the live-ISO NICs; replayed during install and during every `reprovision` plan.
+- `spec.observedNetwork` — fork-only field populated by `elemental-register` from the live-ISO NICs and their NetworkManager connection files. The registration server consumes it during install; the provider reads it to pin the node address and to validate the CNI interface, and never writes it back to the host.
 - `spec.storage` — optional operator-authored declaration of inventory-owned data volumes.
 - `status.observedStorage` — objective device, filesystem, mount, and multipath facts reported by `elemental-storage-observer.service` on the host.
 - `status.storage` — provider-owned Prepare / Activate / Deactivate / Release state, operation journal, conditions, and applied-volume identities.
@@ -127,7 +127,7 @@ Obtain the matching `base-image` and `base-image-iso` references from Alauda tec
 The provider serializes all host work through the inventory's single default plan secret. The secret's `baremetal.alauda.io/plan.type` annotation identifies the current lifecycle plan:
 
 - **`storage-prepare`** — runs while an inventory is available and before allocation. It preflights every declared volume, then adopts an existing matching filesystem or initializes an explicitly authorized blank device. It does not mount business paths.
-- **`reprovision`** — runs on node attach. It embeds managed-volume activation, writes NoCloud `user-data` / `meta-data` (and, when `MachineInventory.spec.observedNetwork` is non-empty, `network-config` v2), writes a cleanup marker, runs `cloud-init clean --logs --seed`, runs `elemental upgrade --reboot=false --system <image>`, and triggers a delayed reboot. After reboot, `initramfs` clears `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes`; managed mount units start before kubelet, and cloud-init performs `kubeadm init` / `kubeadm join`.
+- **`reprovision`** — runs on node attach. It embeds managed-volume activation, writes NoCloud `user-data` / `meta-data` and `/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg` — no `network-config` seed file, because host networking stays as the host has it — writes a cleanup marker, runs `cloud-init clean --logs --seed`, runs `elemental upgrade --reboot=false --system <image>`, and triggers a delayed reboot. After reboot, `initramfs` clears `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes`; managed mount units start before kubelet, and cloud-init performs `kubeadm init` / `kubeadm join`.
 - **`clean`** — runs on node detach. It stops kubelet, deactivates managed mounts, clears CRI workload, and stops containerd. It explicitly **does not** wipe managed filesystems, run `kubeadm reset`, run `cloud-init clean`, run `elemental upgrade`, or reboot. OS cleanup is deferred to the next `reprovision` plan.
 - **`storage-release`** — runs only while an inventory is available and all managed volumes are inactive. It removes provider ownership and activation metadata for volumes removed from `spec.storage` without wiping their filesystems or data.
 
@@ -141,10 +141,12 @@ The VIP must live in the control-plane nodes' Layer-2 broadcast domain; `vrid` m
 
 #### `MachineInventory.spec.observedNetwork` \{#observed-network}
 
-Fork-only field populated by `elemental-register` from the live-ISO NIC state and reported back via the `MsgObservedNetworkConfig` registration message. It is consumed in two places:
+Fork-only field populated by `elemental-register` from the live-ISO NIC state and reported back via the `MsgObservedNetworkConfig` registration message. It carries the links (`name`, `mac`, `mtu`, `addresses`, `kind`, `master`), the routes, the DNS servers, and `connections` — the content of every `/etc/NetworkManager/system-connections/*.nmconnection` file, verbatim, keyed by the file's base name.
 
-- During the first `elemental install`, when `MachineInventory.spec.network` is empty, the registration server falls back to translating `observedNetwork` into an `nmconnections` `NetworkConfig` so the on-disk OS keeps the same address that the live ISO had.
-- During every `reprovision`, the provider translates `observedNetwork` into cloud-init `network-config` v2 (a netplan subset) and writes it as the third NoCloud seed file. Explicit `spec.network` takes precedence in both cases.
+- During the first `elemental install`, when `MachineInventory.spec.network` is empty, the registration server feeds those connection files back to the host unchanged, so the installed OS keeps the exact layout the live ISO had — bonds and VLANs included. A host that registered with no connection files on disk falls back to one static Ethernet profile per addressed interface.
+- Later registrations refresh the field on every boot, but nothing replays it onto the host: the desired state lives in the host's own keyfiles, replayed from `/oem/elemental-network.yaml`. The provider reads the snapshot to pin `--node-ip` and the kubeadm `advertiseAddress`, and to validate `networkDevice` against the interfaces the host actually has.
+
+Explicit `spec.network` still takes precedence during install. Changing host networking after the install is an operator procedure — see [Configure Host Networking on Bare-Metal Hosts](../../how-to/configure-host-network-bare-metal.mdx).
 
 ## API Group
 

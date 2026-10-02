@@ -314,9 +314,9 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/apis/providers/bare-metal/machineinventory.mdx": {
-      "sha256": "a37c082aa7b64cf7915f8c7f9322d91eefe90e4328b74517aede6563badd9a5d",
-      "size": 2503,
-      "description": "CRD reference page for `MachineInventory` in the `elemental.cattle.io/v1beta1` API group, rendered from the live `machineinventories.elemental.cattle.io` CRD schema. MachineInventory is a physical host's long-lived identity, created by `elemental-register` and borrowed by one `BaremetalMachine` at a time. Covers the Alauda-fork `spec.observedNetwork` replayed as cloud-init `network-config` v2, `spec.storage` desired state for up to 32 inventory-owned volumes (`Adopt`/`InitializeIfBlank`, XFS/ext4, mount policy, `retryNonce`), `status.observedStorage` from `elemental-storage-observer.service`, provider-owned `status.storage` lifecycle and plan Secret serialization, and the `machineinventories/storageinitialize` approval gate guarding destructive initialization.",
+      "sha256": "b26e6938440e3b7c754a7648a742fbb1596b607a63c5baf178292abd33349db1",
+      "size": 2677,
+      "description": "CRD reference page for `MachineInventory` in the `elemental.cattle.io/v1beta1` API group, rendered from the live `machineinventories.elemental.cattle.io` CRD schema. MachineInventory is a physical host's long-lived identity, created by `elemental-register` and borrowed by one `BaremetalMachine` at a time. Covers the Alauda-fork `spec.observedNetwork` — links, routes, DNS servers, and the host's NetworkManager connection files captured at registration and fed back to the host during install — `spec.storage` desired state for up to 32 inventory-owned volumes (`Adopt`/`InitializeIfBlank`, XFS/ext4, mount policy, `retryNonce`), `status.observedStorage` from `elemental-storage-observer.service`, provider-owned `status.storage` lifecycle and plan Secret serialization, and the `machineinventories/storageinitialize` approval gate guarding destructive initialization.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
     },
@@ -552,11 +552,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/create-cluster/bare-metal.mdx": {
-      "sha256": "40f379e9e55c9a64a6266a7a552efaa546ef6bd28cb664358eeab9cddca59a0d",
-      "size": 60435,
+      "sha256": "03ca878d6b460f95674f6008c624262dc18f864385fb7e31c3ec4d38e36c57ea",
+      "size": 67318,
       "description": "YAML-only workflow (no Fleet Essentials UI) for creating bare-metal workload clusters with the Elemental-based Bare Metal Infrastructure Provider: import the paired `baremetal-base-image`/`baremetal-base-image-iso` from the OS archive with `ctr`, add every `Machine.spec.version` to the initially empty `elemental-image-catalog`, then meet the prerequisites — a stage-by-stage network table (DNS, NTP, registration and plan polling on the platform HTTPS port, registry `11443`, control-plane `6443`, and cluster-internal traffic including the Kube-OVN Geneve tunnel), a first-boot firmware-level clock gate, the install device, residual `COS_*` label cleanup, and the `emulate-tpm` decision. Apply `MachineRegistration` and `SeedImage` — sizing `COS_STATE` above the 8 GiB Elemental default before the first install — so booted hosts register as `MachineInventory`, optionally prepare managed data disks, then apply per-role `MachineInventoryPool`, `BaremetalCluster` (`Internal` Alive VIP with `vrid`, or `External` LoadBalancer), `BaremetalMachineTemplate`, `KubeadmControlPlane`, `Cluster`, and the worker `MachineDeployment` — all in `cpaas-system`. Includes placeholder sourcing, verification commands, and a condition-reason failure-mode table.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-15T07:01:08Z"
+      "updated_at": "2026-09-29T02:32:53Z"
     },
     "docs/en/create-cluster/huawei-cloud-stack.mdx": {
       "sha256": "a79ee99b13ded3515a9bbd93e24abaf6bc95604712230f8d1ddd68856d16dc92",
@@ -839,8 +839,8 @@
       "updated_at": "2026-08-31T05:54:15Z"
     },
     "docs/en/manage-nodes/bare-metal.mdx": {
-      "sha256": "f88c7bf97ea5ebf685b89295d84531006bf28c9747091e9bd44637b375340027",
-      "size": 21519,
+      "sha256": "8c8b3db97964bc40eac11bc855d005cbb8da61064d1d1e6cf31423bcbb9ec581",
+      "size": 21819,
       "description": "Worker node operations on the bare-metal provider: deploy, scale, replace failed hosts, and swap templates through Cluster API `Machine` objects, where the provider binds each `Machine` to one `MachineInventory` and drives the host with `clean` and `reprovision` plans. Covers the four-resource model (`MachineInventoryPool`, pool-only `BaremetalMachineTemplate`, a `KubeadmConfigTemplate` whose hostname, `provider-id`, and `criSocket` the provider normalizes, and a `MachineDeployment` requiring `maxSurge: 0` with `maxUnavailable` greater than zero), `elemental-image-catalog` version keys, `StoragePrepared`/`StorageActive` gating of allocation, targeted removal via the `cluster.x-k8s.io/delete-machine` annotation, the `baremetal.alauda.io/*` inventory annotations, and a condition-based failure-mode table. Points hosts added after delivery at the same first-boot network and clock prerequisites as the original nodes.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-28T14:49:02Z"
@@ -902,11 +902,11 @@
       "updated_at": "2026-08-31T06:17:57Z"
     },
     "docs/en/overview/providers/bare-metal.mdx": {
-      "sha256": "bdcab694d8299fb14a85b194317270ef7a8a5014b281f3e9ab57706aaf9e57b1",
-      "size": 19257,
-      "description": "Overview of the Bare Metal Infrastructure Provider, which composes `elemental-operator` (host registration, `SeedImage` ISO build, long-lived `MachineInventory`) with `cluster-api-provider-baremetal` (`BaremetalCluster`, `BaremetalMachine`, `BaremetalMachineTemplate`, `MachineInventoryPool`). Hosts are installed once and are never created or deleted by the provider; node attach and detach run `reprovision` and `clean` plans through the inventory's single plan secret. Documents the `elemental-image-catalog` version-to-upgrade-image mapping, `Internal` (`alive` VIP) versus `External` control-plane LB modes, `observedNetwork` address preservation, inventory-owned managed data disks with `storage-prepare`/`storage-release` plans, and the YAML-only workflow with no Fleet Essentials UI.",
+      "sha256": "eb3b2956deaa794c3bb49e206569feae8cac7a96ff591e1b02123eac06524a32",
+      "size": 20407,
+      "description": "Overview of the Bare Metal Infrastructure Provider, which composes `elemental-operator` (host registration, `SeedImage` ISO build, long-lived `MachineInventory`) with `cluster-api-provider-baremetal` (`BaremetalCluster`, `BaremetalMachine`, `BaremetalMachineTemplate`, `MachineInventoryPool`). Hosts are installed once and are never created or deleted by the provider; node attach and detach run `reprovision` and `clean` plans through the inventory's single plan secret. Documents the `elemental-image-catalog` version-to-upgrade-image mapping, `Internal` (`alive` VIP) versus `External` control-plane LB modes, host-owned networking captured in `observedNetwork` and replayed from `/oem` rather than rewritten by the provider, inventory-owned managed data disks with `storage-prepare`/`storage-release` plans, and the YAML-only workflow with no Fleet Essentials UI.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-09-29T02:32:53Z"
     },
     "docs/en/overview/providers/huawei-cloud-stack.mdx": {
       "sha256": "23582ba49e192e14e0aa49137ae255755b80050e87d6cf0f113c2b78a29adfc6",
@@ -1017,6 +1017,11 @@
       "description": "Phase 2 Kubernetes upgrade procedure for VMware vSphere clusters, validated against provider `v1.0.17`. Starts with a pre-flight check of the `KubeadmControlPlane` and `MachineDeployment` rollout values (`maxSurge: 0`, `replicas` 3+, `maxUnavailable` 1+), which can reject the first edit of an existing cluster. Covers the five-class disk preservation model including pool-managed ephemeral disks, a creation-time layout upgrades never introduce, immutable machine templates, the Kube-OVN-first ordering, the control-plane and worker rollouts with values read from the OS Support Matrix, an OS-image-only rollout that changes no Kubernetes version, rollout holds that are not failures (persistent-disk attachment safety, `Reclaimed` tombstones, `SlotAvailable=False`, the `InitialPowerOnCompleted` power-on latch), staged recovery from a failed upgrade, verification, and a troubleshooting table. States that the provider migrates its own resources on upgrade with no manual YAML change, and that the control plane endpoint is a deploy-time choice, so an upgraded cluster keeps its external LoadBalancer and cannot adopt the Self-built VIP.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-09-15T10:59:36Z"
+    },
+    "docs/en/how-to/configure-host-network-bare-metal.mdx": {
+      "sha256": "3f29f6d19285feb1dc730c00e9c78fa2eb453024f04207883939e0b2aa243748",
+      "size": 11865,
+      "description": "How to build and keep the network of a bare-metal host: registration captures the host's NetworkManager connection files verbatim into `MachineInventory.spec.observedNetwork.connections`, the install writes them into `/oem/elemental-network.yaml`, and every boot replays that file while the provider disables cloud-init networking and writes no `network-config`. Covers gating `elemental-register-install.service` from the `SeedImage` so an operator has a window on a DHCP segment, building bonds and a separate CNI interface from the console with `nmcli` (deleting automatic connections rather than modifying them), reading the captured snapshot back, MAC-reserved addressing with `cloned-mac-address` on DHCP segments, the five-step procedure for changing the network after install but before cluster creation, a failure-mode table, and the boundary of what the provider never does to host networking."
     }
   }
 }

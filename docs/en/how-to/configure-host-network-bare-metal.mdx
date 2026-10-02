@@ -1,0 +1,182 @@
+---
+weight: 29
+title: Configure Host Networking on Bare-Metal Hosts
+queries:
+  - configure bare metal host network before registration
+  - bond two nics alauda os bare metal
+  - observedNetwork connections captured keyfiles
+  - change bare metal node network after install
+  - gate elemental register install dhcp segment
+---
+
+# Configure Host Networking on Bare-Metal Hosts
+
+An Alauda OS host keeps the NetworkManager configuration it had when it registered. `elemental-register` captures the host's connection files, the install writes them into `/oem/elemental-network.yaml`, and every boot replays that file. The provider configures nothing on the host: it disables cloud-init networking on the node and never writes a `network-config` seed file, so a bond, a VLAN, or a multi-NIC layout survives every reprovision exactly as the operator built it.
+
+Use this guide whenever a host needs more than one DHCP-addressed NIC — a bonded node network, a separate interface for the CNI, or a static address on a segment without DHCP. For a single NIC on a DHCP segment, nothing here is required.
+
+## What the Host Reports, and When \{#capture}
+
+`elemental-register` runs once per boot and sends a snapshot of the live network in the registration message:
+
+| Part of the snapshot | Content |
+| --- | --- |
+| `interfaces` | Every link: name, MAC, MTU, addresses, `kind` (`bond`, `vlan`, `bridge`, empty for a plain NIC) and `master` (the aggregate a slave belongs to) |
+| `routes` / `dnsServers` | The live routing table and resolver list |
+| `connections` | The content of every `/etc/NetworkManager/system-connections/*.nmconnection` file, verbatim, keyed by the file's base name |
+
+The snapshot lands in `MachineInventory.spec.observedNetwork`. It is an observation, not a desired state: editing it changes nothing on the host.
+
+Two properties of this flow decide the whole procedure:
+
+- **NetworkManager's automatic connections are never captured.** They live in `/run/NetworkManager/system-connections/` and have no file on disk, so a host that boots with plain DHCP registers with an empty `connections` map. The install then falls back to writing one static Ethernet keyfile per interface that had an address, which freezes each DHCP lease as a static address and leaves one default route per addressed NIC.
+- **`/oem/elemental-network.yaml` is written once, by the install.** Later boots replay it; later registrations refresh `MachineInventory.spec.observedNetwork` but never rewrite it. So the network has to be final before the host installs, and changing it afterwards means editing that file — see [Change the Network After Install](#change-after-install).
+
+Connection files that carry secrets (`[802-1x]`, `[wifi-security]`, `psk=`, `password=`, `wep-key`) are skipped, and the capture is size-capped; such a host needs its network declared explicitly instead.
+
+## Gate the Automatic Install \{#gate}
+
+The base image starts `elemental-register-install.service` as soon as the network comes up. On a DHCP segment the host therefore registers and installs within a minute of boot — before anyone can build a bond. Gate it in the `SeedImage` that the batch boots:
+
+```yaml
+apiVersion: elemental.cattle.io/v1beta1
+kind: SeedImage
+metadata:
+  name: <seedimage-name>
+  namespace: cpaas-system
+spec:
+  cloud-config:
+    stages:
+      boot:
+        - name: "hold registration for manual network setup"
+          commands:
+            - systemctl mask elemental-register-install.service
+```
+
+One ISO still serves the whole batch; each host just needs one manual release at the end of the procedure. On a segment without DHCP the installer fails and retries on its own, which leaves a window by accident — do not rely on it, gate the ISO.
+
+## Build the Network from the Console \{#build}
+
+Work from the host console — serial, IPMI/SOL, or the hypervisor console. Between deleting the automatic connections and bringing the bond up the host has no network, so an SSH session cannot finish the job.
+
+1. Look at what NetworkManager already has, and confirm the gate held:
+
+   ```bash
+   systemctl is-active elemental-register-install.service   # inactive
+   nmcli connection show
+   ip -br link
+   ```
+
+2. Delete every automatic connection. Use `delete`, never `modify`:
+
+   ```bash
+   nmcli connection delete "Wired connection 1" "Wired connection 2"
+   ```
+
+   :::warning
+   `nmcli connection modify` on an automatic connection persists it to `/etc/NetworkManager/system-connections/`. The file is then captured with everything else and, on the installed system, competes with the slave profile for the same physical NIC.
+   :::
+
+3. Build the intended layout. This example bonds `eth0`+`eth1` into the node network and `eth2`+`eth3` into a separate CNI network:
+
+   ```bash
+   nmcli con add type bond ifname bond0 con-name bond0 \
+         bond.options "mode=active-backup,miimon=100"
+   nmcli con mod bond0 ipv4.method manual \
+         ipv4.addresses 192.168.10.11/24 \
+         ipv4.gateway 192.168.10.1 \
+         ipv4.dns 192.168.10.53 ipv4.ignore-auto-dns yes
+   nmcli con add type ethernet ifname eth0 con-name eth0 master bond0
+   nmcli con add type ethernet ifname eth1 con-name eth1 master bond0
+
+   nmcli con add type bond ifname bond1 con-name bond1 \
+         bond.options "mode=active-backup,miimon=100"
+   nmcli con mod bond1 ipv4.method manual ipv4.addresses 10.10.10.11/24 \
+         ipv4.never-default yes
+   nmcli con add type ethernet ifname eth2 con-name eth2 master bond1
+   nmcli con add type ethernet ifname eth3 con-name eth3 master bond1
+
+   nmcli con up bond0
+   nmcli con up bond1
+   ```
+
+   The CNI interface needs an address only in overlay mode, where it is the tunnel source. An underlay interface is bridged by Kube-OVN and can stay address-less. See [Choose the CNI Network Interface](../create-cluster/bare-metal.mdx#cni-network-interface).
+
+4. Verify the result, then release the gate:
+
+   ```bash
+   ls -l /etc/NetworkManager/system-connections/    # one file per connection
+   ip -br addr
+   grep -E "Currently Active|Slave Interface" /proc/net/bonding/bond0
+
+   systemctl unmask elemental-register-install.service
+   systemctl start elemental-register-install.service
+   journalctl -fu elemental-register-install
+   ```
+
+## Verify What Was Captured \{#verify}
+
+After registration, read the snapshot back before letting the provider allocate the host:
+
+```bash
+kubectl -n cpaas-system get machineinventory.elemental.cattle.io <inventory> \
+  -o jsonpath='{.spec.observedNetwork.connections}' | jq 'keys'
+
+kubectl -n cpaas-system get machineinventory.elemental.cattle.io <inventory> \
+  -o jsonpath='{range .spec.observedNetwork.interfaces[*]}{.name} kind={.kind} master={.master} {.addresses}{"\n"}{end}'
+```
+
+For the two-bond host above, `connections` holds six entries (`bond0`, `bond1`, `eth0`–`eth3`), the aggregates report `kind=bond` with the addresses, and each slave reports `master=<bond>` with no address. An empty `connections` map means the host registered before its network was built — reinstall it with the gate in place.
+
+Do not rebuild a configuration from the `interfaces` list. In `active-backup` mode every slave reports the bond's MAC, so the list alone cannot say which NIC owns an address.
+
+## DHCP Segments \{#dhcp}
+
+A node address must be stable: the provider pins it into `kubelet --node-ip` and into the kubeadm `advertiseAddress` at install time, both taken from the snapshot. If the address changes on a later lease, kubelet no longer finds it locally and fails to start.
+
+On a DHCP segment:
+
+- Give the host a **reserved address bound to its MAC**. A dynamic pool is not usable for a cluster node.
+- Pin the bond's MAC, or the reservation stops matching. In `active-backup` a bond adopts the MAC of whichever slave came up first:
+
+  ```ini
+  [ethernet]
+  cloned-mac-address=AA:BB:CC:DD:EE:01
+  ```
+
+  With `nmcli`: `nmcli con mod bond0 ethernet.cloned-mac-address AA:BB:CC:DD:EE:01`.
+- Prefer static addresses for control-plane nodes. The VIP, etcd peers, and Alive all follow the node address; there is no reason to add DHCP to that path.
+- Delete the automatic connections as described above and work from the console.
+
+## Change the Network After Install, Before the Cluster \{#change-after-install}
+
+`/oem/elemental-network.yaml` is replayed on every boot, so changing NetworkManager alone lasts only until the next reboot — and a reprovision always reboots. Change both, in this order, while the inventory is still unallocated:
+
+1. Apply the target state with `nmcli` and confirm it.
+2. Leave a single writer under `/oem`: either edit the `files[].content` entries in `/oem/elemental-network.yaml`, or delete that file and add `/oem/91_network.yaml` with the same `stages: initramfs` shape carrying the new keyfiles. Nothing regenerates the deleted file — only the install writes it.
+3. Reboot.
+4. Verify both sides: `nmcli connection show` on the host, and `MachineInventory.spec.observedNetwork` refreshed to the new addresses and `connections`.
+5. Only then let the provider allocate the host.
+
+Steps 3 and 4 are not optional. The provider pins `--node-ip` from the snapshot; a plan written before the refresh pins the old address onto a host that now uses the new one, and kubelet does not start. If the inventory is already allocated, delete the owning `Machine` first so it returns to `Available`.
+
+:::warning
+Do not try to override `/oem/elemental-network.yaml` by adding a file that sorts later. The `/oem` load order is neither alphabetical nor directory order, so an override applies only sometimes.
+:::
+
+## Failure Modes \{#failure-modes}
+
+| Symptom | Cause | Handling |
+| --- | --- | --- |
+| Host installed itself minutes after boot; installed system has one static NIC per addressed interface and two default routes, no bond | No gate on a DHCP segment: registration captured no connection files, so the install fell back to address-only rendering | Reinstall with [the gate](#gate) in place |
+| A slave NIC keeps an address of its own, or the bond never comes up on the installed system | An automatic connection was `modify`-ed instead of deleted, so it was persisted, captured, and now competes for the same NIC | Delete the stray profile and reinstall the host |
+| Network changed with `nmcli`, reverts after reboot | `/oem/elemental-network.yaml` replays the install-time keyfiles | Follow [Change the Network After Install](#change-after-install) |
+| `MachineInventory.spec.observedNetwork.connections` is empty on a host that was configured by hand | The configuration was made after registration, or only in-memory connections existed at registration time | Rebuild the network, then re-register (reinstall) the host |
+| Kube-OVN cannot start on a node in overlay mode | The CNI interface has no address, so there is no tunnel source | Give that interface an address; only underlay interfaces may stay address-less |
+| A node converted from a single NIC to a bond loses the bond after reboot | The pre-existing `cloud-init-*.nmconnection` file has `autoconnect-priority=120` and wins over the replayed keyfile | Delete `/etc/NetworkManager/system-connections/cloud-init-*.nmconnection` before building the bond |
+
+## What the Provider Does Not Do \{#provider-scope}
+
+- It does not configure host networking. Every `reprovision` plan writes `/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg` and no `network-config` seed file, so cloud-init leaves the network alone on every boot.
+- It does not converge a host back to `MachineInventory.spec.observedNetwork`. That field is an observation; the desired state lives in the host's own keyfiles, replayed from `/oem`.
+- It does not change interface names, MTUs, or addresses during upgrade or node replacement. A reprovision reboots the host, and the network comes back exactly as the previous boot had it.
