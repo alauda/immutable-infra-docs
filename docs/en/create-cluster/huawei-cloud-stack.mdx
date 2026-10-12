@@ -224,6 +224,13 @@ Each entry in **Machine Configs** describes one node:
 
 ### Step 5: Worker Node Pools
 
+:::info
+To put labels and taints on the nodes a pool creates — for example to reserve
+dedicated pools for monitoring, logging, or ingress — declare them on the pool's
+resources as described in
+[Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx).
+:::
+
 Click **Add Worker Node Pool** to open the pool dialog. You can add multiple pools.
 
 | Field | Type | Required | Description |

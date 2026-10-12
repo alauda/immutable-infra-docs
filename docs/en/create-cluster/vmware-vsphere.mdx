@@ -1241,6 +1241,13 @@ kubectl apply -f 20-control-plane.yaml
 
 ### Create the worker objects
 
+:::info
+To put labels and taints on the nodes a pool creates — for example to reserve
+dedicated pools for monitoring, logging, or ingress — declare them on the pool's
+resources as described in
+[Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx).
+:::
+
 Create the worker machine template, bootstrap template, and `MachineDeployment`.
 
 The baseline worker kubelet patch omits the Kubernetes 1.35-only field. If the selected version is Kubernetes 1.35 or later, add `imagePullCredentialsVerificationPolicy: NeverVerify` here as well as in `20-control-plane.yaml`, as described in the control-plane step.
