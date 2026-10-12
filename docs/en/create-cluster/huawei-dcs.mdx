@@ -163,6 +163,13 @@ The control plane node pool is fixed at 3 replicas for high availability.
 
 ### Step 3: Worker Node Pools
 
+:::info
+To put labels and taints on the nodes a pool creates — for example to reserve
+dedicated pools for monitoring, logging, or ingress — declare them on the pool's
+resources as described in
+[Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx).
+:::
+
 You can add multiple worker node pools. Each pool has the following configuration:
 
 | Field | Type | Required | Description |

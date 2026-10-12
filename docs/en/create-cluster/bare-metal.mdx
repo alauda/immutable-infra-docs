@@ -634,6 +634,14 @@ The bare-metal provider does not support single-node control planes. Provision a
 
 After the control plane is Ready, create the worker `BaremetalMachineTemplate`, the worker `KubeadmConfigTemplate`, and the `MachineDeployment`. The full worker YAML and parameter table are in [Managing Nodes on Bare Metal → Worker Node Deployment](../manage-nodes/bare-metal.mdx#worker-node-deployment).
 
+:::info
+To put labels and taints on the nodes a pool creates — for example to reserve
+dedicated pools for monitoring, logging, or ingress — declare them on the pool's
+resources as described in
+[Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx).
+:::
+
+
 ---
 
 ## Cluster Verification
