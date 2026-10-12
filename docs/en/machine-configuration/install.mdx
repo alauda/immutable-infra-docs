@@ -16,7 +16,7 @@ Until the plugin is installed on a cluster, none of the objects described in [Ov
 
 ## Prerequisites \{#prerequisites}
 
-- The target cluster runs on Immutable Infrastructure. Machine Configuration manages an immutable node operating system and is not supported on traditional operating systems.
+- The target cluster runs on Immutable Infrastructure. Machine Configuration manages an immutable node operating system and is not supported on nodes that do not run Alauda OS.
 - The target cluster's nodes are `Ready`, and control plane nodes carry the `node-role.kubernetes.io/control-plane` label while worker nodes carry `node-role.kubernetes.io/worker`. The default pools select nodes by those labels.
 - Access to the `global` cluster with permission to create `ModuleInfo` resources.
 - Access to Customer Portal for downloading the plugin package.
