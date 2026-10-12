@@ -559,15 +559,15 @@
       "updated_at": "2026-09-15T07:01:08Z"
     },
     "docs/en/create-cluster/huawei-cloud-stack.mdx": {
-      "sha256": "a79ee99b13ded3515a9bbd93e24abaf6bc95604712230f8d1ddd68856d16dc92",
-      "size": 50187,
+      "sha256": "730a497f79f8a75cbf7d867abb8880c42fe9305324b9ee38558dc033c5cea78b",
+      "size": 50266,
       "description": "Creating Cluster API workload clusters on Huawei Cloud Stack through both a 6-step web UI wizard (Basic Info, Networking, Infrastructure, Control Plane Node Pool, Worker Node Pools, Review — requires Fleet Essentials `1.0.2`+, HCS provider `v1.0.3`+, and a `cpaas.io/os-release` ConfigMap registered per Alauda OS image) and YAML: HCS credential `Secret`, `HCSMachineConfigPool` (hostnames, subnets, static IPs), `HCSMachineTemplate` (`imageName`/`flavorName`/`availabilityZone`, root and data volumes), a hardened `KubeadmControlPlane`, `HCSCluster` (provider-created Hybrid Load Balancing ELB with `vipAddress` plus two-IP L4/L7 virsubnet lists, optional `controlPlaneHA` server-group anti-affinity, VPC, subnet inventory, security group), and the `Cluster` with `cpaas.io/kube-ovn-join-cidr` and `cluster-type: HCS`, ending with kubectl and `ControlPlaneHAReady` verification.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/create-cluster/huawei-dcs.mdx": {
-      "sha256": "13bc313ae8df9b87bda52277b4f07bb0fca28e1762ba89922914629d402eee14",
-      "size": 55155,
+      "sha256": "f2fd1a6a8f4be66742787e430b0bd916ebfb7fd82feb53063cb7f09dd2938631",
+      "size": 56557,
       "description": "Creating Kubernetes clusters on Huawei DCS through the web UI and YAML manifests. Covers provider gates, DCS API and file-upload connectivity, external LoadBalancer and DCS Provider `v1.0.22+` with ACP `v4.4+` Self-built VIP endpoint modes, IPv4 VIP/VRID/interface constraints, bootstrap and `alive` verification, DRS control-plane HA, persistent disks, magic tokens, component-version sources, single-control-plane behavior, and required Cluster annotations.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-09-02T11:04:57Z"
@@ -622,8 +622,8 @@
       "updated_at": "2026-08-31T05:54:15Z"
     },
     "docs/en/how-to/control-plane-endpoint.mdx": {
-      "sha256": "0b40e071147db3b92628b67f8cdd08e8b7629b44e016cab5b4a85d884d3421e9",
-      "size": 7562,
+      "sha256": "57ce68ceaab5b7ab895a23db479274a62e910361f75511f0a5bbd57ca4c3ee91",
+      "size": 7753,
       "description": "Provider-version-aware contract for planning the Kubernetes API control-plane endpoint. Defines the external LoadBalancer listener, frontend, backend, health-check, reachability, ownership, DNS, and certificate requirements; gives validation commands and endpoint-change cautions; and gates Self-built VIP guidance by released provider capability. Documents DCS `v1.0.22+` with ACP `v4.4+` Self-built VIP and DCS `v1.0.21` external-only behavior, Bare Metal's Internal/External model, HCS's provider-managed ELB path, and VMware vSphere `v1.0.17` with ACP `v4.4+` as the release that adds an `internal` Self-built VIP - with its webhook-checked `vrid` range, creation-time-only availability, write-once immutability, VIP-versus-slot-address collision rule, explicit `interface` on multi-NIC nodes, and a `SelfBuiltLoadBalancerReady` condition that does not gate readiness.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-09-15T09:57:16Z"
@@ -720,9 +720,9 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/infrastructure/huawei-cloud-stack.mdx": {
-      "sha256": "2aff778e73cab805b591faf493c86d6da10dc743943d3738dc3b3bad07270f05",
-      "size": 20937,
-      "description": "Pre-YAML preparation checklist for Huawei Cloud Stack clusters covering every input consumed by the `Secret`, `HCSMachineConfigPool`, `HCSMachineTemplate`, `KubeadmControlPlane`, and `HCSCluster` manifests in `cpaas-system`: credential keys `accessKey`, `secretKey`, `projectID`, `externalGlobalDomain`, `region`, and optional `schema`; API-recognized `imageName`/`flavorName`/`availabilityZone` with per-template availability-zone placement rules and their persistent-disk and control-plane-HA constraints; temporary `dataVolumes[]` versus pool-managed `persistentDisks[]` (`slot`, `size`, `type`, `mountPath`, `format`, `mountOptions`) for `/var/cpaas`; the version and component baseline; VPC, security group, and full subnet inventory (`name`, `id`, `neutronSubnetId`, `cidr`, `gatewayIp`, DNS); the fixed-address control plane ELB plan (`vipAddress`, `vipSubnetName`, two-entry `elbVirsubnetL4Ips`/`L7Ips`, optional `vipDomainName`); `controlPlaneHA` `anti-affinity` versus `soft-anti-affinity` server-group planning; and static IP pool planning with `maxSurge: 0`. Also documents multi-NIC limitations and controller-filled `spec.controlPlaneEndpoint`.",
+      "sha256": "98f27dc29c62d755230f67aa4373a38bf3c896ff9dabd566060e3e3d50afb2c3",
+      "size": 21212,
+      "description": "Pre-YAML preparation checklist for Huawei Cloud Stack clusters covering every input consumed by the `Secret`, `HCSMachineConfigPool`, `HCSMachineTemplate`, `KubeadmControlPlane`, and `HCSCluster` manifests in `cpaas-system`: credential keys `accessKey`, `secretKey`, `projectID`, `externalGlobalDomain`, `region`, and optional `schema`; API-recognized `imageName`/`flavorName`/`availabilityZone` with per-template availability-zone placement rules and their persistent-disk and control-plane-HA constraints; temporary `dataVolumes[]` versus pool-managed `persistentDisks[]` (`slot`, `size`, `type`, `mountPath`, `format`, `mountOptions`) for `/var/cpaas`; the version and component baseline; VPC, security group, and full subnet inventory (`name`, `id`, `neutronSubnetId`, `cidr`, `gatewayIp`, DNS); the fixed-address control plane ELB plan (`vipAddress`, `vipSubnetName`, two-entry `elbVirsubnetL4Ips`/`L7Ips`; `vipDomainName` stays unset — cluster access by domain is not supported); `controlPlaneHA` `anti-affinity` versus `soft-anti-affinity` server-group planning; and static IP pool planning with `maxSurge: 0`. Also documents multi-NIC limitations and controller-filled `spec.controlPlaneEndpoint`.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-19T06:55:36Z"
     },
@@ -741,8 +741,8 @@
       "updated_at": "2026-08-13T13:09:02Z"
     },
     "docs/en/infrastructure/vmware-vsphere.mdx": {
-      "sha256": "301ea3f056a2f52668336d9028a227895833ef140bf551b5da8fd87b4755f465",
-      "size": 47697,
+      "sha256": "63b7e5397a53345159a4bc1679958277932142895f9dadbbc90580fba598d664",
+      "size": 47699,
       "description": "Preparation and parameter checklist for VMware vSphere workload clusters. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template requirements including `<clone_mode>` (`linkedClone`/`fullClone`) and `<power_off_mode>` (`hard`/`soft`/`trySoft`), an executable disposable-VM check for locally preloaded kubeadm and containerd sandbox image references, control-plane endpoint readiness for either an external LoadBalancer or the provider-managed Self-built VIP, permanent Registry readiness for Kube-OVN, CoreDNS, and vSphere CPI with the version-conditional repository names, CIDRs, VM folder and node-slot layout, machine sizing, CPI inputs, and the standard data-disk split, where `/var/cpaas` is a slot-bound persistent disk while `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/lib/etcd` are ephemeral disks recreated with every VM (`sizeGiB`, `mountPath`, `mountOptions`, `fsFormat`, `wipeFilesystem`, `unitNumber`, `datastore`, `storagePolicy`). Links optional parameters to the canonical creation-time topology variants, records the Kubernetes 1.35 kubelet-patch rule, and explains same-pool disk reuse, `releaseDelayHours`, provider-managed reclaim read from `persistentDiskStatuses[].phase`, and datastore-capacity checks.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-09-15T10:59:36Z"

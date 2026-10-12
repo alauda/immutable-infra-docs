@@ -268,7 +268,7 @@ The example manifests below use `<placeholder>` syntax for values that are envir
 | `<ssh-authorized-keys>` | Operator-supplied. Each entry is a single-line OpenSSH-format public key (`ssh-ed25519 AAAA…` / `ssh-rsa AAAA…`). The field is required by the ignition validator and must be non-empty. For test or PoC clusters that do not need interactive SSH, supply any syntactically valid public key (you do not need to hold the matching private key); for production, use the operator team's signing key. | n/a — generated or sourced from the operator. |
 | `<auth-secret-name>` | The Secret you authored in [Infrastructure → Cloud Credentials](../infrastructure/huawei-dcs.mdx#cloud-credentials). | `kubectl -n cpaas-system get secret <name>` |
 | `<cluster-name>` | Operator-chosen; must satisfy DNS-1123 and **must not** be `global` (that name is reserved for the `global` cluster). Reused across `Cluster`, `DCSCluster`, and the `cluster.x-k8s.io/cluster-name` label on every `Machine`. The `KubeadmControlPlane` uses the prefixed form `<cluster-name>-kcp`. See [Workload Cluster Naming](#workload-cluster-naming) for the full convention. | n/a |
-| `<load-balancer-ip-or-domain-name>` | Operator-supplied endpoint clients use to reach the cluster API server. For `type: external`, this can be an external load balancer IP address or domain name. For single-control-plane clusters with no external LB, this is the IP of the sole control plane node (see [Single-control-plane layout](#single-control-plane-layout)). | n/a |
+| `<load-balancer-ip>` | Operator-supplied endpoint clients use to reach the cluster API server. For `type: external`, this is the external load balancer VIP (an IP address — domain names are not supported for the cluster endpoint). For single-control-plane clusters with no external LB, this is the IP of the sole control plane node (see [Single-control-plane layout](#single-control-plane-layout)). | n/a |
 | `<self-built-vip>` | Operator-supplied IPv4 VIP for `Self-built VIP`. Reserve this address before cluster creation. It must not be assigned to a node primary IP or `DCSIpHostnamePool.spec.pool[].additionNic[].ip`. | n/a |
 | `<pods-cidr>` / `<services-cidr>` / `<kube-ovn-join-cidr>` | Operator-supplied. Must not overlap with the host network, the `global` cluster's CIDRs, or any other CAPI cluster's CIDRs you intend to interconnect. Leaving them empty falls back to the kube-ovn defaults shipped with the `global` cluster, which is **not recommended** for production: explicit CIDRs avoid silent collisions when multiple workload clusters live on the same `global` cluster. | n/a |
 
@@ -411,13 +411,13 @@ metadata:
   namespace: cpaas-system
 spec:
   controlPlaneLoadBalancer:
-    host: <load-balancer-ip-or-domain-name>
+    host: <load-balancer-ip>
     port: 6443
     type: external
   credentialSecretRef:
     name: <auth-secret-name>
   controlPlaneEndpoint:
-    host: <load-balancer-ip-or-domain-name>
+    host: <load-balancer-ip>
     port: 6443
   # Optional. Enable only when the target DCS compute cluster has DRS enabled.
   controlPlaneHA:
@@ -456,7 +456,7 @@ spec:
 |-----------|------|-------------|----------|
 | `.spec.controlPlaneLoadBalancer` | object | Control plane API server exposure method | Yes |
 | `.spec.controlPlaneLoadBalancer.type` | string | `external` uses an operator-managed load balancer. `internal` enables `Self-built VIP` and requires DCS Provider `v1.0.22+` with ACP `v4.4+`. | Yes |
-| `.spec.controlPlaneLoadBalancer.host` | string | For `external`, the external load balancer IP address or domain name. For `internal`, the reserved IPv4 VIP. | Yes |
+| `.spec.controlPlaneLoadBalancer.host` | string | For `external`, the external load balancer VIP (an IP address). For `internal`, the reserved IPv4 VIP. | Yes |
 | `.spec.controlPlaneLoadBalancer.port` | int | Kubernetes API server port. The valid range is `1-65535`. | Yes |
 | `.spec.controlPlaneLoadBalancer.vrid` | int | Keepalived VRID used by `Self-built VIP`. Set a value from `1` to `255` when `type` is `internal`. This field is ignored when `type` is `external`. | Conditional |
 | `.spec.controlPlaneLoadBalancer.interface` | string | Optional NIC name used by the bootstrap VIP and `alive`. Leave it empty to detect the NIC by node IP. Set it explicitly for multi-NIC clusters when the VIP must be held by a specific interface. | No |
@@ -481,7 +481,7 @@ The DCS provider handles `Self-built VIP` in two phases:
 
 Important constraints:
 
-- `type: internal` requires an IPv4 VIP. Domain names are not supported for `Self-built VIP`.
+- Both modes accept only an IP address: `type: external` takes the external load balancer VIP, `type: internal` the reserved IPv4 VIP. Domain names are not supported for the cluster endpoint in either mode.
 - The VIP must be excluded from `DCSIpHostnamePool` primary IPs and additional NIC IPs.
 - The target DCS port group must allow VIP ownership, GARP or ARP updates, and VRRP traffic.
 - `interface` must be a Linux interface name of 15 characters or fewer. Use it when the VIP must be bound to a specific NIC, such as `eth0` or `eth1`.
