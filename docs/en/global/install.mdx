@@ -61,13 +61,13 @@ Size it for the image payload it serves rather than for steady-state load: while
 
 | Resource | Minimum (x86_64) |
 |---|---|
-| CPU | 8 cores |
-| Memory | 16 GB |
+| CPU | 4 cores |
+| Memory | 8 GB |
 | Disk | 300 GB or more, available to both the extraction directory (`/root/cpaas-install`) and `/var/cpaas` |
 
-The CPU and memory minimums match the documented per-node minimum for a control plane node in <ExternalSiteLink name="acp" href="/install/prepare/prerequisites.html" children="Prerequisites" />. On the traditional install path the machine that runs `setup.sh` becomes the first control plane node and has to meet that figure; the bootstrap host on this path does comparable work — it extracts the Core Package, serves the platform registry, and runs the bootstrap control plane — so it is sized to the same minimum.
+The CPU and memory minimums come from standard-delivery practice with this install path. On the traditional install path the machine that runs `setup.sh` becomes the first control plane node, so it must meet the control-plane minimum in <ExternalSiteLink name="acp" href="/install/prepare/prerequisites.html" children="Prerequisites" />; the bootstrap host here never joins the cluster — it extracts the Core Package, runs the temporary KIND-based bootstrap cluster, and serves the platform registry until handoff. That is a lighter, temporary load, and 4 cores / 8 GB is the figure standard deliveries run and validate against.
 
-On arm64, apply the platform's ARM convention from the same page: at least 1.5x and preferably 2x the x86_64 figures, which gives **12 cores / 24 GB** as the minimum and **16 cores / 32 GB** as the recommended configuration.
+On arm64, apply the platform's ARM convention from the same page: at least 1.5x and preferably 2x the x86_64 figures, which gives **6 cores / 12 GB** as the minimum and **8 cores / 16 GB** as the recommended configuration.
 
 Disk is the resource that most often stalls a bootstrap. Budget it in three parts:
 
