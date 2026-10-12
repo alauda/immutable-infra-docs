@@ -2427,8 +2427,8 @@ For this fresh DR installation, each final Global cluster must report `data.read
 
 Run Steps 1 through 9 for both the primary and standby `global` clusters.
 
-<Directive type="warning" title="Bare Metal only: use two separate bootstrap hosts">
-  Use two independent bootstrap hosts, one for the primary installation and one for the standby. Do not reuse the same bootstrap cluster for both sides. The bootstrap environment holds installer state, AppRelease objects, Registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it pollutes the two `global` installations and can make handoff or cleanup act on the wrong side.
+<Directive type="warning" title="Use two separate bootstrap hosts">
+  Use two independent bootstrap hosts on every provider, one for the primary installation and one for the standby. Do not reuse the same bootstrap cluster for both sides: the bootstrap environment holds installer state, the embedded Registry, and the provider resources staged for import — on Bare Metal additionally AppRelease objects, Registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state. Sharing one bootstrap pollutes the two `global` installations and can make import, handoff, or cleanup act on the wrong side. Reusing a single bootstrap host for both sides has not been validated on any provider.
 </Directive>
 
 Use the provider-specific installer configuration differences for both sides:
@@ -2783,6 +2783,8 @@ Apply the same `baremetal-dr-rules` ConfigMap to the primary and standby. Use th
 ### Install etcd-sync (ACP 4.4.0+) \{#install-etcd-sync}
 
 Install the v4.4.0-or-later plugin on the current standby Global only. Do not install or run the mirror on both sides at the same time.
+
+Before installing, switch the platform domain back to the primary control-plane VIP — it was pointed at the standby for the standby installation. The primary is the active source of the first synchronization, and on startup the plugin resolves the platform domain and refuses to start when the cluster the domain points to runs `etcd-sync` itself; with the domain still on the standby, the installation you are about to perform would trip that check.
 
 The plugin package is published as `etcd-sync`, not `global-etcd-sync`: download `packages/etcd-sync/<minor>/etcd-sync.amd64.<version>.tgz` from the package server. It is not part of the installer bundle and is not present in the bootstrap Registry, so upload it to the target cluster like any other plugin package.
 

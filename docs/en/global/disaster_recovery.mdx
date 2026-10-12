@@ -74,7 +74,37 @@ After the primary and standby clusters are installed, operate DR as a separate l
 A disaster recovery switchover and a DR-aware `global` cluster upgrade both uninstall **<Term name="product" /> etcd Synchronizer**. Before that uninstall, confirm that the standby `global` cluster data is consistent with the primary. On Immutable Infrastructure, workload-cluster nodes are backed by Cluster API `Machine` objects, so an incorrect owner-reference resolution after an inconsistent sync can delete those `Machine` objects and destroy the backing virtual machines. If the consistency check reports missing or surplus keys, do not uninstall the plugin; resolve the inconsistency or contact technical support first. For the detailed switchover and upgrade procedures, see <ExternalSiteLink name="acp" href="/install/global_dr.html" children="Global Cluster Disaster Recovery" /> and <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />.
 </Directive>
 
-## Bare Metal DR Model
+## Failover \{#failover-procedure}
+
+The sequence below is provider-neutral: it is driven by the platform domain and
+the `etcd-sync` lifecycle, not by any provider API. Provider-specific
+synchronization sources and post-failover checks are in
+[Provider Notes](#provider-notes) and, for Bare Metal, in the
+[Bare Metal DR Model](#bare-metal-dr-model) section.
+
+1. Fence the primary so it cannot write workload resources.
+2. Wait for the monitor to show no differences, then **uninstall** `etcd-sync` from the old standby. Removing its `ModuleInfo` is what uninstalls the plugin; scaling the Deployments to zero is not enough (see the warning below).
+3. Switch the platform domain to the standby control-plane entrance.
+4. Verify the standby API and platform endpoint.
+5. Confirm workload hosts reconnect through the platform domain and can update plan feedback.
+6. Install the `etcd-sync` plugin on the new standby (the fenced former primary) with the reverse active/standby values and, on Bare Metal, the same `baremetal-dr-rules` ConfigMap. Remember that the active-cluster token must now come from the new active cluster, and that pushing the plugin package uses the Registry credential of the cluster the platform domain now points to.
+
+<Directive type="warning" title="Uninstall the mirror, do not just scale it down">
+  On startup `etcd-sync` resolves the platform domain and checks that the cluster the domain points to does not have `etcd-sync` installed. This is what prevents the mirror from running on both sides at once. If step 2 only scaled the Deployments to zero, the `ModuleInfo` still exists and the new standby refuses to start with:
+
+  ~~~text
+  check failed, error: moduleinfo <name> is found, it shouldn't happen,
+    please remove it or check the DNS resolution of platformURL: <platform-domain>
+  ~~~
+
+  Despite the wording this is the safety check working as intended, not a defect. Delete the `ModuleInfo` on the new active cluster and the new standby starts normally.
+</Directive>
+
+Keep the fenced cluster isolated until a separately planned failback. Never run both providers against the same workload inventory.
+
+After the switch, on the new active cluster verify that every workload `Cluster` and `Machine` object is intact — on Immutable Infrastructure those objects back real machines, so a resource lost in the switch becomes a deleted node.
+
+## Bare Metal DR Model \{#bare-metal-dr-model}
 
 This section is the Bare Metal DR procedure for ACP 4.4.0 and later. It covers a fresh primary/standby installation; create both clusters with [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment).
 
@@ -160,28 +190,6 @@ The plugin chart owns the standard CAPI, Bare Metal, Elemental, Global-resource,
 5. Run the monitor check and require zero missed and zero surplus keys.
 6. Treat the rule snapshot and monitor result as part of the acceptance gate; AppRelease status alone is not sufficient.
 
-### Failover \{#failover-procedure}
-
-1. Fence the primary so it cannot write workload resources.
-2. Wait for the monitor to show no differences, then **uninstall** `etcd-sync` from the old standby. Removing its `ModuleInfo` is what uninstalls the plugin; scaling the Deployments to zero is not enough (see the warning below).
-3. Switch the platform domain to the standby control-plane entrance.
-4. Verify the standby API and platform endpoint.
-5. Confirm workload hosts reconnect through the platform domain and can update plan feedback.
-6. Install the `etcd-sync` plugin on the new standby (the fenced former primary) with the reverse active/standby values and the same `baremetal-dr-rules` ConfigMap. Remember that the active-cluster token must now come from the new active cluster, and that pushing the plugin package uses the Registry credential of the cluster the platform domain now points to.
-
-<Directive type="warning" title="Uninstall the mirror, do not just scale it down">
-  On startup `etcd-sync` resolves the platform domain and checks that the cluster the domain points to does not have `etcd-sync` installed. This is what prevents the mirror from running on both sides at once. If step 2 only scaled the Deployments to zero, the `ModuleInfo` still exists and the new standby refuses to start with:
-
-  ~~~text
-  check failed, error: moduleinfo <name> is found, it shouldn't happen,
-    please remove it or check the DNS resolution of platformURL: <platform-domain>
-  ~~~
-
-  Despite the wording this is the safety check working as intended, not a defect. Delete the `ModuleInfo` on the new active cluster and the new standby starts normally.
-</Directive>
-
-Keep the fenced cluster isolated until a separately planned failback. Never run both providers against the same workload inventory.
-
 ### Acceptance
 
 After failover, verify:
@@ -204,7 +212,7 @@ After failover, verify:
 | A workload host gets `401` or `403` | Signing key, issuer/audience, shared token Secret, and Role `resourceNames` |
 | Monitor reports differences | Active/standby direction, rule snapshot, and fencing state |
 
-## Provider Notes
+## Provider Notes \{#provider-notes}
 
 <Tabs>
   <Tab label="Huawei DCS">
@@ -212,6 +220,8 @@ After failover, verify:
 Follow the DCS steps in [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-recovery-deployment). The DCS installation must keep the same encryption provider Secret and `DCSCluster.spec.encryptionProviderConfigRef` on both sides. Do not add the encryption provider file to `KubeadmControlPlane.spec.kubeadmConfigSpec.files` for DCS. Create the DCS `dcs-import-extra-resources` ConfigMap on both sides so the installer imports the Secret referenced by `DCSCluster.spec.credentialSecretRef.name` and the Secret referenced by `DCSCluster.spec.encryptionProviderConfigRef.name`. DCS provider resources are migrated by the built-in flow, but that flow does not copy either Secret.
 
 The encryption provider Secret must exist in each final `global` cluster. If it stays only in the bootstrap cluster, the installation still completes and the pair looks healthy, but every later control-plane machine creation fails once the bootstrap cluster is gone — the new `Machine` stays in `Provisioning` and the provider logs `get encryption provider config secret ... not found`. Verify it on both sides before decommissioning either bootstrap cluster.
+
+For a planned switch, run the [failover sequence](#failover-procedure). The `baremetal-dr-rules` ConfigMap and the registration checks are Bare Metal-only; every other step applies to DCS as written. After the switch, verify on the new active cluster that the workload `Cluster`, `Machine`, and `DCSMachine` objects are intact and no virtual machine was deleted: during failover the `global-` name prefix from the installation guide's [naming convention](./install.mdx#common-prerequisites) is what identifies the resources owned by the `global` pair, which is why every DCS resource of both sides must carry it. Also confirm that the DCS credential Secret and the encryption provider Secret exist on whichever side is now active.
 
   </Tab>
   <Tab label="VMware vSphere">
