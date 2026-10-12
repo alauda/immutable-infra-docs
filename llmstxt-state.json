@@ -552,11 +552,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/create-cluster/bare-metal.mdx": {
-      "sha256": "40f379e9e55c9a64a6266a7a552efaa546ef6bd28cb664358eeab9cddca59a0d",
+      "sha256": "93fd64a242dd94de92d00632136924867879fd49f4ede2fe870e5c7390a0ef26",
       "size": 60435,
       "description": "YAML-only workflow (no Fleet Essentials UI) for creating bare-metal workload clusters with the Elemental-based Bare Metal Infrastructure Provider: import the paired `baremetal-base-image`/`baremetal-base-image-iso` from the OS archive with `ctr`, add every `Machine.spec.version` to the initially empty `elemental-image-catalog`, then meet the prerequisites — a stage-by-stage network table (DNS, NTP, registration and plan polling on the platform HTTPS port, registry `11443`, control-plane `6443`, and cluster-internal traffic including the Kube-OVN Geneve tunnel), a first-boot firmware-level clock gate, the install device, residual `COS_*` label cleanup, and the `emulate-tpm` decision. Apply `MachineRegistration` and `SeedImage` — sizing `COS_STATE` above the 8 GiB Elemental default before the first install — so booted hosts register as `MachineInventory`, optionally prepare managed data disks, then apply per-role `MachineInventoryPool`, `BaremetalCluster` (`Internal` Alive VIP with `vrid`, or `External` LoadBalancer), `BaremetalMachineTemplate`, `KubeadmControlPlane`, `Cluster`, and the worker `MachineDeployment` — all in `cpaas-system`. Includes placeholder sourcing, verification commands, and a condition-reason failure-mode table.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-15T07:01:08Z"
+      "updated_at": "2026-10-12T08:45:43Z"
     },
     "docs/en/create-cluster/huawei-cloud-stack.mdx": {
       "sha256": "75e680af9a48762ff9d8dcc59ae568aff219f6088d0a974f088a334d98c11025",
@@ -603,7 +603,7 @@
     "docs/en/global/install.mdx": {
       "sha256": "066fff73e05f47efe854475691383daa16c8f0b762b8b30e7bb663660861d52a",
       "size": 174033,
-      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers bootstrap host hardware, operating system, network requirements, provider-package delivery, Bare Metal OS image import and image catalog preparation, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification, provider-resource handoff, optional DR inputs, and final decommissioning gates.",
+      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers bootstrap node hardware, operating system, network requirements, provider-package delivery, Bare Metal OS image import and image catalog preparation, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification, provider-resource handoff, optional DR inputs, and final decommissioning gates.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-09-15T09:57:16Z"
     },
@@ -622,11 +622,11 @@
       "updated_at": "2026-08-31T05:54:15Z"
     },
     "docs/en/how-to/control-plane-endpoint.mdx": {
-      "sha256": "0b40e071147db3b92628b67f8cdd08e8b7629b44e016cab5b4a85d884d3421e9",
+      "sha256": "7a3cec23b5df5678357754d8ee71f390baf443bb16a497c4e2ec8afef63a4e42",
       "size": 7562,
       "description": "Provider-version-aware contract for planning the Kubernetes API control-plane endpoint. Defines the external LoadBalancer listener, frontend, backend, health-check, reachability, ownership, DNS, and certificate requirements; gives validation commands and endpoint-change cautions; and gates Self-built VIP guidance by released provider capability. Documents DCS `v1.0.22+` with ACP `v4.4+` Self-built VIP and DCS `v1.0.21` external-only behavior, Bare Metal's Internal/External model, HCS's provider-managed ELB path, and VMware vSphere `v1.0.17` with ACP `v4.4+` as the release that adds an `internal` Self-built VIP - with its webhook-checked `vrid` range, creation-time-only availability, write-once immutability, VIP-versus-slot-address collision rule, explicit `interface` on multi-NIC nodes, and a `SelfBuiltLoadBalancerReady` condition that does not gate readiness.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-15T09:57:16Z"
+      "updated_at": "2026-10-12T08:45:43Z"
     },
     "docs/en/how-to/dcs_persistent_disk_upgrade.mdx": {
       "sha256": "b4a4ba892709df1b825133beafb4983bf69d84fadd3cc46fddf4d6ee500a1795",
