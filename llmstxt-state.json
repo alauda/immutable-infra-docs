@@ -601,8 +601,8 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "066fff73e05f47efe854475691383daa16c8f0b762b8b30e7bb663660861d52a",
-      "size": 174033,
+      "sha256": "f29bb711259c0f50ed2b4b13e1985baed680ef3443a1a23914fed70c25ff9314",
+      "size": 175358,
       "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers bootstrap host hardware, operating system, network requirements, provider-package delivery, Bare Metal OS image import and image catalog preparation, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification, provider-resource handoff, optional DR inputs, and final decommissioning gates.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-09-15T09:57:16Z"
