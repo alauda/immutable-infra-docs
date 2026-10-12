@@ -838,6 +838,11 @@
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-31T05:54:15Z"
     },
+    "docs/en/machine-configuration/timezone.mdx": {
+      "sha256": "ac9656bb9bf8126061522ad9919a71fa2dbf068b1cbe7eec2fb33e840e5e1702",
+      "size": 4297,
+      "description": "How to set one agreed time zone on every immutable node with a `MachineConfig` that installs a oneshot systemd unit running `timedatectl set-timezone`, because `/etc/localtime` is a symbolic link and machine configuration manages file contents, systemd units, and SSH public keys - not symlinks. Insists on configuring a `nodeDisruptionPolicy.units` entry (`DaemonReload` plus `Restart` of `set-timezone.service`) on the singleton `cluster` `MachineConfiguration` and confirming it in `status.nodeDisruptionPolicyStatus` before applying the `MachineConfig`, since a systemd unit change otherwise falls back to the default reboot action and rolls the whole pool. Ships one object per role (`99-worker-timezone` / `99-master-timezone`), verification via pool status, `timedatectl` and `systemctl status`, and distinguishes this running-cluster procedure from the install-time host clock prerequisite on the bare metal page."
+    },
     "docs/en/manage-nodes/bare-metal.mdx": {
       "sha256": "f88c7bf97ea5ebf685b89295d84531006bf28c9747091e9bd44637b375340027",
       "size": 21519,
