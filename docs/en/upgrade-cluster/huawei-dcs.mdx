@@ -23,7 +23,7 @@ This page covers only the Kubernetes step of the upgrade. The full ACP upgrade f
 - <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster (Core, Aligned, Agnostic)" />
 - <ExternalSiteLink name="acp" href="/upgrade/upgrade_workload_cluster.html" children="Upgrade workload clusters (Core, Aligned, Agnostic)" />
 
-Use this page when the same cluster runs on an immutable operating system, because the Kubernetes step on immutable OS replaces nodes from a new Alauda OS-based VM template rather than upgrading binaries in place.
+Use this page when the same cluster runs on Alauda OS, because the Kubernetes step there replaces nodes from a new Alauda OS-based VM template rather than upgrading binaries in place.
 :::
 
 :::info
@@ -188,7 +188,7 @@ Upgrading the control plane machine template lets you roll out updated VM specif
 
 ### Upgrade Control Plane Kubernetes Version
 
-Upgrading the control plane Kubernetes version on immutable OS is a delete-recreate workflow. The control plane VMs are replaced one by one from a new `DCSMachineTemplate` that points at the target Alauda OS VM template, and the `KubeadmControlPlane` resource is patched to carry the matching Kubernetes version, CoreDNS image tag, and etcd image tag.
+Upgrading the control plane Kubernetes version on Alauda OS is a delete-recreate workflow. The control plane VMs are replaced one by one from a new `DCSMachineTemplate` that points at the target Alauda OS VM template, and the `KubeadmControlPlane` resource is patched to carry the matching Kubernetes version, CoreDNS image tag, and etcd image tag.
 
 Before you start, complete the shared [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane) procedure and verify that the `cni-kube-ovn` `AppRelease` is at the target revision with `phase=Success`. Then collect every required control-plane value from the target ACP row in the OS Support Matrix as described in [Required Values From the OS Support Matrix](#required-values).
 
