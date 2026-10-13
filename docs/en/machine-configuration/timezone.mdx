@@ -12,7 +12,7 @@ queries:
 
 All nodes of a cluster should run with one agreed time zone, so that platform
 logs, audit records and monitoring timelines line up with the operator's wall
-clock. On immutable nodes you set the time zone with a `MachineConfig` object —
+clock. On Alauda OS nodes you set the time zone with a `MachineConfig` object —
 never by logging in to nodes and changing them one by one.
 
 The time zone cannot be shipped as a file: `/etc/localtime` is a symbolic link,
