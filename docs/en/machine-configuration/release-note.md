@@ -24,11 +24,11 @@ This release hardens access control, refreshes the resource schemas, and updates
 
 ## v4.0.16 (2026-06-24) \{#v4-0-16}
 
-This release extends machine configuration management to both Global and business clusters and includes security dependency updates.
+This release extends machine configuration management to both Global and workload clusters and includes security dependency updates.
 
 ### New Features
 
-- Removed the chart restriction that prevented deployment in Global and business clusters, allowing the plugin to be installed in both cluster scopes.
+- Removed the chart restriction that prevented deployment in Global and workload clusters, allowing the plugin to be installed in both cluster scopes.
 
 ### Security Updates
 
