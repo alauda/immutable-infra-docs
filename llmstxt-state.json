@@ -566,11 +566,11 @@
       "updated_at": "2026-10-14T10:15:06Z"
     },
     "docs/en/create-cluster/huawei-dcs.mdx": {
-      "sha256": "13bc313ae8df9b87bda52277b4f07bb0fca28e1762ba89922914629d402eee14",
-      "size": 55155,
-      "description": "Creating Kubernetes clusters on Huawei DCS through the web UI and YAML manifests. Covers provider gates, DCS API and file-upload connectivity, external LoadBalancer and DCS Provider `v1.0.22+` with ACP `v4.4+` Self-built VIP endpoint modes, IPv4 VIP/VRID/interface constraints, bootstrap and `alive` verification, DRS control-plane HA, persistent disks, magic tokens, component-version sources, single-control-plane behavior, and required Cluster annotations.",
+      "sha256": "982620a5e5501962fb58cfa9833b84c800ed0b52126022625c41992f31046ce6",
+      "size": 56734,
+      "description": "Creating Kubernetes clusters on Huawei DCS through the web UI and YAML manifests. Covers prerequisites (provider plugins, VM template, DCS API and Ignition ISO upload connectivity, workload-cluster image registry), the control plane endpoint modes - an external LoadBalancer or DCS Provider `v1.0.22+` with ACP `v4.4+` Self-built VIP with its IPv4 VIP/VRID/interface constraints - workload cluster naming (never `global` or the `global-` prefix), worker node pools with a pointer to declaring node labels and taints, resolving placeholder values from the `global` cluster and magic tokens, persistent disks and additional NICs, DRS control-plane HA, bootstrap and `alive` verification, single-control-plane behavior, required Cluster annotations, how the encryption provider configuration is delivered, and troubleshooting.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-02T11:04:57Z"
+      "updated_at": "2026-10-14T10:17:06Z"
     },
     "docs/en/create-cluster/index.mdx": {
       "sha256": "8dc52cc209252f9d6399633850e5e13865b79c2ec7dbcd114cbddd454bd1fa5a",
