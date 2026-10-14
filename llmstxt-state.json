@@ -563,7 +563,7 @@
       "size": 50266,
       "description": "Creating Cluster API workload clusters on Huawei Cloud Stack through both a 6-step web UI wizard (Basic Info, Networking, Infrastructure, Control Plane Node Pool, Worker Node Pools, Review — requires Fleet Essentials `1.0.2`+, HCS provider `v1.0.3`+, and a `cpaas.io/os-release` ConfigMap registered per Alauda OS image) and YAML: HCS credential `Secret`, `HCSMachineConfigPool` (hostnames, subnets, static IPs), `HCSMachineTemplate` (`imageName`/`flavorName`/`availabilityZone`, root and data volumes), a hardened `KubeadmControlPlane`, `HCSCluster` (provider-created Hybrid Load Balancing ELB with `vipAddress` plus two-IP L4/L7 virsubnet lists, optional `controlPlaneHA` server-group anti-affinity, VPC, subnet inventory, security group), and the `Cluster` with `cpaas.io/kube-ovn-join-cidr` and `cluster-type: HCS`, ending with kubectl and `ControlPlaneHAReady` verification.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-13T10:27:35Z"
+      "updated_at": "2026-10-14T10:12:40Z"
     },
     "docs/en/create-cluster/huawei-dcs.mdx": {
       "sha256": "13bc313ae8df9b87bda52277b4f07bb0fca28e1762ba89922914629d402eee14",
@@ -626,7 +626,7 @@
       "size": 7753,
       "description": "Provider-version-aware contract for planning the Kubernetes API control-plane endpoint. Defines the external LoadBalancer listener, frontend, backend, health-check, reachability, ownership, DNS, and certificate requirements; gives validation commands and endpoint-change cautions; and gates Self-built VIP guidance by released provider capability. Documents DCS `v1.0.22+` with ACP `v4.4+` Self-built VIP and DCS `v1.0.21` external-only behavior, Bare Metal's Internal/External model, HCS's provider-managed ELB path, and VMware vSphere `v1.0.17` with ACP `v4.4+` as the release that adds an `internal` Self-built VIP - with its webhook-checked `vrid` range, creation-time-only availability, write-once immutability, VIP-versus-slot-address collision rule, explicit `interface` on multi-NIC nodes, and a `SelfBuiltLoadBalancerReady` condition that does not gate readiness.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-13T10:27:35Z"
+      "updated_at": "2026-10-14T10:12:40Z"
     },
     "docs/en/how-to/dcs_persistent_disk_upgrade.mdx": {
       "sha256": "b4a4ba892709df1b825133beafb4983bf69d84fadd3cc46fddf4d6ee500a1795",
@@ -724,7 +724,7 @@
       "size": 21212,
       "description": "Pre-YAML preparation checklist for Huawei Cloud Stack clusters covering every input consumed by the `Secret`, `HCSMachineConfigPool`, `HCSMachineTemplate`, `KubeadmControlPlane`, and `HCSCluster` manifests in `cpaas-system`: credential keys `accessKey`, `secretKey`, `projectID`, `externalGlobalDomain`, `region`, and optional `schema`; API-recognized `imageName`/`flavorName`/`availabilityZone` with per-template availability-zone placement rules and their persistent-disk and control-plane-HA constraints; temporary `dataVolumes[]` versus pool-managed `persistentDisks[]` (`slot`, `size`, `type`, `mountPath`, `format`, `mountOptions`) for `/var/cpaas`; the version and component baseline; VPC, security group, and full subnet inventory (`name`, `id`, `neutronSubnetId`, `cidr`, `gatewayIp`, DNS); the fixed-address control plane ELB plan (`vipAddress`, `vipSubnetName`, two-entry `elbVirsubnetL4Ips`/`L7Ips`; `vipDomainName` stays unset — cluster access by domain is not supported); `controlPlaneHA` `anti-affinity` versus `soft-anti-affinity` server-group planning; and static IP pool planning with `maxSurge: 0`. Also documents multi-NIC limitations and controller-filled `spec.controlPlaneEndpoint`.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-13T10:27:35Z"
+      "updated_at": "2026-10-14T10:12:40Z"
     },
     "docs/en/infrastructure/huawei-dcs.mdx": {
       "sha256": "f60198410c99db14db5bf67135cf066a9aa7f4e2b729a5994668a02830ea3f10",
@@ -745,7 +745,7 @@
       "size": 47699,
       "description": "Preparation and parameter checklist for VMware vSphere workload clusters. Separates vCenter-discoverable inventory, product-derived version values, and operator decisions; covers credentials and thumbprint collection, VM template requirements including `<clone_mode>` (`linkedClone`/`fullClone`) and `<power_off_mode>` (`hard`/`soft`/`trySoft`), an executable disposable-VM check for locally preloaded kubeadm and containerd sandbox image references, control-plane endpoint readiness for either an external LoadBalancer or the provider-managed Self-built VIP, permanent Registry readiness for Kube-OVN, CoreDNS, and vSphere CPI with the version-conditional repository names, CIDRs, VM folder and node-slot layout, machine sizing, CPI inputs, and the standard data-disk split, where `/var/cpaas` is a slot-bound persistent disk while `/var/lib/kubelet`, `/var/lib/containerd`, and `/var/lib/etcd` are ephemeral disks recreated with every VM (`sizeGiB`, `mountPath`, `mountOptions`, `fsFormat`, `wipeFilesystem`, `unitNumber`, `datastore`, `storagePolicy`). Links optional parameters to the canonical creation-time topology variants, records the Kubernetes 1.35 kubelet-patch rule, and explains same-pool disk reuse, `releaseDelayHours`, provider-managed reclaim read from `persistentDiskStatuses[].phase`, and datastore-capacity checks.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-13T10:27:35Z"
+      "updated_at": "2026-10-14T10:12:40Z"
     },
     "docs/en/install/bare-metal.mdx": {
       "sha256": "a9dedc68dd0f1d1d09785118604be013703c8807606723e74c451550de97e8ea",
@@ -837,6 +837,13 @@
       "description": "How to set node-level kernel parameters that cannot come from a Pod's `securityContext.sysctls`, by writing a base64-encoded Ignition drop-in under `/etc/sysctl.d/` with a `MachineConfig` targeted by the `machineconfiguration.alauda.io/role` label. The worked example raises `net.ipv4.neigh.default.gc_thresh1`/`gc_thresh2`/`gc_thresh3` to resolve `neighbour table overflow` on large clusters. Because the default disruption action for file changes is `None`, it pairs the file with a `nodeDisruptionPolicy.files` entry that restarts `systemd-sysctl.service` so the value applies without a reboot, and insists the policy appear in `status.nodeDisruptionPolicyStatus` before the `MachineConfig` is applied.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-31T05:54:15Z"
+    },
+    "docs/en/machine-configuration/timezone.mdx": {
+      "sha256": "929598c6cb3fe3f1ca6cd3a20f1038792266e781241716fd14cb2e0dd79ae51c",
+      "size": 4297,
+      "description": "How to set one agreed time zone on every Alauda OS node with a `MachineConfig` that installs a oneshot systemd unit running `timedatectl set-timezone`, because `/etc/localtime` is a symbolic link and machine configuration manages file contents, systemd units, and SSH public keys - not symlinks. Insists on configuring a `nodeDisruptionPolicy.units` entry (`DaemonReload` plus `Restart` of `set-timezone.service`) on the singleton `cluster` `MachineConfiguration` and confirming it in `status.nodeDisruptionPolicyStatus` before applying the `MachineConfig`, since a systemd unit change otherwise falls back to the default reboot action and rolls the whole pool. Ships one object per role (`99-worker-timezone` / `99-master-timezone`), verification via pool status, `timedatectl` and `systemctl status`, and distinguishes this running-cluster procedure from the install-time host clock prerequisite on the bare metal page.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-10-13T10:27:31Z"
     },
     "docs/en/manage-nodes/bare-metal.mdx": {
       "sha256": "f88c7bf97ea5ebf685b89295d84531006bf28c9747091e9bd44637b375340027",
