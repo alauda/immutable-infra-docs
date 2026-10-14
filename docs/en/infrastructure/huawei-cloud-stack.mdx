@@ -153,6 +153,7 @@ This documentation uses the fixed-address ELB workflow. Prepare all ELB-related 
 - `vipAddress`
 - `elbVirsubnetL4Ips` with exactly two L4 IPs
 - `elbVirsubnetL7Ips` with exactly two L7 IPs
+
 Leave `vipDomainName` unset: cluster access by domain is not supported (the API server certificate can only be issued by the cluster's own CA), and the provider only uses the field to backfill the derived `controlPlaneEndpoint`.
 
 ### Operational constraints
