@@ -556,14 +556,14 @@
       "size": 60726,
       "description": "YAML-only workflow (no Fleet Essentials UI) for creating bare-metal workload clusters with the Elemental-based Bare Metal Infrastructure Provider: import the paired `baremetal-base-image`/`baremetal-base-image-iso` from the OS archive with `ctr`, add every `Machine.spec.version` to the initially empty `elemental-image-catalog`, then meet the prerequisites — a stage-by-stage network table (DNS, NTP, registration and plan polling on the platform HTTPS port, registry `11443`, control-plane `6443`, and cluster-internal traffic including the Kube-OVN Geneve tunnel), a first-boot firmware-level clock gate, the install device, residual `COS_*` label cleanup, and the `emulate-tpm` decision. Apply `MachineRegistration` and `SeedImage` — sizing `COS_STATE` above the 8 GiB Elemental default before the first install — so booted hosts register as `MachineInventory`, optionally prepare managed data disks, then apply per-role `MachineInventoryPool`, `BaremetalCluster` (`Internal` Alive VIP with `vrid`, or `External` LoadBalancer), `BaremetalMachineTemplate`, `KubeadmControlPlane`, `Cluster`, and the worker `MachineDeployment` — all in `cpaas-system`. Includes placeholder sourcing, verification commands, and a condition-reason failure-mode table.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-13T10:27:32Z"
+      "updated_at": "2026-10-14T10:15:06Z"
     },
     "docs/en/create-cluster/huawei-cloud-stack.mdx": {
       "sha256": "c46a7677846fbc8f60ce45bb5d643635c1d637ac451f5fc36931b6542034d58c",
       "size": 50477,
       "description": "Creating Cluster API workload clusters on Huawei Cloud Stack through both a 6-step web UI wizard (Basic Info, Networking, Infrastructure, Control Plane Node Pool, Worker Node Pools, Review — requires Fleet Essentials `1.0.2`+, HCS provider `v1.0.3`+, and a `cpaas.io/os-release` ConfigMap registered per Alauda OS image) and YAML: HCS credential `Secret`, `HCSMachineConfigPool` (hostnames, subnets, static IPs), `HCSMachineTemplate` (`imageName`/`flavorName`/`availabilityZone`, root and data volumes), a hardened `KubeadmControlPlane`, `HCSCluster` (provider-created Hybrid Load Balancing ELB with `vipAddress` plus two-IP L4/L7 virsubnet lists, optional `controlPlaneHA` server-group anti-affinity, VPC, subnet inventory, security group), and the `Cluster` with `cpaas.io/kube-ovn-join-cidr` and `cluster-type: HCS`, ending with kubectl and `ControlPlaneHAReady` verification.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-13T10:27:32Z"
+      "updated_at": "2026-10-14T10:15:06Z"
     },
     "docs/en/create-cluster/huawei-dcs.mdx": {
       "sha256": "13bc313ae8df9b87bda52277b4f07bb0fca28e1762ba89922914629d402eee14",
@@ -577,14 +577,14 @@
       "size": 1581,
       "description": "Landing page for the Creating Clusters section. Summarizes common prerequisites—provider infrastructure preparation, the provider/version-specific control-plane endpoint contract, and the x86-64-v2 CPU baseline for ACP-provided Alauda OS images—and links directly to the Huawei DCS, Huawei Cloud Stack, VMware vSphere, and Bare Metal creation guides.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-13T10:27:32Z"
+      "updated_at": "2026-10-14T10:15:06Z"
     },
     "docs/en/create-cluster/vmware-vsphere.mdx": {
       "sha256": "2c8b560e7b1677117a808d51caa4f95d40b3777b375a3c2d222f81e6ae484dd5",
       "size": 103860,
       "description": "End-to-end YAML workflow for creating a VMware vSphere workload cluster from the ACP `global` cluster, validated against provider `v1.0.17`. Opens with a Provider Requirements section listing the fixed-IP admission rules the install and upgrade pages both link to. Documents the two control plane endpoint modes: an external LoadBalancer, which the baseline uses by leaving `spec.controlPlaneLoadBalancer` absent, and the provider-managed Self-built VIP (`type: internal`, Alive with keepalived and IPVS) including its write-once field, `vrid`, `interface`, VIP-collision rules, and the rule that only a cluster created on `v1.0.17` with ACP `v4.4+` can use it. Then walks the numbered manifest set from `00-namespace.yaml` to `30-workers-md-0.yaml`, covering the vCenter credential Secret, `ClusterResourceSet`-delivered vSphere CPI, machine config pools, `KubeadmControlPlane` and `MachineDeployment`, plus provider-managed fields on your manifests, verification, an admission-rejection message map, and creation-time topology variants for the Self-built VIP, a second NIC, failure domains, persistent versus ephemeral disks, SCSI unit pinning, and pod-log relocation.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-13T10:27:32Z"
+      "updated_at": "2026-10-14T10:15:06Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
       "sha256": "895bf0399d1863bff771cea1f55fe7af3e0453942b05f9da5a45e33445354293",
@@ -837,6 +837,13 @@
       "description": "How to set node-level kernel parameters that cannot come from a Pod's `securityContext.sysctls`, by writing a base64-encoded Ignition drop-in under `/etc/sysctl.d/` with a `MachineConfig` targeted by the `machineconfiguration.alauda.io/role` label. The worked example raises `net.ipv4.neigh.default.gc_thresh1`/`gc_thresh2`/`gc_thresh3` to resolve `neighbour table overflow` on large clusters. Because the default disruption action for file changes is `None`, it pairs the file with a `nodeDisruptionPolicy.files` entry that restarts `systemd-sysctl.service` so the value applies without a reboot, and insists the policy appear in `status.nodeDisruptionPolicyStatus` before the `MachineConfig` is applied.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-31T05:54:15Z"
+    },
+    "docs/en/machine-configuration/timezone.mdx": {
+      "sha256": "929598c6cb3fe3f1ca6cd3a20f1038792266e781241716fd14cb2e0dd79ae51c",
+      "size": 4297,
+      "description": "How to set one agreed time zone on every Alauda OS node with a `MachineConfig` that installs a oneshot systemd unit running `timedatectl set-timezone`, because `/etc/localtime` is a symbolic link and machine configuration manages file contents, systemd units, and SSH public keys - not symlinks. Insists on configuring a `nodeDisruptionPolicy.units` entry (`DaemonReload` plus `Restart` of `set-timezone.service`) on the singleton `cluster` `MachineConfiguration` and confirming it in `status.nodeDisruptionPolicyStatus` before applying the `MachineConfig`, since a systemd unit change otherwise falls back to the default reboot action and rolls the whole pool. Ships one object per role (`99-worker-timezone` / `99-master-timezone`), verification via pool status, `timedatectl` and `systemctl status`, and distinguishes this running-cluster procedure from the install-time host clock prerequisite on the bare metal page.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-10-13T10:27:31Z"
     },
     "docs/en/manage-nodes/bare-metal.mdx": {
       "sha256": "f88c7bf97ea5ebf685b89295d84531006bf28c9747091e9bd44637b375340027",
