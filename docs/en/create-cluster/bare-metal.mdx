@@ -184,6 +184,10 @@ Classify **every** disk and virtual disk (VD) on each host before you boot the `
 
 Use only stable storage identities reported by the registered inventory. Linux paths such as `/dev/sdX`, `/dev/vdX`, `/dev/nvmeXnY`, and `/dev/mapper/mpathX` are runtime paths and must not be placed in `MachineInventory.spec.storage`.
 
+### 8. Node Labels and Taints
+
+To give the nodes of a pool their own labels, annotations, or taints — for example to reserve dedicated pools for monitoring, logging, or ingress — declare them on the pool's resources as described in [Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx). Plan them before you create the pools: a `Machine` label reaches its `Node` only after label synchronization is enabled on `capi-controller-manager`, which that page also covers.
+
 ---
 
 ## Cluster Creation Workflow
@@ -633,14 +637,6 @@ The bare-metal provider does not support single-node control planes. Provision a
 ### Step 4: Deploy Worker Nodes
 
 After the control plane is Ready, create the worker `BaremetalMachineTemplate`, the worker `KubeadmConfigTemplate`, and the `MachineDeployment`. The full worker YAML and parameter table are in [Managing Nodes on Bare Metal → Worker Node Deployment](../manage-nodes/bare-metal.mdx#worker-node-deployment).
-
-:::info
-To put labels and taints on the nodes a pool creates — for example to reserve
-dedicated pools for monitoring, logging, or ingress — declare them on the pool's
-resources as described in
-[Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx).
-:::
-
 
 ---
 

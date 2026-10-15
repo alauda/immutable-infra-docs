@@ -121,6 +121,10 @@ A dedicated registry is configured through YAML only. The web UI wizard always u
 The binding is also read only when the cluster is first created. Changing or removing `cpaas.io/registry-reference` on an existing `Cluster` does not move that cluster to another registry.
 :::
 
+### 5. Node Labels and Taints
+
+To give the nodes of a pool their own labels, annotations, or taints — for example to reserve dedicated pools for monitoring, logging, or ingress — declare them on the pool's resources as described in [Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx). Plan them before you create the pools: a `Machine` label reaches its `Node` only after label synchronization is enabled on `capi-controller-manager`, which that page also covers. This applies to every node pool, whether the cluster is created through the web UI or with YAML; the web UI node pool steps do not set labels or taints.
+
 ## Using the Web UI \{#using-the-web-ui}
 
 **Version requirement**: This workflow requires Fleet Essentials `1.0.2` or later and the Alauda Container Platform HCS Infrastructure Provider `v1.0.3` or later. If the provider version is earlier than `v1.0.3`, create clusters with the YAML manifests described in [Using YAML](#using-yaml).
@@ -223,13 +227,6 @@ Each entry in **Machine Configs** describes one node:
 - **Persistent Disks**: The platform-required `/var/cpaas` disk is pre-filled; its size is adjustable but the row cannot be removed. Add rows only for extra host-bound data that must survive node rebuild.
 
 ### Step 5: Worker Node Pools
-
-:::info
-To put labels and taints on the nodes a pool creates — for example to reserve
-dedicated pools for monitoring, logging, or ingress — declare them on the pool's
-resources as described in
-[Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx).
-:::
 
 Click **Add Worker Node Pool** to open the pool dialog. You can add multiple pools.
 

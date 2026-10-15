@@ -98,6 +98,10 @@ For the dedicated-registry procedure and its constraints, see [Choose the Image 
 The registry binding is read only when the cluster is first created. Changing or removing `cpaas.io/registry-reference` on an existing `Cluster` does not move that cluster to another registry. A dedicated registry is configured through YAML only; the web UI workflow always uses the registry of the `global` cluster.
 :::
 
+### 7. Node Labels and Taints
+
+To give the nodes of a pool their own labels, annotations, or taints — for example to reserve dedicated pools for monitoring, logging, or ingress — declare them on the pool's resources as described in [Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx). Plan them before you create the pools: a `Machine` label reaches its `Node` only after label synchronization is enabled on `capi-controller-manager`, which that page also covers. This applies to every node pool, whether the cluster is created through the web UI or with YAML; the web UI node pool steps do not set labels or taints.
+
 ---
 
 ## Using the Web UI
@@ -162,13 +166,6 @@ The control plane node pool is fixed at 3 replicas for high availability.
 **Validation**: The associated IP Pool must have sufficient available IP addresses (≥ 3).
 
 ### Step 3: Worker Node Pools
-
-:::info
-To put labels and taints on the nodes a pool creates — for example to reserve
-dedicated pools for monitoring, logging, or ingress — declare them on the pool's
-resources as described in
-[Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx).
-:::
 
 You can add multiple worker node pools. Each pool has the following configuration:
 
