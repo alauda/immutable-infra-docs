@@ -203,7 +203,7 @@ This section covers the external LoadBalancer endpoint, which the baseline clust
 
 | Parameter | Placeholder | Required | Validation or Notes | Example | Actual Value |
 |-----------|-------------|----------|---------------------|---------|--------------|
-| Control plane VIP or FQDN | `<vip>` | Yes | The frontend address is allocated and stable. An FQDN is accepted for an external LoadBalancer only, and requires DNS and API server certificate SAN planning; a Self-built VIP must be IPv4. | `10.10.10.10` | - |
+| Control plane VIP | `<vip>` | Yes | The frontend address is allocated, stable, and always an IP address — the external load balancer VIP, or an IPv4 address for Self-built VIP. Domain names are not supported for the cluster endpoint. | `10.10.10.10` | - |
 | API server port | `<api_server_port>` | Yes | The default port is `6443`. | `6443` | - |
 | Listener mode | - | Yes | Layer 4 TCP forwarding with TLS passthrough. | `TCP` | - |
 | Backends | - | Yes | Every planned control-plane node IP is registered on backend port `6443`; worker IPs are excluded. | `3 control-plane IPs` | - |

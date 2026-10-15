@@ -191,7 +191,7 @@ This step has two parts: the HCS infrastructure resources and the control plane 
 |-------|------|----------|-------------|
 | VIP Subnet Name | dropdown | Yes | Subnet that holds the ELB VIP. Must be one of the subnets added above. |
 | VIP Address | IP picker | Yes | Fixed VIP for the control plane ELB. |
-| VIP Domain Name | text | No | Optional domain for the VIP. If set, configure HCS Cloud DNS Private Zones so the domain resolves to the VIP; the cluster does not create this record. |
+| VIP Domain Name | text | No | Leave empty. Cluster access by domain is not supported — the field only backfills the derived cluster endpoint, and the API server certificate is issued by the cluster's own CA. |
 | L4 Virtual Subnet Name | dropdown | Yes | Subnet for the L4 Hybrid Load Balancing IPs. |
 | L4 Virtual Subnet IP 1 / IP 2 | IP picker | Yes | Two fixed L4 IP addresses. |
 | L7 Virtual Subnet Name | dropdown | Yes | Subnet for the L7 Hybrid Load Balancing IPs. |
@@ -670,7 +670,7 @@ The HCS provider creates an Elastic Load Balance (ELB) on the HCS platform for t
 
 For the documented HCS workflow, provide `vipAddress`, `elbVirsubnetL4Ips`, and `elbVirsubnetL7Ips`. Each `elbVirsubnetL4Ips[].ips` and `elbVirsubnetL7Ips[].ips` entry must contain two IPs.
 
-If you set `vipDomainName`, configure HCS Cloud DNS Private Zones so that the domain resolves to `vipAddress`.
+Leave `vipDomainName` unset — cluster access by domain is not supported; see the field table below.
 
 List every cluster subnet in `spec.network.subnets` before you reference it anywhere else. `vipSubnetName`, `elbVirsubnetL4Ips[].subnetName`, `elbVirsubnetL7Ips[].subnetName`, and the `subnetName` values used by `HCSMachineConfigPool` must all exist in `spec.network.subnets`.
 
@@ -692,7 +692,6 @@ spec:
   controlPlaneLoadBalancer:
     vipAddress: <control-plane-vip-address>
     vipSubnetName: <vip-subnet-name>
-    vipDomainName: <control-plane-vip-domain-name>
     elbVirsubnetL4Ips:
       - subnetName: <subnet-name>
         ips:
@@ -733,7 +732,7 @@ spec:
 | `.spec.controlPlaneLoadBalancer` | object | Yes | ELB settings for the provider-created control plane ELB |
 | `.spec.controlPlaneLoadBalancer.vipAddress` | string | Yes | Fixed VIP for the control plane ELB |
 | `.spec.controlPlaneLoadBalancer.vipSubnetName` | string | Yes | Subnet name that contains the ELB VIP. This subnet must also appear in `.spec.network.subnets` |
-| `.spec.controlPlaneLoadBalancer.vipDomainName` | string | No | Domain name for the VIP. Configure HCS Cloud DNS Private Zones so it resolves to `vipAddress` |
+| `.spec.controlPlaneLoadBalancer.vipDomainName` | string | No | Leave unset. The provider only uses it to backfill the derived `controlPlaneEndpoint`; cluster access by domain is not supported, and the API server certificate can only be issued by the cluster's own CA |
 | `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[]` | array | Yes | L4 virtual subnet IP groups used by Hybrid Load Balancing |
 | `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[].subnetName` | string | Yes | Subnet name for the L4 virtual subnet IPs. This subnet must also appear in `.spec.network.subnets` |
 | `.spec.controlPlaneLoadBalancer.elbVirsubnetL4Ips[].ips[]` | string | Yes | Two fixed L4 virtual subnet IPs |
