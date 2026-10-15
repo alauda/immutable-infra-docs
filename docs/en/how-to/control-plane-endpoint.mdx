@@ -34,13 +34,13 @@ Provision and validate the load balancer before you apply the Cluster API resour
 | Requirement | Contract |
 |---|---|
 | Listener | Use Layer 4 TCP forwarding with TLS passthrough. The Kubernetes API server, not the load balancer, terminates TLS. |
-| Frontend | Use one stable VIP or FQDN and TCP port `6443`. Reserve the address before cluster creation. |
+| Frontend | Use one stable VIP (an IP address) and TCP port `6443`. Reserve the address before cluster creation. |
 | Backends | Add every control-plane node IP on TCP port `6443`. Do not add worker nodes. |
 | Health check | Prefer an HTTPS check to `https://<control-plane-node-ip>:6443/healthz` and require HTTP `200`. If the device supports only TCP checks, document that the check proves port reachability but not API-server health. |
 | Backend ownership | The load balancer owner must update backend membership when control-plane nodes are added, replaced, or removed. The DCS and vSphere providers do not manage external load balancer backends. |
 | Bootstrap reachability | The bootstrap node or current management cluster must reach the frontend endpoint while Cluster API creates the control plane. |
 | Node reachability | All control-plane nodes must reach the endpoint. Workload-cluster endpoints must also be reachable from the `global` cluster. |
-| Name and certificate | If the frontend is an FQDN, create DNS before cluster creation and include the FQDN in the API server certificate SANs. |
+| Name and certificate | Do not put a DNS name (FQDN) in front of the cluster endpoint — cluster access by domain is not supported. The API server certificate is issued by the cluster's own CA, so a customer-issued certificate cannot be served on the endpoint, and a domain without that certificate defeats its usual purpose. |
 
 For ACP port requirements, use the authoritative pages instead of copying the complete port matrix into this documentation:
 
