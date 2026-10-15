@@ -2427,8 +2427,8 @@ For this fresh DR installation, each final Global cluster must report `data.read
 
 Run Steps 1 through 9 for both the primary and standby `global` clusters.
 
-<Directive type="warning" title="Use two separate bootstrap nodes">
-  Use two independent bootstrap nodes on every provider, one for the primary installation and one for the standby. Do not reuse the same bootstrap cluster for both sides: the bootstrap environment holds installer state, the embedded Registry, and the provider resources staged for import — on Bare Metal additionally AppRelease objects, Registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state. Sharing one bootstrap pollutes the two `global` installations and can make import, handoff, or cleanup act on the wrong side. Reusing a single bootstrap node for both sides has not been validated on any provider.
+<Directive type="warning" title="Bare Metal only: use two separate bootstrap nodes">
+  Use two independent bootstrap nodes, one for the primary installation and one for the standby. Do not reuse the same bootstrap cluster for both sides. The bootstrap environment holds installer state, AppRelease objects, Registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it pollutes the two `global` installations and can make handoff or cleanup act on the wrong side.
 </Directive>
 
 Use the provider-specific installer configuration differences for both sides:
