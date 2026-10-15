@@ -587,11 +587,11 @@
       "updated_at": "2026-10-15T04:32:00Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
-      "sha256": "e50d50484ab633cd681411cd8bf32fc700248165881cce58ac36bf6eef7ab51f",
-      "size": 23629,
-      "description": "Disaster recovery for a `global` cluster on Immutable Infrastructure. Deploy-time configuration lives in the installation guide: shared encryption provider, etcd `serverCertSANs`, the `dcs-import-extra-resources` ConfigMap, the encryption provider Secret imported into each final `global`, and the etcd Synchronizer on the standby. Specifies the Platform Access Address and bidirectional ports `443`, `80`, `6443`, `11443`, `2379`; observability placement (each `global` observes only itself); the operational scope, warning to verify consistency before the synchronizer is uninstalled; and the provider-neutral failover sequence: fence the primary, confirm zero differences, uninstall the synchronizer from the old standby, switch the platform domain, reinstall with reversed values. Details the Bare Metal DR model (split system-agent identity, read-only shared auth on the standby, shared ServiceAccount signing key, synchronization rules, acceptance, troubleshooting). Provider notes cover DCS failover checks: workload `Cluster`/`Machine`/`DCSMachine` intact, the `global-` prefix as DR ownership marker, both Secrets on the active side.",
+      "sha256": "3087554309ca13b9fd001af6c4274b0c1c80152d17ba9e82dc00b561e71d5556",
+      "size": 23732,
+      "description": "Disaster recovery for a `global` cluster on Immutable Infrastructure. Deploy-time configuration lives in the installation guide: two bootstrap nodes (one per side), shared encryption provider, etcd `serverCertSANs`, the `dcs-import-extra-resources` ConfigMap, the encryption provider Secret imported into each final `global`, and the etcd Synchronizer on the standby. Specifies the Platform Access Address and bidirectional ports `443`, `80`, `6443`, `11443`, `2379`; observability placement (each `global` observes only itself); the operational scope, warning to verify consistency before the synchronizer is uninstalled; and the provider-neutral failover sequence: fence the primary, confirm zero differences, uninstall the synchronizer from the old standby, switch the platform domain, reinstall with reversed values. Details the Bare Metal DR model (split system-agent identity, read-only shared auth on the standby, shared ServiceAccount signing key, synchronization rules, acceptance, troubleshooting). Provider notes cover DCS failover checks: workload `Cluster`/`Machine`/`DCSMachine` intact, the `global-` prefix as DR ownership marker, both Secrets on the active side.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-15T06:05:11Z"
+      "updated_at": "2026-10-15T06:12:16Z"
     },
     "docs/en/global/index.mdx": {
       "sha256": "24838351357292e96480d02f4e62ce8b82d5d978a17bfd66604ebd3c390e7f4b",
@@ -601,11 +601,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "8464c764107751e85c89efe43f56e89446c3e885fc340765454988c28fadfcc7",
-      "size": 175798,
-      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers when to use this path, the required `global` / `global-` naming convention, bootstrap node hardware, operating system and network requirements, compatibility and version inputs, provider-package delivery, Bare Metal OS image import and image catalog preparation, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification and provider-resource handoff, optional disaster recovery deployment (shared encryption configuration and etcd SANs, the platform-domain sequence including switching back to the primary before installing etcd-sync), preparing a Bare Metal `global` as a management cluster, decommissioning gates, and a worked DCS `global` manifest.",
+      "sha256": "c4e0160d103a0ba926649a4137a087900f0feb8acccae1a7e5eed61df7161fa8",
+      "size": 176141,
+      "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers when to use this path, the required `global` / `global-` naming convention, bootstrap node hardware, operating system and network requirements, compatibility and version inputs, provider-package delivery, Bare Metal OS image import and image catalog preparation, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification and provider-resource handoff, optional disaster recovery deployment (shared encryption configuration and etcd SANs, two separate bootstrap nodes on every provider, the platform-domain sequence including switching back to the primary before installing etcd-sync), preparing a Bare Metal `global` as a management cluster, decommissioning gates, and a worked DCS `global` manifest.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-15T06:05:11Z"
+      "updated_at": "2026-10-15T06:12:16Z"
     },
     "docs/en/global/upgrade.mdx": {
       "sha256": "31f29703232fb8de969d32a9f2519efde28e3c181867990ab1e76485cf2a2337",

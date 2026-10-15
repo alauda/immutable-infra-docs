@@ -33,7 +33,7 @@ For a non-Alauda OS such as Ubuntu or RHEL, use <ExternalSiteLink name="acp" hre
 
 The following prerequisites apply to every provider:
 
-- A bootstrap node that meets the [Bootstrap Node Requirements](#bootstrap-host-requirements).
+- A bootstrap node that meets the [Bootstrap Node Requirements](#bootstrap-host-requirements). A disaster recovery deployment needs two, one for the primary and one for the standby `global` cluster; see [Install Primary and Standby Clusters](#install-primary-and-standby-clusters).
 - The Core Package from the Customer Portal.
 - The Alauda Container Platform Kubeadm Provider package.
 - The infrastructure provider package for your target platform.
@@ -2427,8 +2427,8 @@ For this fresh DR installation, each final Global cluster must report `data.read
 
 Run Steps 1 through 9 for both the primary and standby `global` clusters.
 
-<Directive type="warning" title="Bare Metal only: use two separate bootstrap nodes">
-  Use two independent bootstrap nodes, one for the primary installation and one for the standby. Do not reuse the same bootstrap cluster for both sides. The bootstrap environment holds installer state, AppRelease objects, Registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state; sharing it pollutes the two `global` installations and can make handoff or cleanup act on the wrong side.
+<Directive type="warning" title="Use two separate bootstrap nodes">
+  Use two independent bootstrap nodes on every provider, one for the primary installation and one for the standby. Do not reuse the same bootstrap cluster for both sides: until handoff, the bootstrap environment carries the installer, the embedded Registry, and the provider resources of the `global` cluster it installs — on Bare Metal additionally AppRelease objects, Registry Secrets, `MachineRegistration`, `SeedImage`, and handoff state. Sharing one bootstrap environment pollutes the two `global` installations and can make handoff or cleanup act on the wrong side.
 </Directive>
 
 Use the provider-specific installer configuration differences for both sides:

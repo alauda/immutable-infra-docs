@@ -19,6 +19,7 @@ Use [Optional Disaster Recovery Deployment](./install.mdx#optional-disaster-reco
 
 That deployment procedure is the authoritative source for the installation-time DR configuration, including:
 
+- Each side is installed from its own bootstrap node: two bootstrap nodes in total, on every provider.
 - Primary and standby clusters use the same Kubernetes API server encryption provider configuration.
 - The `KubeadmControlPlane` etcd server certificate SAN list includes both the primary and standby control plane VIPs and the Platform Access Address. This list is separate from the platform `console.cert` SAN list.
 - Huawei DCS deployments reference the shared encryption provider Secret from `DCSCluster.spec.encryptionProviderConfigRef`. The Secret must exist in each final `global` cluster, not only in the bootstrap cluster that installed it.
