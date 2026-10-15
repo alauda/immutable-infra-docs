@@ -76,6 +76,7 @@ Before you begin, ensure the following conditions are met:
 9. The platform can process the cluster annotations required to install the network plugin.
 10. The vCenter account referenced by `VSphereCluster.spec.identityRef` satisfies the Custom Fields privilege requirement in [VMware vSphere Provider Installation](../install/vmware-vsphere.mdx#prerequisites).
 11. The `global` cluster is the active management cluster, not a disaster-recovery standby. See [Standby Management Clusters](../install/vmware-vsphere.mdx#standby-management-cluster).
+12. Node labels, annotations, and taints for any dedicated node pools are planned. They are declared on the pool's resources, as described in [Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx); a `Machine` label reaches its `Node` only after label synchronization is enabled on `capi-controller-manager`.
 
 ## Control Plane Endpoint Modes \{#control-plane-endpoint-modes}
 
