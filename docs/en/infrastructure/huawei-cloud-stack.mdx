@@ -22,7 +22,7 @@ Use this page as the preparation checklist. After you complete it, continue with
 :::info
 **Namespace Requirement**
 
-All HCS infrastructure resources must be deployed in the `cpaas-system` namespace to ensure proper integration with the platform as business clusters.
+All HCS infrastructure resources must be deployed in the `cpaas-system` namespace to ensure proper integration with the platform as workload clusters.
 :::
 
 ## Before Writing YAML
@@ -47,7 +47,7 @@ Prepare the following inputs before you create or edit any cluster manifests:
 | Control plane and worker hostnames and static IPs | `HCSMachineConfigPool` | HCS subnet planning | Yes for static IP workflows | Prepare at least one entry per planned replica |
 | `vipAddress` and `vipSubnetName` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS ELB address plan | Yes | `vipAddress` must belong to `vipSubnetName` |
 | `elbVirsubnetL4Ips` and `elbVirsubnetL7Ips` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS ELB address plan | Yes | Each L4 or L7 entry must include exactly two IPs |
-| `vipDomainName` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS Cloud DNS Private Zones | Recommended | Configure the domain so it already resolves to `vipAddress` |
+| `vipDomainName` | `HCSCluster.spec.controlPlaneLoadBalancer` | HCS Cloud DNS Private Zones | Not recommended | Leave unset. The provider only uses it to backfill the derived `controlPlaneEndpoint`; cluster access by domain is not supported — the API server certificate is issued by the cluster's own CA, so it cannot carry a customer-issued certificate |
 | Control plane HA placement policy | `HCSCluster.spec.controlPlaneHA` | HCS scheduling policy plan | No | Required only when you enable provider-managed control-plane server groups. Choose `anti-affinity` or `soft-anti-affinity` |
 | `controlPlaneEndpoint` | `Cluster.status` / derived cluster endpoint | Controller-managed | No | Do not prepare or write this field in create manifests; the controller fills it after the ELB is ready |
 
@@ -153,9 +153,8 @@ This documentation uses the fixed-address ELB workflow. Prepare all ELB-related 
 - `vipAddress`
 - `elbVirsubnetL4Ips` with exactly two L4 IPs
 - `elbVirsubnetL7Ips` with exactly two L7 IPs
-- Optional `vipDomainName`
 
-If you set `vipDomainName`, configure HCS Cloud DNS Private Zones so the domain already resolves to `vipAddress`.
+Leave `vipDomainName` unset: cluster access by domain is not supported (the API server certificate can only be issued by the cluster's own CA), and the provider only uses the field to backfill the derived `controlPlaneEndpoint`.
 
 ### Operational constraints
 

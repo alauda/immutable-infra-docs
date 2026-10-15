@@ -105,7 +105,7 @@ The host firewall on an Alauda OS node is preconfigured and maintained by the pl
 
 **Scope of the table.** These are the paths for workload-cluster hosts, which is what this page creates. Two neighbouring cases are documented elsewhere and are not covered above:
 
-- **Bootstrap.** While `global` itself is still being installed, its hosts register against the temporary bootstrap endpoint and a different set of ports applies — see [Bootstrap host network](../global/install.mdx#bootstrap-host-network).
+- **Bootstrap.** While `global` itself is still being installed, its hosts register against the temporary bootstrap endpoint and a different set of ports applies — see [Bootstrap node network](../global/install.mdx#bootstrap-host-network).
 - **`global` hosts after handoff.** A `global` host's system agent uses the Global control-plane endpoint rather than the platform ingress path, and in a DR pair it uses the local control-plane VIP on `6443` directly. See [Endpoint and Identity](../global/disaster_recovery.mdx#endpoint-and-identity).
 
 A `SeedImage` built during the bootstrap phase points at the bootstrap endpoint and must not be reused after handoff; create new `MachineRegistration` and `SeedImage` objects on the active `global` cluster. A workload `SeedImage` created on the `global` cluster stays valid across a handoff, because its registration URL is the platform domain rather than a bootstrap address.
@@ -183,6 +183,10 @@ Classify **every** disk and virtual disk (VD) on each host before you boot the `
 - Set the boot order so the host boots the virtual CD / ISO first.
 
 Use only stable storage identities reported by the registered inventory. Linux paths such as `/dev/sdX`, `/dev/vdX`, `/dev/nvmeXnY`, and `/dev/mapper/mpathX` are runtime paths and must not be placed in `MachineInventory.spec.storage`.
+
+### 8. Node Labels and Taints
+
+To give the nodes of a pool their own labels, annotations, or taints — for example to reserve dedicated pools for monitoring, logging, or ingress — declare them on the pool's resources as described in [Configure Annotations, Labels, and Taints on Nodes](../how-to/node-configuration.mdx). Plan them before you create the pools: a `Machine` label reaches its `Node` only after label synchronization is enabled on `capi-controller-manager`, which that page also covers.
 
 ---
 
