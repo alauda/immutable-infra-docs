@@ -53,7 +53,7 @@ After installation, the Cluster API controllers that manage the `global` cluster
 
 ### Step 1 — Upgrade Kube-OVN
 
-Read the **kube-ovn (chart)** value from the target OS Support Matrix row, then follow the shared [provider-version-specific Kube-OVN procedure](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane) with `<cluster-name>` set to `global`.
+Read the **kube-ovn (chart)** value from the target OS Support Matrix row, then follow the shared [provider-version-specific Kube-OVN procedure](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane) with `<cluster-name>` set to `global`. In a cross-version upgrade, perform this step once, before the first Kubernetes hop, and skip it on every later hop.
 
 That procedure first checks the installed provider revision, then selects the supported new or legacy flow, handles the Kube-OVN chart-name boundary at `v4.4`, and verifies the chart name, target revision, installed revision, phase, and conditions. Use the `global` kubeconfig for both the provider and `cni-kube-ovn` `AppRelease` checks. Do not begin control-plane replacement until all shared verification criteria pass.
 

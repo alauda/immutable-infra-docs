@@ -180,7 +180,7 @@ The bare-metal provider uses `base-image` for reprovisioning and does not rebuil
 
 ## Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
 
-Follow the Bare Metal `v1.0.0+` flow in [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane). Bare Metal has no earlier supported provider flow in this documentation.
+Follow the Bare Metal `v1.0.0+` flow in [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane). Bare Metal has no earlier supported provider flow in this documentation. In a cross-version upgrade, perform this step once, before the first Kubernetes hop, with the chart version of the target release, and skip it on every later hop.
 
 The shared procedure verifies `BaremetalCluster.spec.networkType`, updates the CAPI `Cluster` annotation, lets the provider reconcile the complete chart source and specification, and checks the chart name, requested revision, installed revision, phase, and conditions. Do not patch the `AppRelease` source manually.
 
@@ -250,12 +250,13 @@ For earlier versions, a bootstrap-template change is needed only when the releas
 
 Kubernetes control planes must move through supported minor-version hops. Use [Preparing for Cross-Version Upgrades](./index.mdx#cross-version-preparation) to identify and pre-stage every intermediate ACP row.
 
-For each intermediate row, and finally for the target row:
+Before the first hop, upgrade Kube-OVN once to the **kube-ovn (chart)** version of the target row and wait for `phase=Success`, as described in [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane). Intermediate hops do not change Kube-OVN.
+
+Then, for each intermediate row, and finally for the target row:
 
 1. Import that row's OS image pair and add its Kubernetes version to `elemental-image-catalog`, as described in [Update the Image Catalog](#update-the-image-catalog).
-2. Upgrade Kube-OVN to that row's **kube-ovn (chart)** version and wait for `phase=Success`.
-3. Upgrade the control plane to that row's Kubernetes version and wait for every control-plane node to become `Ready`.
-4. Upgrade every worker `MachineDeployment` to the same Kubernetes version and wait for the rollout to complete before starting the next hop.
+2. Upgrade the control plane to that row's Kubernetes version and wait for every control-plane node to become `Ready`.
+3. Upgrade every worker `MachineDeployment` to the same Kubernetes version and wait for the rollout to complete before starting the next hop.
 
 The version values always come from the OS Support Matrix; they are not fixed examples in this guide. The bare-metal rollout strategy already serializes node replacement, so cross-version upgrades do not require additional pool capacity beyond what is needed for a same-minor upgrade.
 

@@ -174,7 +174,7 @@ Expect `Ready=True`, `MembersValid=True`, `MembersUnique=True`, and `PersistentD
 
 ### Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
 
-Follow [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane) and select the VMware vSphere tab that matches the **installed** provider version: a cluster still on `v1.0.15` or earlier follows the legacy tab, and a Kube-OVN `v4.4` or later target requires upgrading the provider to `v1.0.16` or later first. The shared procedure includes the vSphere-specific network annotation check, the chart-name migration at Kube-OVN `v4.4`, and the required `AppRelease` health checks. Do not patch the chart source by hand; the provider reconciles it from the annotation.
+Follow [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane) and select the VMware vSphere tab that matches the **installed** provider version: a cluster still on `v1.0.15` or earlier follows the legacy tab, and a Kube-OVN `v4.4` or later target requires upgrading the provider to `v1.0.16` or later first. The shared procedure includes the vSphere-specific network annotation check, the chart-name migration at Kube-OVN `v4.4`, and the required `AppRelease` health checks. Do not patch the chart source by hand; the provider reconciles it from the annotation. In a cross-version upgrade, perform this step once, before the first Kubernetes hop, with the chart version of the target release, and skip it on every later hop.
 
 ### Create the target machine templates \{#create-the-target-machine-templates}
 

@@ -75,11 +75,13 @@ After the Distribution Version upgrade completes:
 
 After upgrading the Distribution Version, upgrade Kubernetes and the Alauda OS image through the provider-specific Cluster API procedure.
 
-For Huawei DCS, Huawei Cloud Stack, VMware vSphere, and bare-metal clusters, upgrade the Kube-OVN chart for the current upgrade hop **before** changing `KubeadmControlPlane`. Wait until the workload cluster's `cni-kube-ovn` `AppRelease` reports the target installed revision and `phase=Success`, then upgrade the control plane, followed by worker nodes. Repeat this Kube-OVN-first ordering for every intermediate Kubernetes minor in a cross-version upgrade.
+For Huawei DCS, Huawei Cloud Stack, VMware vSphere, and bare-metal clusters, upgrade the Kube-OVN chart to the version of the target ACP release **before** changing `KubeadmControlPlane`. Wait until the workload cluster's `cni-kube-ovn` `AppRelease` reports the target installed revision and `phase=Success`, then upgrade the control plane, followed by worker nodes. In a cross-version upgrade, upgrade Kube-OVN only once, before the first Kubernetes hop; the intermediate Kubernetes hops do not change Kube-OVN.
 
 ### Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
 
-Use this section as the authoritative Kube-OVN procedure for workload and `global` clusters. For every Kubernetes and OS hop, read the **kube-ovn (chart)** version from the matching [OS Support Matrix](../overview/os-support-matrix.mdx) row, complete the provider-version-specific procedure below, and verify the resulting `AppRelease` before changing `KubeadmControlPlane`.
+Use this section as the authoritative Kube-OVN procedure for workload and `global` clusters. Read the **kube-ovn (chart)** version from the target ACP release row of the [OS Support Matrix](../overview/os-support-matrix.mdx), complete the provider-version-specific procedure below, and verify the resulting `AppRelease` before changing `KubeadmControlPlane`.
+
+Run this procedure once per upgrade, even when the upgrade spans several Kubernetes minors. Kube-OVN moves directly to the chart version of the target release before the first Kubernetes hop and stays at that version for every intermediate hop; do not upgrade it to the chart versions of intermediate rows.
 
 Run provider-version checks and `Cluster` or infrastructure-cluster commands against the management cluster. Run `cni-kube-ovn` `AppRelease` commands against the cluster being upgraded. When upgrading the `global` cluster, both resources are on the `global` cluster, so use the `global` kubeconfig for all commands.
 
@@ -271,7 +273,7 @@ kubectl get apprelease cni-kube-ovn -n cpaas-system \
 Before changing the control plane, verify all of the following:
 
 - `spec.source.charts[0].name` matches the chart-name boundary above.
-- `targetRevision` and `installedRevision` both match the OS Support Matrix row.
+- `targetRevision` and `installedRevision` both match the **kube-ovn (chart)** value of the target release row in the OS Support Matrix.
 - `phase` is `Success`.
 - The `Sync` and `Health` conditions are `True`.
 
@@ -283,7 +285,7 @@ kubectl describe apprelease cni-kube-ovn -n cpaas-system
 
 #### Restore Kube-OVN During Stage-1 Recovery \{#restore-kube-ovn-during-stage-1-recovery}
 
-Use this recovery only when no control-plane `Machine` on the target Kubernetes minor has been created. If a target-minor control-plane machine has joined, keep the target Kube-OVN baseline and use forward recovery or the supported backup or DR restore procedure.
+Use this recovery only when no control-plane `Machine` on a newer Kubernetes minor has been created. In a cross-version upgrade, this applies only while the first Kubernetes hop has not created such a machine; when a later hop fails, keep the target Kube-OVN baseline and recover only that hop's manifests. If a newer-minor control-plane machine has joined, keep the target Kube-OVN baseline and use forward recovery or the supported backup or DR restore procedure.
 
 Restore the previous chart version on the CAPI `Cluster` in the management cluster:
 
@@ -352,9 +354,11 @@ bash upgrade.sh --only-sync-image
 
 See <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html#sync-upgrade-artifacts" children="Sync upgrade artifacts" /> for command options.
 
-This places the intermediate-version CoreDNS, etcd, and Kube-OVN chart images in the registry so the staged Kubernetes rollout can pull them when `KubeadmControlPlane` is patched to the matching OS Support Matrix row. In an air-gapped environment, missing intermediate images prevent the new control plane components from starting.
+This places the intermediate-version CoreDNS and etcd images in the registry so the staged Kubernetes rollout can pull them when `KubeadmControlPlane` is patched to the matching OS Support Matrix row. In an air-gapped environment, missing intermediate images prevent the new control plane components from starting.
 
-For a required Core hop, prepare and upgrade Aligned plugins as directed by the ACP Phase 1 procedure. For a Kubernetes/OS-only intermediate row, Aligned plugins do not need an extra `violet push`; the Kube-OVN chart used by that intermediate Kubernetes hop is covered by the Core image sync above.
+Intermediate hops do not upgrade Kube-OVN, so only the Kube-OVN chart of the target release is required. It is prepared together with the target release in Phase 1.
+
+For a required Core hop, prepare and upgrade Aligned plugins as directed by the ACP Phase 1 procedure. For a Kubernetes/OS-only intermediate row, Aligned plugins do not need an extra `violet push`.
 
 ### Step 2 — Stage intermediate OS images for the provisioning mechanism
 
@@ -367,7 +371,9 @@ The control plane and worker rollouts then step through the intermediate OS imag
 
 ### Step 3 — Apply the platform-specific procedure for each intermediate Kubernetes/OS row
 
-Repeat the platform-specific Phase 2 procedure for each intermediate Kubernetes/OS row in turn, using that row in [OS Support Matrix](../overview/os-support-matrix.mdx) for Kube-OVN, `KubeadmControlPlane`, and `MachineDeployment` values. For each hop, upgrade Kube-OVN first and wait for `phase=Success`, then upgrade the control plane, followed by workers. On the hop to Kubernetes 1.35, also apply the [required kubelet patch](#kubernetes-1-35-kubelet-patch) to the control-plane and worker bootstrap configurations. Complete the whole hop before starting the next one. After all intermediate hops succeed, apply the same procedure once more for the target row.
+Before the first hop, complete [Upgrade Kube-OVN Before the Control Plane](#upgrade-kube-ovn-before-the-control-plane) once, using the **kube-ovn (chart)** version from the target release row, and wait for `phase=Success`. Do not upgrade Kube-OVN again during the hops, including the final hop to the target row.
+
+Repeat the platform-specific Phase 2 procedure for each intermediate Kubernetes/OS row in turn, using that row in [OS Support Matrix](../overview/os-support-matrix.mdx) for `KubeadmControlPlane` and `MachineDeployment` values, and skip its Kube-OVN step. For each hop, upgrade the control plane, followed by workers. On the hop to Kubernetes 1.35, also apply the [required kubelet patch](#kubernetes-1-35-kubelet-patch) to the control-plane and worker bootstrap configurations. Complete the whole hop before starting the next one. After all intermediate hops succeed, apply the same procedure once more for the target row.
 
 ---
 
