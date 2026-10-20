@@ -566,11 +566,11 @@
       "updated_at": "2026-10-15T04:32:00Z"
     },
     "docs/en/create-cluster/huawei-dcs.mdx": {
-      "sha256": "22731de80279829240f1d7d3285906323a0ac46e347303286c56190818b91bfd",
-      "size": 57214,
+      "sha256": "977938de128ce69a513bc2cef33c817862ce02d2de808f757312e7a012283053",
+      "size": 57404,
       "description": "Creating Kubernetes clusters on Huawei DCS through the web UI and YAML manifests. Covers prerequisites (provider plugins, VM template, DCS API and Ignition ISO upload connectivity, workload-cluster image registry, and planning node labels, annotations, and taints for node pools), the control plane endpoint modes - an external LoadBalancer VIP (an IP address; domain names are not supported for the cluster endpoint) or DCS Provider `v1.0.22+` with ACP `v4.4+` Self-built VIP with its IPv4 VIP/VRID/interface constraints - workload cluster naming (never `global` or the `global-` prefix), resolving placeholder values from the `global` cluster and magic tokens, persistent disks and additional NICs, DRS control-plane HA, bootstrap and `alive` verification, single-control-plane behavior, required Cluster annotations, how the encryption provider configuration is delivered, and troubleshooting.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-15T04:32:00Z"
+      "updated_at": "2026-10-22T00:00:00Z"
     },
     "docs/en/create-cluster/index.mdx": {
       "sha256": "8dc52cc209252f9d6399633850e5e13865b79c2ec7dbcd114cbddd454bd1fa5a",
@@ -601,18 +601,18 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "c4e0160d103a0ba926649a4137a087900f0feb8acccae1a7e5eed61df7161fa8",
-      "size": 176141,
+      "sha256": "82895b4a0d43f30c9025f11752de4dabb23df13502653112365998189a3a60f8",
+      "size": 176190,
       "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers when to use this path, the required `global` / `global-` naming convention, bootstrap node hardware, operating system and network requirements, compatibility and version inputs, provider-package delivery, Bare Metal OS image import and image catalog preparation, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification and provider-resource handoff, optional disaster recovery deployment (shared encryption configuration and etcd SANs, two separate bootstrap nodes on every provider, the platform-domain sequence including switching back to the primary before installing etcd-sync), preparing a Bare Metal `global` as a management cluster, decommissioning gates, and a worked DCS `global` manifest.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-15T06:12:16Z"
+      "updated_at": "2026-10-22T00:00:00Z"
     },
     "docs/en/global/upgrade.mdx": {
-      "sha256": "31f29703232fb8de969d32a9f2519efde28e3c181867990ab1e76485cf2a2337",
-      "size": 21813,
+      "sha256": "47da62129cf7e425b394d9237eea75390ccfcc692a45e4f5ae8e13e5f68145f9",
+      "size": 22088,
       "description": "Phase 2 (Kubernetes and Alauda OS image) of the two-phase `global` cluster upgrade on Immutable Infrastructure, for Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal: upgrade Kube-OVN first, then create new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources for the target image (Bare Metal resolves it from `Machine.spec.version` through `elemental-image-catalog`), retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment`, set CoreDNS and etcd tags from the OS Support Matrix row, add the `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch when targeting Kubernetes 1.35, and keep `rollingUpdate.maxSurge: 0` so pool-declared persistent disks and fixed identities are reused. Includes stage-based recovery rules and the single-control-plane HCS exclusion.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-10-22T00:00:00Z"
     },
     "docs/en/how-to/configure-fixed-install-disk-bare-metal.mdx": {
       "sha256": "6a9493a1e0fad0ffd82cfced1a6604eba80331ef87728ca6a052e64f7b62b7b0",
@@ -1005,11 +1005,11 @@
       "updated_at": "2026-10-12T06:10:11Z"
     },
     "docs/en/upgrade-cluster/huawei-dcs.mdx": {
-      "sha256": "846c7992be6857fcac09211de0611920648987c4ae689830dc93c5e5b060ad13",
-      "size": 22187,
+      "sha256": "ae26d89b19da24187b40ca4110addea9ed43f31039529b7f9741be30666f0247",
+      "size": 22554,
       "description": "Phase 2 Kubernetes and Alauda OS upgrade for Huawei DCS clusters. Requires DCS Provider `v1.0.22+` before Kube-OVN chart `v4.4+`, uses provider-managed repository reconciliation instead of manual AppRelease source edits, creates new machine templates for target images, updates Kubernetes/CoreDNS/etcd values from the same OS Support Matrix row, preserves pool-managed disks with `maxSurge = 0`, and explicitly keeps endpoint mode unchanged during routine upgrades.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-12T06:10:11Z"
+      "updated_at": "2026-10-22T00:00:00Z"
     },
     "docs/en/upgrade-cluster/index.mdx": {
       "sha256": "221934d7607be194ff4214e520fdabe08035624578acdba157d215b9bb45a8d6",

@@ -220,7 +220,16 @@ Before you start, complete the shared [Upgrade Kube-OVN Before the Control Plane
 
    Updating only `spec.version` is not sufficient. The CoreDNS and etcd image tags must move together with the Kubernetes version because they are built from the same Alauda OS release; leaving them at the previous values can result in CoreDNS and etcd pods that do not match the new Kubernetes minor version.
 
-3. **Monitor the rolling update**
+3. **Update the `capi.cpaas.io/kubernetes` annotation on the `Cluster`**
+
+   Set the annotation to the value you just wrote to `KubeadmControlPlane.spec.version`, so that it keeps matching the control plane version:
+
+   ```bash
+   kubectl annotate cluster <cluster-name> -n cpaas-system \
+     capi.cpaas.io/kubernetes=<target-kubernetes-version> --overwrite
+   ```
+
+4. **Monitor the rolling update**
 
    ```bash
    kubectl get kubeadmcontrolplane <kcp-name> -n cpaas-system -w

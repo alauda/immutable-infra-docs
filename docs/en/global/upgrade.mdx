@@ -74,6 +74,7 @@ Update the control plane resources:
 - Set the CoreDNS and etcd image tags in `KubeadmControlPlane.spec.kubeadmConfigSpec.clusterConfiguration` from the same OS Support Matrix row.
 - When the target is Kubernetes 1.35 or later, update the control-plane kubelet patch in `KubeadmControlPlane.spec.kubeadmConfigSpec.files` in the same manifest edit.
 - Point `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` to the new `DCSMachineTemplate`.
+- After the `KubeadmControlPlane` edit, set the `capi.cpaas.io/kubernetes` annotation on the `global` `Cluster` to the new `KubeadmControlPlane.spec.version`: `kubectl annotate cluster global -n cpaas-system capi.cpaas.io/kubernetes=<target-kubernetes-version> --overwrite`.
 - Keep `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge: 0` when the cluster uses pool-managed persistent disks.
 
 Update worker node resources:
