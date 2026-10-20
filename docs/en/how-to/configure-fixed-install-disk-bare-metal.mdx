@@ -72,10 +72,12 @@ spec:
 
 The path is intentionally absent when the Live ISO starts. A filesystem label, GPT `PARTLABEL`, or `/dev/disk/by-label/*` path is not an alternative: these identify partitions, while Elemental requires a whole-disk install target.
 
-Create a `SeedImage` that references this MachineRegistration, or rebuild the existing SeedImage after changing the install device. That `SeedImage` must also carry the `state` partition sizing described in [Size COS_STATE before the first install](../create-cluster/bare-metal.mdx#size-cos-state) — the Elemental default of 8 GiB is too small once a host is upgraded to a different image, and the size cannot be changed without reinstalling the host.
+Create a `SeedImage` that references this MachineRegistration. That `SeedImage` must also carry the `state` partition sizing described in [Size COS_STATE before the first install](../create-cluster/bare-metal.mdx#size-cos-state) — the Elemental default of 8 GiB is too small once a host is upgraded to a different image, and the size cannot be changed without reinstalling the host.
 
-:::warning
-The MachineRegistration settings are embedded in the generated ISO. Patching the MachineRegistration does not change an ISO that was already built and downloaded. Rebuild the SeedImage, wait until it is ready, download the new ISO, and verify its checksum before booting hosts from it.
+:::info
+An ISO `SeedImage` embeds only two things: the registration client settings (`elemental.registration`: URL, CA certificate, and TPM mode) in `/livecd-cloud-config.yaml`, and `SeedImage.spec.cloud-config` in `/iso-config/cloud-config.yaml`. The `elemental.install` settings, including `install.device`, are not in the ISO. `elemental-register` fetches them from the MachineRegistration each time it registers, so a patched `install` section applies to every host that registers afterwards without rebuilding the ISO.
+
+Rebuild the SeedImage only when you change the registration settings, `SeedImage.spec.cloud-config` (for example the `COS_STATE` sizing), or the base ISO image. After a rebuild, wait until the SeedImage is ready, download the new ISO, and verify its checksum before booting hosts from it.
 :::
 
 ## Prepare Each Host
@@ -92,14 +94,39 @@ systemctl mask elemental-register-install.service
 systemctl reset-failed elemental-register-install.service
 ```
 
-Confirm that the ISO contains the manual gate:
+Confirm that the manual gate is in effect. The gate path is not stored in the ISO, because `/run/initramfs/live/livecd-cloud-config.yaml` carries only the registration settings. Check the two facts that decide the target instead: the MachineRegistration sets the gate, and this host registers against that MachineRegistration.
+
+On the `global` cluster, confirm the install device:
 
 ```bash
-grep -n -C 3 '/dev/elemental-install-target' \
-  /run/initramfs/live/livecd-cloud-config.yaml
+kubectl -n cpaas-system get machineregistration <cluster-name>-registration \
+  -o jsonpath='{.spec.config.elemental.install.device}{"\n"}'
 ```
 
-If the path is not present, the host did not boot the expected ISO. Do not continue.
+The output must be `/dev/elemental-install-target`. If it is not, correct the MachineRegistration before you continue. The host fetches the corrected value when it registers, so the ISO does not need to be rebuilt.
+
+Confirm that the Live ISO belongs to that MachineRegistration by comparing digests of the registration URL. Comparing digests keeps the registration token out of shell output and logs. On the `global` cluster:
+
+```bash
+printf '%s' "$(kubectl -n cpaas-system get machineregistration <cluster-name>-registration \
+  -o jsonpath='{.status.registrationURL}')" | sha256sum
+```
+
+On the host:
+
+```bash
+sed -n -E 's/^[[:space:]]+url:[[:space:]]*"?([^"]*)"?[[:space:]]*$/\1/p' \
+  /run/initramfs/live/livecd-cloud-config.yaml | head -n 1 | tr -d '\n' | sha256sum
+```
+
+The two digests must match. If they differ, the host booted an ISO built for a different MachineRegistration. Do not continue.
+
+On a first boot, the installer usually runs once before you mask it. When it has, its log shows the fetched gate path and the fail-closed result, which is direct evidence that the gate is in effect:
+
+```bash
+journalctl -u elemental-register-install.service --no-pager |
+  grep -E 'device: /dev/elemental-install-target|does not exist'
+```
 
 ### 2. Confirm That the Host Is Running from the Live ISO
 
@@ -339,7 +366,7 @@ After installation triggers a reboot:
 | `test -b /dev/elemental-install-target` fails. | The WWN path is wrong, missing, or does not resolve to a whole block device. Recheck `lsblk` and `/dev/disk/by-id`; do not start installation. |
 | More than one disk still has `COS_STATE` or `COS_PERSISTENT`. | A previous Elemental layout remains. Stop installation and clean every approved reinstall disk until `wipefs`, `blkid`, and `lsblk` all pass. |
 | The same physical disk has a different `/dev/sdX` name after reboot. | This is expected on some storage controllers. Compare WWN, serial number, size, and controller address instead of the kernel name. |
-| The MachineRegistration was patched, but the ISO still uses the old target. | Rebuild the SeedImage and download the newly generated ISO. MachineRegistration changes are not applied retroactively to an existing ISO. |
+| The installer uses a different target than the one now set in the MachineRegistration. | The ISO does not pin `install.device`; each installer run fetches it at registration. Use the digest check in step 1 to confirm that the host registers against this MachineRegistration, then restart `elemental-register-install.service` so that it fetches the current value. Rebuild the SeedImage only for registration or `cloud-config` changes. |
 | Registration works in the Live ISO, but the installed host has no network after reprovision. | Diagnose installed-system cloud-init and NetworkManager activation separately. The Live ISO `nmcli` profile is temporary and does not prove that persistent reprovision networking succeeded. |
 
 ## Limitations
