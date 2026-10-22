@@ -991,11 +991,11 @@
       "updated_at": "2026-10-22T05:03:53Z"
     },
     "docs/en/upgrade-cluster/bare-metal.mdx": {
-      "sha256": "6057cf0aae979ee49187d604ca379d3c4dab4cbf78b670f4200d7a4a2ced28a4",
-      "size": 43191,
-      "description": "Kubernetes and OS upgrade for bare-metal clusters, which replaces every node through `clean` and `reprovision` plans instead of running `kubeadm upgrade`. By default the platform upgrade does it automatically through every intermediate version: stage the OS images and `elemental-image-catalog` keys, including `<version>_etcd`, check `COS_STATE` free space, keep `maxSurge: 0` (`1` plus a spare host for a single-replica control plane), read the ten preflight checks, watch the `InfraClusterVersion`, and troubleshoot `RolloutFailed`, `NodeJoinFailed`, `PoolExhausted`, and `ImageMismatch` with `spec.rolloutAfter`, stopping `cluster-api-provider-baremetal-icv-controller` before manual changes; no rollback. Manual mode, selected with the `upgrade.alauda.io/mode=manual` label or `provider.icvController.enabled=false`, keeps the YAML control-plane and worker procedure, staged recovery, and ends with `infra-version complete`. Also covers storage compatibility on pre-storage hosts, partial-snapshot cleanup, and plan/inventory verification.",
+      "sha256": "b3361723ddcbf074190c6775e3fed7249174028550ef6ddbd6facac2018ca3b6",
+      "size": 43046,
+      "description": "Kubernetes and OS upgrade for bare-metal clusters, which replaces every node through `clean` and `reprovision` plans instead of running `kubeadm upgrade`. By default the platform upgrade does it automatically through every intermediate version: stage the OS images and `elemental-image-catalog` keys, including `<version>_etcd`, check `COS_STATE` free space, keep `maxSurge: 0` (`1` plus a spare host for a single-replica control plane), read the ten preflight checks, watch the `InfraClusterVersion`, and troubleshoot `RolloutFailed`, `NodeJoinFailed`, `PoolExhausted`, and `ImageMismatch` with `spec.rolloutAfter`, stopping `cluster-api-provider-baremetal-icv-controller` before manual changes; no rollback. Manual mode, selected per cluster with the `upgrade.alauda.io/mode=manual` label, keeps the YAML control-plane and worker procedure, staged recovery, and ends with `infra-version complete`. Also covers storage compatibility on pre-storage hosts, partial-snapshot cleanup, and plan/inventory verification.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-22T05:25:23Z"
+      "updated_at": "2026-10-22T08:05:15Z"
     },
     "docs/en/upgrade-cluster/huawei-cloud-stack.mdx": {
       "sha256": "722a5372a2d7eaa92f4e5678c9856a18b63450b7087d53986bb495bbb529f89d",

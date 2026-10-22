@@ -176,7 +176,9 @@ After you request the platform upgrade, the platform:
 1. Checks the cluster before changing anything and blocks the upgrade if a [preflight check](#preflight-checks) fails.
 2. Upgrades ACP Core and the Distribution Version.
 3. Upgrades CoreDNS and then Kube-OVN.
-4. Upgrades Kubernetes one minor version at a time through every intermediate version to the target. The control plane is replaced at every version. Worker node pools are replaced at the target version, and at an intermediate version only when the Kubernetes version skew policy requires it. The platform also sets the etcd image tag, adds the Kubernetes 1.35 kubelet setting when the version reaches 1.35, and updates the `capi.cpaas.io/kubernetes` annotation on the `Cluster`.
+4. Upgrades Kubernetes one minor version at a time through every intermediate version to the target. The control plane is replaced at every version.
+   {/* PENDING-REAL-02: worker skipping on intermediate versions is not yet validated on real hardware; revisit after REAL-02. */}
+   Worker node pools are replaced at the target version, and at an intermediate version only when the Kubernetes version skew policy requires it. The platform also sets the etcd image tag, adds the Kubernetes 1.35 kubelet setting when the version reaches 1.35, and updates the `capi.cpaas.io/kubernetes` annotation on the `Cluster`.
 
 The platform creates new `BaremetalMachineTemplate` resources for the replaced node groups and keeps the previous ones. It does not change the rollout strategy of the `KubeadmControlPlane` or the `MachineDeployment` resources.
 
@@ -234,6 +236,7 @@ c2     BaremetalCluster   v1.34.5-acp.5   v1.35.6-acp.9   Progressing   cluster-
 
 `CURRENT` advances after each intermediate version completes. `DESIRED` is the target Kubernetes version. `PHASE` moves from `Pending` to `Preparing` (planning, no change to the cluster yet), `Progressing` (replacing nodes), and `Succeeded`.
 
+{/* PENDING-REAL-02: worker skipping on intermediate versions is not yet validated on real hardware; revisit after REAL-02. */}
 Read the conditions, the planned versions, and the current step. A worker node pool that is not replaced at an intermediate version shows the step phase `Skipped`:
 
 ```bash
@@ -311,8 +314,6 @@ kubectl -n cpaas-system label cluster.cluster.x-k8s.io <cluster-name> upgrade.al
 ```
 
 The preflight result of a manual-mode cluster is the warning `ManualMode`: the platform does not check its images or settings, so confirm them yourself.
-
-To keep every bare-metal cluster out of automatic upgrades, install the Bare Metal provider with the plugin value `provider.icvController.enabled` set to `false` instead. The platform upgrade then neither upgrades Kubernetes on unlabeled bare-metal clusters nor waits for them, and you upgrade each cluster with the procedure below after the platform upgrade; no confirmation is needed for these clusters.
 
 ### Manual Upgrade Sequence \{#manual-sequence}
 
