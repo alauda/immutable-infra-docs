@@ -19,11 +19,22 @@ This section provides instructions for upgrading Kubernetes clusters managed by 
 
 Cluster upgrades on Immutable Infrastructure follow a two-phase approach:
 
-1. **Phase 1**: Upgrade ACP Core and the cluster Distribution Version through CVO.
+1. **Phase 1**: Upgrade ACP Core and the cluster Distribution Version through CVO. The platform also upgrades Kube-OVN and CoreDNS in this phase.
 2. **Phase 2**: Upgrade Kubernetes and replace nodes with the matching Alauda OS image.
 
+How Phase 2 runs depends on the infrastructure provider:
+
+| Provider | Phase 2 |
+|---|---|
+| Huawei DCS | Automatic. The same platform upgrade request upgrades Kubernetes and Alauda OS through every intermediate version. Clusters that need it use manual mode. See [Upgrading Clusters on Huawei DCS](./huawei-dcs.mdx). |
+| Bare Metal | Automatic. The same platform upgrade request upgrades Kubernetes and the OS image through every intermediate version. Clusters that need it use manual mode. See [Upgrading Clusters on Bare Metal](./bare-metal.mdx). |
+| Huawei Cloud Stack | Manual. After Phase 1, follow [Upgrading Clusters on Huawei Cloud Stack](./huawei-cloud-stack.mdx). |
+| VMware vSphere | Manual. After Phase 1, follow [Upgrading Clusters on VMware vSphere](./vmware-vsphere.mdx). |
+
 :::info
-The ACP product documentation owns Phase 1 prerequisites, supported ACP upgrade paths, artifact preparation, and CVO procedures. This site owns the Immutable Infrastructure Kubernetes and OS replacement procedures in Phase 2.
+For Huawei DCS and Bare Metal clusters, the platform upgrade is reported complete only after Kubernetes and the OS image reach the target version. For Huawei Cloud Stack and VMware vSphere clusters, it is reported complete after Phase 1, and Kubernetes and the OS image stay at the previous version until you complete Phase 2.
+
+The ACP product documentation owns Phase 1 prerequisites, supported ACP upgrade paths, artifact preparation, and CVO procedures. This site owns the Immutable Infrastructure Kubernetes and OS replacement in Phase 2.
 :::
 
 ### Distribution Version vs Kubernetes Version
@@ -31,14 +42,14 @@ The ACP product documentation owns Phase 1 prerequisites, supported ACP upgrade 
 | Component | Description | Managed by |
 |-----------|-------------|------------|
 | Distribution Version | The ACP Core release installed on the cluster. | CVO workflow documented in the ACP product documentation. |
-| Kubernetes and OS baseline | A validated Kubernetes minor, component set, and Alauda OS image for the installed ACP release. | Cluster API and the provider-specific Phase 2 procedure. |
+| Kubernetes and OS baseline | A validated Kubernetes minor, component set, and Alauda OS image for the installed ACP release. | Cluster API and the infrastructure provider: automatically on Huawei DCS and Bare Metal, through the provider-specific procedure on Huawei Cloud Stack and VMware vSphere. |
 
 An ACP minor release line can offer more than one validated Kubernetes target over its patch lifecycle. Use [OS Support Matrix](../overview/os-support-matrix.mdx) for the exact patch-specific Kubernetes and component values offered for Phase 2.
 
 ### Prerequisites
 
 - Complete <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />, including validation that the source ACP release can upgrade to the target Distribution Version.
-- Complete the ACP Core and Distribution Version upgrade before starting Phase 2.
+- On Huawei Cloud Stack and VMware vSphere, complete the ACP Core and Distribution Version upgrade before starting Phase 2. On Huawei DCS and Bare Metal, complete the provider-specific preparation before you request the platform upgrade.
 - Verify that the control plane is reachable and healthy.
 - Verify that all nodes are in the `Ready` state.
 - Take and verify the backups required by the provider-specific procedure.
@@ -58,7 +69,7 @@ Use the ACP product documentation as the single procedure owner for this phase:
 Follow that sequence to prepare artifacts and plugin packages, upgrade the `global` tier, and then move each workload cluster to the target Distribution Version through CVO. Do not use intermediate Kubernetes hops in Phase 2 to bypass an unsupported ACP Core upgrade path.
 
 :::info
-Fleet Essentials 1.0.4 and later can use the ACP 4.3-and-later CVO workflow to request a Distribution Version upgrade. That capability covers Phase 1 only. Fleet Essentials does not replace immutable nodes or perform the Kubernetes and Alauda OS rollout in Phase 2; use the provider-specific YAML procedure on this site.
+Fleet Essentials 1.0.4 and later can use the ACP 4.3-and-later CVO workflow to request a Distribution Version upgrade. For Huawei DCS and Bare Metal clusters in automatic mode, that request also performs Phase 2. For Huawei Cloud Stack and VMware vSphere clusters, it covers Phase 1 only; use the provider-specific YAML procedure on this site for Phase 2.
 :::
 
 ### Post-Upgrade Verification
@@ -67,7 +78,7 @@ After the Distribution Version upgrade completes:
 
 - Verify that the cluster reports the target Distribution Version and CVO is no longer progressing or blocked.
 - Confirm that the target row and all required intermediate rows exist in the OS Support Matrix.
-- Proceed to Phase 2 only after the management-side Cluster API providers are healthy. See [Identify the Installed Provider Version](#identify-the-installed-provider-version).
+- On Huawei Cloud Stack and VMware vSphere, proceed to Phase 2 only after the management-side Cluster API providers are healthy. See [Identify the Installed Provider Version](#identify-the-installed-provider-version).
 
 ### Identify the Installed Provider Version \{#identify-the-installed-provider-version}
 
@@ -84,11 +95,15 @@ Find the row whose chart name ends with `chart-cluster-api-provider-dcs`, `chart
 
 ## Phase 2: Upgrading Kubernetes Version
 
-After upgrading the Distribution Version, upgrade Kubernetes and the Alauda OS image through the provider-specific Cluster API procedure.
+On Huawei DCS and Bare Metal, Phase 2 runs automatically as part of the platform upgrade. The provider pages describe the preparation, the preflight checks, monitoring, and manual mode.
+
+On Huawei Cloud Stack and VMware vSphere, and for Huawei DCS and Bare Metal clusters in manual mode, upgrade Kubernetes and the Alauda OS image through the provider-specific Cluster API procedure after Phase 1.
 
 Kube-OVN and CoreDNS are not part of Phase 2. The platform upgrades both components during Phase 1, before the Kubernetes step, so the provider-specific procedures do not set the Kube-OVN chart version or the CoreDNS image tag.
 
 ### Required kubelet patch for Kubernetes 1.35 \{#kubernetes-1-35-kubelet-patch}
+
+The automatic upgrade on Huawei DCS and Bare Metal applies this setting itself. The rest of this section applies to the manual procedures.
 
 When an upgrade hop targets Kubernetes 1.35 or later, the kubelet patch file at `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json` must include the following setting:
 
@@ -118,11 +133,11 @@ See platform-specific guides:
 
 ## Preparing for Cross-Version Upgrades  \{#cross-version-preparation}
 
-When the target ACP Distribution Version is more than one Kubernetes minor above the cluster's current version, additional preparation is required before starting Phase 2. Single-minor upgrades skip this section.
+When the target ACP Distribution Version is more than one Kubernetes minor above the cluster's current version, additional preparation is required. On Huawei DCS and Bare Metal, complete it before you request the platform upgrade; on Huawei Cloud Stack and VMware vSphere, complete it before starting Phase 2. Single-minor upgrades skip this section.
 
 On Immutable Infrastructure, each Kubernetes minor is baked into a matching OS image, and each Kubernetes minor maps to a specific ACP version row in [OS Support Matrix](../overview/os-support-matrix.mdx). The Kubernetes version therefore moves forward one minor at a time through the required intermediate OS images. Keep these Kubernetes and OS hops separate from the ACP Core upgrade path: the Distribution Version must follow every source-to-target hop offered by CVO, while Phase 2 can require additional intermediate rows only to advance Kubernetes and the OS image.
 
-Before starting Phase 2, identify every intermediate Kubernetes minor and its matching OS Support Matrix row. Confirm separately that Phase 1 completed every required Distribution Version hop according to <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />.
+Identify every intermediate Kubernetes minor and its matching OS Support Matrix row. When a minor has more than one row, use its latest row: the automatic upgrade uses the highest staged version of each intermediate minor. Confirm separately that Phase 1 completed every required Distribution Version hop according to <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" />.
 
 ### Step 1 — Confirm Core hops and pre-sync intermediate images
 
@@ -144,14 +159,17 @@ For a required Core hop, prepare and upgrade Aligned plugins as directed by the 
 
 For each intermediate Kubernetes/OS row, make the Alauda OS image published for that ACP release available to the node provisioning mechanism so the Kubernetes step can replace nodes from each image in turn:
 
-- **IaaS providers (Huawei DCS, VMware vSphere, Huawei Cloud Stack)**: upload the OS image and register it as a VM template (or VM image, depending on the platform). Record the name it is registered under — the machine templates reference that name.
-- **Bare metal**: make the OS image available to the node re-provisioning flow used by your cluster.
+- **Huawei DCS**: upload the OS image, register it as a VM template, and apply the VM template ConfigMap published with that Alauda OS release. See [Prepare the Cluster](./huawei-dcs.mdx#automatic-prepare).
+- **VMware vSphere and Huawei Cloud Stack**: upload the OS image and register it as a VM template or VM image. Record the name it is registered under — the machine templates reference that name.
+- **Bare metal**: import the OS images and add the version and its etcd image to `elemental-image-catalog`. See [Update the Image Catalog](./bare-metal.mdx#update-the-image-catalog).
 
 The control plane and worker rollouts then step through the intermediate OS images one at a time, matched to the staged Kubernetes minor, until the cluster reaches the target ACP version row.
 
-### Step 3 — Apply the platform-specific procedure for each intermediate Kubernetes/OS row
+### Step 3 — Upgrade through each intermediate Kubernetes/OS row
 
-Repeat the platform-specific Phase 2 procedure for each intermediate Kubernetes/OS row in turn, using that row in [OS Support Matrix](../overview/os-support-matrix.mdx) for `KubeadmControlPlane` and `MachineDeployment` values. For each hop, upgrade the control plane, followed by workers. On the hop to Kubernetes 1.35, also apply the [required kubelet patch](#kubernetes-1-35-kubelet-patch) to the control-plane and worker bootstrap configurations. Complete the whole hop before starting the next one. After all intermediate hops succeed, apply the same procedure once more for the target row.
+On Huawei DCS and Bare Metal in automatic mode, there is nothing more to do: the platform plans the path from the staged versions and upgrades through it.
+
+On Huawei Cloud Stack and VMware vSphere, and for clusters in manual mode, repeat the platform-specific Phase 2 procedure for each intermediate Kubernetes/OS row in turn, using that row in [OS Support Matrix](../overview/os-support-matrix.mdx) for `KubeadmControlPlane` and `MachineDeployment` values. For each hop, upgrade the control plane, followed by workers. On the hop to Kubernetes 1.35, also apply the [required kubelet patch](#kubernetes-1-35-kubelet-patch) to the control-plane and worker bootstrap configurations. Complete the whole hop before starting the next one. After all intermediate hops succeed, apply the same procedure once more for the target row.
 
 ---
 

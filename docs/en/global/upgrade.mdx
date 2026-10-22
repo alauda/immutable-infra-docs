@@ -30,22 +30,44 @@ Like workload clusters, the `global` cluster on Immutable Infrastructure follows
 1. **Phase 1 — ACP Core and Distribution Version**: prepare artifacts and plugin packages, then use CVO to move the global tier to the target Distribution Version. The ACP product documentation owns this procedure; see <ExternalSiteLink name="acp" href="/upgrade/pre-upgrade.html" children="Pre-Upgrade Preparation" /> and <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />.
 2. **Phase 2 — Kubernetes and OS Image**: nodes are replaced with new Alauda OS images that contain the target Kubernetes version. This document focuses on Phase 2 for the `global` cluster.
 
+On Huawei DCS and Bare Metal, Phase 2 of the `global` cluster runs automatically as part of the platform upgrade; see [Huawei DCS and Bare Metal: Automatic Upgrade](#automatic-upgrade). On VMware vSphere and Huawei Cloud Stack, and for a Huawei DCS or Bare Metal `global` cluster in manual mode, follow the [Manual Procedure](#procedure) after Phase 1.
+
 <Directive type="info" title="Phase 1 Compatibility">
-  Before starting Phase 2, verify that every workload cluster falls within the Compatible Versions matrix of the target Distribution Version. Workload clusters that are out of range must be upgraded first.
+  Before you upgrade the `global` cluster, verify that every workload cluster falls within the Compatible Versions matrix of the target Distribution Version. Workload clusters that are out of range must be upgraded first.
 </Directive>
+
+## Huawei DCS and Bare Metal: Automatic Upgrade \{#automatic-upgrade}
+
+The `global` cluster is upgraded the same way as a workload cluster on the same provider. The platform tracks its Kubernetes and OS upgrade in the `InfraClusterVersion` resource named `global`, checks it before changing anything, and upgrades Kubernetes and the OS image through every intermediate version after ACP Core, Kube-OVN, and CoreDNS. The platform upgrade of the `global` cluster is reported complete only after its nodes run the target version, so workload clusters start their upgrade only after that.
+
+1. Prepare the `global` cluster as described for its provider. Apply the preparation to the `global` cluster itself, using the `global` kubeconfig:
+   - Huawei DCS: [Prepare the Cluster](../upgrade-cluster/huawei-dcs.mdx#automatic-prepare).
+   - Bare Metal: [Prepare the Cluster](../upgrade-cluster/bare-metal.mdx#automatic-prepare). In a DR pair, update the image catalog on both `global` clusters.
+2. Request the platform upgrade by following <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />. Resolve any failed [preflight check](../upgrade-cluster/huawei-dcs.mdx#preflight-checks) for the `global` cluster; the Bare Metal checks are listed in [Preflight Checks](../upgrade-cluster/bare-metal.mdx#preflight-checks).
+3. Watch the upgrade:
+
+   ```shell
+   kubectl --kubeconfig <global-kubeconfig> -n cpaas-system get infraclusterversion global
+   ```
+
+   The upgrade is complete when `PHASE` is `Succeeded` and the `Ready` condition is `True`. While the control plane of the `global` cluster is replaced, the upgrade controller can move to another node; the upgrade continues on its own. For monitoring and troubleshooting details, see [Huawei DCS](../upgrade-cluster/huawei-dcs.mdx#automatic-monitor) or [Bare Metal](../upgrade-cluster/bare-metal.mdx#automatic-monitor).
+
+A Huawei DCS `global` cluster whose control plane has fewer than 3 replicas cannot be upgraded automatically. Before the platform upgrade, put it in manual mode with `kubectl --kubeconfig <global-kubeconfig> -n cpaas-system label cluster.cluster.x-k8s.io global upgrade.alauda.io/mode=manual`, then follow the [Manual Procedure](#procedure) once the platform upgrade reports `ManualUpgradeRequired`.
+
+The automatic upgrade only moves forward. It cannot be paused, cancelled, or rolled back. If the `global` cluster cannot be repaired forward, recover it from the verified pre-upgrade etcd backup or the Global DR procedure.
 
 ## Common Prerequisites
 
-- The `global` cluster has completed Phase 1 (Distribution Version upgrade).
+- The `global` cluster has completed Phase 1 (Distribution Version upgrade). This and the other prerequisites in this section apply to the manual procedure.
 - An etcd backup of the `global` cluster has been taken and verified.
 - The target row in [OS Support Matrix](../overview/os-support-matrix.mdx) is available, and its Kubernetes version and etcd tag are staged, together with the Alauda OS image published for that release. Kube-OVN and CoreDNS are upgraded by the platform during Phase 1; Phase 2 does not change them.
 - The previous machine templates and bootstrap templates are retained until Phase 2 is verified.
 - A maintenance window plan that accounts for rolling control plane replacement.
 - For cross-version upgrades that span more than one Kubernetes minor, the intermediate-version Core images and OS images are pre-staged. See [Cross-Version Upgrade Preparation](../upgrade-cluster/index.mdx#cross-version-preparation).
 
-## Procedure
+## Manual Procedure \{#procedure}
 
-After installation, the Cluster API controllers that manage the `global` cluster run on the `global` cluster itself. Use the `global` kubeconfig for the `kubectl` commands in this procedure.
+Use this procedure for VMware vSphere and Huawei Cloud Stack, and for a Huawei DCS or Bare Metal `global` cluster in manual mode. After installation, the Cluster API controllers that manage the `global` cluster run on the `global` cluster itself. Use the `global` kubeconfig for the `kubectl` commands in this procedure.
 
 <Directive type="warning" title="Required when the target is Kubernetes 1.35">
   In Kubernetes 1.35, kubelet credential verification can apply to images that are already present on a node. On the hop to Kubernetes 1.35 or later, add `imagePullCredentialsVerificationPolicy: NeverVerify` to the kubelet patch used by every replacement node. Update the control-plane file in the same `KubeadmControlPlane` edit as `spec.version`. For workers, create a new `KubeadmConfigTemplate` with the updated patch and switch `MachineDeployment.spec.template.spec.bootstrap.configRef.name` in the same edit as the version. Do not add this parameter for Kubernetes 1.34 or earlier. See [Required kubelet patch for Kubernetes 1.35](../upgrade-cluster/index.mdx#kubernetes-1-35-kubelet-patch).
@@ -58,7 +80,7 @@ Update the Cluster API manifests of the `global` cluster to reference the new Al
 <Tabs>
   <Tab label="Huawei DCS">
 
-For DCS, create new immutable infrastructure templates instead of editing templates that are already referenced by running machines.
+Use this tab only for a `global` cluster in manual mode. For DCS, create new immutable infrastructure templates instead of editing templates that are already referenced by running machines.
 
 Update the control plane resources:
 
@@ -186,7 +208,7 @@ Do not treat HCS `dataVolumes[]` as preserved state during node replacement. Thi
   </Tab>
   <Tab label="Bare Metal">
 
-This YAML workflow requires Bare Metal provider `v1.0.0` or later. Use it only after that provider package and the target OS Support Matrix row are available in the installed release. Before editing Cluster API resources, confirm that the provider `AppRelease` requested and installed revisions match and its chart phase is `Success`.
+Use this tab only for a `global` cluster in manual mode. Before editing Cluster API resources, confirm that the provider `AppRelease` requested and installed revisions match and its chart phase is `Success`.
 
 Import the target release's Bare Metal OS images into the `global` cluster's registry and add the target Kubernetes version to its `elemental-image-catalog`, as described in [OS Images Imported and Image Catalog Populated](../create-cluster/bare-metal.mdx#os-images-and-image-catalog). Neither the provider plugin nor the Distribution Version upgrade adds the version for you. In a DR pair, do this on both `global` clusters. Then verify the catalog:
 
@@ -255,6 +277,17 @@ kubectl --kubeconfig <global-kubeconfig> get kubeadmcontrolplane -A
 
 The upgrade is complete when every `Machine` reports the new Kubernetes version and `Phase: Running`, and the `KubeadmControlPlane` reports `Ready: True` against the new version.
 
+### Step 4 — Confirm Completion in Manual Mode
+
+For a Huawei DCS or Bare Metal `global` cluster in manual mode, confirm the upgrade once after every node runs the final target version:
+
+```shell
+kubectl --kubeconfig <global-kubeconfig> -n cpaas-system exec deploy/cluster-version-operator -- \
+  cluster-version-operator infra-version complete --cluster global
+```
+
+Exit code `0` confirms the upgrade. For the other exit codes, see [Confirm Completion](../upgrade-cluster/huawei-dcs.mdx#manual-confirm). VMware vSphere and Huawei Cloud Stack `global` clusters skip this step.
+
 ## Verification
 
 After the rolling replacement finishes, verify that the upgraded `global` cluster is healthy.
@@ -268,6 +301,8 @@ kubectl --kubeconfig <global-kubeconfig> get pods -n cpaas-system
 All nodes must report the new Kubernetes version, the `ClusterVersionShadow` must reflect the target Distribution Version, and core platform pods must be `Running`.
 
 ## Recovery Considerations
+
+These stage rules apply to the manual procedure. An automatic upgrade on Huawei DCS or Bare Metal only moves forward; see [Huawei DCS and Bare Metal: Automatic Upgrade](#automatic-upgrade).
 
 Do not treat a Kubernetes minor downgrade as an ordinary rollback. Choose the recovery path from the rollout stage:
 
