@@ -15,7 +15,7 @@ queries:
 
 # Upgrading Clusters on Bare Metal
 
-On bare metal, the platform upgrades Kubernetes and the host OS automatically. A single platform upgrade request moves the cluster through ACP Core, Kube-OVN, CoreDNS, Kubernetes, and the OS image, and the upgrade is reported complete only after every node runs the target version. Your part is to import the OS images, add them to the image catalog, check the hosts, and watch the progress.
+On bare metal, the platform upgrades Kubernetes and the host OS automatically. A single platform upgrade request moves the cluster through ACP Core, CoreDNS, Kube-OVN, Kubernetes, and the OS image, and the upgrade is reported complete only after every node runs the target version. Your part is to import the OS images, add them to the image catalog, check the hosts, and watch the progress.
 
 If you prefer to upgrade a cluster by hand, use [manual mode](#manual-upgrade).
 
@@ -153,7 +153,13 @@ kubectl -n cpaas-system patch configmap elemental-image-catalog --type merge \
 
 With a chart override, add the key under `provider.imageCatalog.images` with `repository: tkestack/etcd` and `tag: <etcd-tag>`.
 
-If a pool contains hosts of more than one architecture or OS, the catalog needs an OS image for every combination at every version. The `UpgradePathResolvable` [preflight check](#preflight-checks) names any missing key.
+### OS Image Keys per Architecture and OS \{#catalog-key-format}
+
+The provider looks up the OS image of a host by the key `<kubernetes-version>_<arch>_<os-id>`, for example `v1.35.6-acp.9_arm64_alaudaos.k.25`, where `<arch>` and `<os-id>` come from the host's `MachineInventory`. Only hosts with the default OS identifier `alaudaos.m.55` fall back to `<kubernetes-version>_<arch>`, and only `amd64` hosts with that identifier fall back further to the bare `<kubernetes-version>` key. Options A and B above add the bare key, so they cover only `amd64` hosts with the default OS.
+
+If a pool contains hosts of another architecture or OS, add a key for every combination at every version. The `UpgradePathResolvable` [preflight check](#preflight-checks) names any missing key.
+
+In a DR pair, update `elemental-image-catalog` on both `global` clusters. The catalog is not synchronized between them, and each `global` cluster plans its upgrades from its own copy.
 
 Do not change the catalog while an upgrade is in progress. A host replaced after the change installs the new value, so the nodes of one pool can end up on different images.
 
@@ -169,7 +175,7 @@ After you request the platform upgrade, the platform:
 
 1. Checks the cluster before changing anything and blocks the upgrade if a [preflight check](#preflight-checks) fails.
 2. Upgrades ACP Core and the Distribution Version.
-3. Upgrades Kube-OVN and CoreDNS.
+3. Upgrades CoreDNS and then Kube-OVN.
 4. Upgrades Kubernetes one minor version at a time through every intermediate version to the target. The control plane is replaced at every version. Worker node pools are replaced at the target version, and at an intermediate version only when the Kubernetes version skew policy requires it. The platform also sets the etcd image tag, adds the Kubernetes 1.35 kubelet setting when the version reaches 1.35, and updates the `capi.cpaas.io/kubernetes` annotation on the `Cluster`.
 
 The platform creates new `BaremetalMachineTemplate` resources for the replaced node groups and keeps the previous ones. It does not change the rollout strategy of the `KubeadmControlPlane` or the `MachineDeployment` resources.
@@ -179,14 +185,14 @@ The platform creates new `BaremetalMachineTemplate` resources for the replaced n
 Complete these steps before you request the platform upgrade:
 
 1. **Select manual mode for clusters you upgrade by hand.** Label them as described in [Select Manual Mode](#select-manual-mode) before you upgrade the Bare Metal provider or the platform.
-2. **Import the OS images and update the catalog.** For the target version and every intermediate Kubernetes version, import the OS images and add the OS image key and the `<kubernetes-version>_etcd` key to `elemental-image-catalog`, as described in [Update the Image Catalog](#update-the-image-catalog). See [Preparing for Cross-Version Upgrades](./index.mdx#cross-version-preparation) for the intermediate rows. Do not change the catalog again until the upgrade completes.
+2. **Import the OS images and update the catalog.** For the target version and every intermediate Kubernetes version, import the OS images and add the OS image key and the `<kubernetes-version>_etcd` key to `elemental-image-catalog`, as described in [Update the Image Catalog](#update-the-image-catalog). See [Preparing for Cross-Version Upgrades](./index.mdx#cross-version-preparation) for the intermediate rows. In a DR pair, update the catalog on both `global` clusters. Do not change the catalog again until the upgrade completes.
 3. **Check COS_STATE on every host.** Every host in the affected pools needs at least 4 GiB free on `COS_STATE` and no partial snapshot from an earlier failed upgrade. The platform cannot check this for you. See [Check COS_STATE Free Space](#check-cos-state-free-space).
 4. **Check the rollout settings.** Every `MachineDeployment` uses `maxSurge: 0`. A control plane with 3 or more replicas uses `maxSurge: 0`. A control plane with a single replica uses `maxSurge: 1` and needs one spare `Available` `MachineInventory` in its pool; the host it replaces returns to the pool as the spare for the next upgrade.
 5. **Back up etcd.** Create and verify a current etcd backup as described in [Prerequisites for Manual Upgrade](#manual-prerequisites). The platform does not check for a backup.
 
 ### Preflight Checks \{#preflight-checks}
 
-The platform evaluates these checks for the whole upgrade path, including every intermediate version, and repeats the evaluation every 5 minutes. The result appears in the platform upgrade preflight as `InfraClusterVersionPreflight`. A check that concerns an intermediate version starts its message with that version. After you fix a problem, the check passes on the next evaluation.
+The platform evaluates these checks for the whole upgrade path, including every intermediate version, and repeats the evaluation every 5 minutes. The result appears in the platform upgrade preflight as `InfraClusterVersionPreflight`. When a problem concerns one version on the path, its message starts with `hop <version>: `, for example `hop v1.35.6-acp.9: missing v1.35.6-acp.9_etcd`. After you fix a problem, the check passes on the next evaluation.
 
 To read the checks of a cluster on the `global` cluster:
 
@@ -205,13 +211,13 @@ If the Bare Metal provider that supports automatic upgrade is installed by this 
 | `RolloutMaxSurgeZero` | Blocks | `maxSurge` is `0` on every `MachineDeployment` and on a control plane with 3 or more replicas, and `1` on a single-replica control plane. An unset value counts as `1`. | Correct the rollout strategy. |
 | `ControlPlaneSpareInventory` | Blocks | A single-replica control plane has at least one `Available` `MachineInventory` in its pool. | Add one `MachineInventory` to the control-plane pool. |
 | `NoFailedMachines` | Blocks | Every `BaremetalMachine` of the cluster is `Running` and every `Machine` has a node. | Repair or replace the listed machines. |
-| `KubeletPatchReady` | Blocks | When the control plane or a worker node pool reaches Kubernetes 1.35, its bootstrap configuration contains a readable `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json`. Every Secret referenced by `contentFrom.secret` in those files exists. | Add the file, or restore the referenced Secret or key. |
+| `KubeletPatchReady` | Blocks | When the control plane or a worker node pool reaches Kubernetes 1.35, its bootstrap configuration contains a readable `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json`. On every path, including one that stays below 1.35, every Secret and key referenced by `contentFrom.secret` in any file of the `KubeadmControlPlane` or a worker `KubeadmConfigTemplate` exists. | Add the file, or restore the referenced Secret or key. |
 | `ControlPlaneTopology` | Blocks | The cluster uses a `KubeadmControlPlane` and bare-metal machine templates, and no worker node pool runs a newer Kubernetes version than the control plane. | Correct the topology before the upgrade. |
-| `NoHostPathWorkloads` | Blocks; can be bypassed by forcing the platform upgrade | No Pod outside the system namespaces uses a `hostPath` volume or a local `PersistentVolume`. Their data is lost when the node is replaced. | Move the data, or force the upgrade to accept the loss. |
+| `NoHostPathWorkloads` | Blocks; can be bypassed with `spec.desiredUpdate.force` on the cluster's `ClusterVersionShadow` | No Pod outside the system namespaces uses a `hostPath` volume, or a `PersistentVolumeClaim` bound to a local or `hostPath` `PersistentVolume`. Their data is lost when the node is replaced. Pods owned by a DaemonSet and static (mirror) Pods are exempt. | Move the data, or set `spec.desiredUpdate.force: true` to accept the loss. |
 | `AllNodesReady` | Warning | Every node of the cluster is `Ready`. | Repair the nodes, or confirm that the upgrade can proceed. |
 | `PoolHealthy` | Warning | No pool used by the cluster has `Unavailable` members. | Repair or remove the unavailable hosts. |
 
-Only `NoHostPathWorkloads` can be bypassed. Forcing the upgrade does not bypass any other blocking check.
+Only `NoHostPathWorkloads` can be bypassed. `spec.desiredUpdate.force` does not bypass any other blocking check.
 
 ### Monitor the Upgrade \{#automatic-monitor}
 
@@ -286,7 +292,7 @@ An automatic upgrade only moves forward. It cannot be paused, cancelled, or roll
 
 ## Manual Upgrade \{#manual-upgrade}
 
-In manual mode, the platform upgrade still upgrades ACP Core, the Distribution Version, Kube-OVN, and CoreDNS. It then waits for you to upgrade Kubernetes and the OS image and to [confirm completion](#manual-confirm). Until you confirm, the cluster's platform upgrade reports `ManualUpgradeRequired` with the target Kubernetes version.
+In manual mode, the platform upgrade still upgrades ACP Core, the Distribution Version, CoreDNS, and Kube-OVN. It then waits for you to upgrade Kubernetes and the OS image and to [confirm completion](#manual-confirm). Until you confirm, the cluster's platform upgrade reports `ManualUpgradeRequired` with the target Kubernetes version.
 
 Bare-metal clusters do not require manual mode. Use it for any cluster that you decide to upgrade by hand.
 
@@ -428,6 +434,7 @@ kubectl -n cpaas-system exec deploy/cluster-version-operator -- \
 |---|---|
 | `0` | The upgrade is confirmed. The platform checks the cluster version again and completes the cluster's platform upgrade. |
 | `2` | Refused, nothing written: the cluster is not labeled `upgrade.alauda.io/mode=manual`, has nothing to confirm, or does not report the target Kubernetes version yet. Read the message. |
+| `1` | General error, for example an argument that cannot be parsed. |
 | `4` | Invalid arguments. |
 | `5` | Runtime error, for example a concurrent change. Run the command again. |
 

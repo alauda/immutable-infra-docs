@@ -38,10 +38,10 @@ On Huawei DCS and Bare Metal, Phase 2 of the `global` cluster runs automatically
 
 ## Huawei DCS and Bare Metal: Automatic Upgrade \{#automatic-upgrade}
 
-The `global` cluster is upgraded the same way as a workload cluster on the same provider. The platform tracks its Kubernetes and OS upgrade in the `InfraClusterVersion` resource named `global`, checks it before changing anything, and upgrades Kubernetes and the OS image through every intermediate version after ACP Core, Kube-OVN, and CoreDNS. The platform upgrade of the `global` cluster is reported complete only after its nodes run the target version, so workload clusters start their upgrade only after that.
+The `global` cluster is upgraded the same way as a workload cluster on the same provider. The platform tracks its Kubernetes and OS upgrade in the `InfraClusterVersion` resource named `global`, checks it before changing anything, and upgrades Kubernetes and the OS image through every intermediate version after ACP Core, CoreDNS, and Kube-OVN. The platform upgrade of the `global` cluster is reported complete only after its nodes run the target version, so workload clusters start their upgrade only after that.
 
 1. Prepare the `global` cluster as described for its provider. Apply the preparation to the `global` cluster itself, using the `global` kubeconfig:
-   - Huawei DCS: [Prepare the Cluster](../upgrade-cluster/huawei-dcs.mdx#automatic-prepare).
+   - Huawei DCS: [Prepare the Cluster](../upgrade-cluster/huawei-dcs.mdx#automatic-prepare). In a DR pair, apply the VM template ConfigMaps on both `global` clusters.
    - Bare Metal: [Prepare the Cluster](../upgrade-cluster/bare-metal.mdx#automatic-prepare). In a DR pair, update the image catalog on both `global` clusters.
 2. Request the platform upgrade by following <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />. Resolve any failed [preflight check](../upgrade-cluster/huawei-dcs.mdx#preflight-checks) for the `global` cluster; the Bare Metal checks are listed in [Preflight Checks](../upgrade-cluster/bare-metal.mdx#preflight-checks).
 3. Watch the upgrade:

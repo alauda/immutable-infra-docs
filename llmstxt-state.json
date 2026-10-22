@@ -608,11 +608,11 @@
       "updated_at": "2026-10-22T05:03:53Z"
     },
     "docs/en/global/upgrade.mdx": {
-      "sha256": "03467e5ace478b265bca333e62ce2b0eb37a0e9e759aa555aef3a59f6d119856",
-      "size": 24551,
+      "sha256": "681ad15881efd7d889a6318bbefec481d2c17771f64e943b0e75a5ed2f85ac1b",
+      "size": 24625,
       "description": "Upgrading a `global` cluster on Immutable Infrastructure. On Huawei DCS and Bare Metal, the platform upgrade also upgrades Kubernetes and the OS image of `global` through its own `InfraClusterVersion` named `global`: prepare as on the provider page, request the upgrade, watch `kubectl -n cpaas-system get infraclusterversion global`; workload clusters start only after `global` completes, and a single-control-plane DCS `global` uses manual mode. The manual procedure, for VMware vSphere, Huawei Cloud Stack, and DCS or Bare Metal in manual mode, creates new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources (Bare Metal resolves the image through `elemental-image-catalog`), retargets `KubeadmControlPlane` and each `MachineDeployment`, sets the etcd tag, adds the Kubernetes 1.35 kubelet patch, keeps `maxSurge: 0`, and ends with `infra-version complete` in manual mode. Kube-OVN and CoreDNS are upgraded by the platform. Includes stage-based recovery rules for the manual procedure.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-22T05:03:53Z"
+      "updated_at": "2026-10-22T05:25:23Z"
     },
     "docs/en/how-to/configure-fixed-install-disk-bare-metal.mdx": {
       "sha256": "6a9493a1e0fad0ffd82cfced1a6604eba80331ef87728ca6a052e64f7b62b7b0",
@@ -991,11 +991,11 @@
       "updated_at": "2026-10-22T05:03:53Z"
     },
     "docs/en/upgrade-cluster/bare-metal.mdx": {
-      "sha256": "c119532e0f4e0a70137cfd05190e9c508b45f6d68a477ee6380052f44bcb3241",
-      "size": 41946,
+      "sha256": "6057cf0aae979ee49187d604ca379d3c4dab4cbf78b670f4200d7a4a2ced28a4",
+      "size": 43191,
       "description": "Kubernetes and OS upgrade for bare-metal clusters, which replaces every node through `clean` and `reprovision` plans instead of running `kubeadm upgrade`. By default the platform upgrade does it automatically through every intermediate version: stage the OS images and `elemental-image-catalog` keys, including `<version>_etcd`, check `COS_STATE` free space, keep `maxSurge: 0` (`1` plus a spare host for a single-replica control plane), read the ten preflight checks, watch the `InfraClusterVersion`, and troubleshoot `RolloutFailed`, `NodeJoinFailed`, `PoolExhausted`, and `ImageMismatch` with `spec.rolloutAfter`, stopping `cluster-api-provider-baremetal-icv-controller` before manual changes; no rollback. Manual mode, selected with the `upgrade.alauda.io/mode=manual` label or `provider.icvController.enabled=false`, keeps the YAML control-plane and worker procedure, staged recovery, and ends with `infra-version complete`. Also covers storage compatibility on pre-storage hosts, partial-snapshot cleanup, and plan/inventory verification.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-22T05:11:41Z"
+      "updated_at": "2026-10-22T05:25:23Z"
     },
     "docs/en/upgrade-cluster/huawei-cloud-stack.mdx": {
       "sha256": "722a5372a2d7eaa92f4e5678c9856a18b63450b7087d53986bb495bbb529f89d",
@@ -1005,11 +1005,11 @@
       "updated_at": "2026-10-22T05:03:53Z"
     },
     "docs/en/upgrade-cluster/huawei-dcs.mdx": {
-      "sha256": "f9a289eae58c76961b22cb9af747daa5e1d72495c4aa0578b5efa444b9201f2d",
-      "size": 33321,
+      "sha256": "a131b63a74661b113f9092f60150309cf6755fd308062ed274c03b8accb475f7",
+      "size": 34058,
       "description": "Kubernetes and Alauda OS upgrade for Huawei DCS clusters. By default the platform upgrade does it automatically through every intermediate version: register the VM templates and apply their `cpaas.io/dcs-vm-template` ConfigMaps for the target and intermediate rows, keep `/var/cpaas` pool-managed with templates `4.2.1+` and `maxSurge: 0`, back up etcd, read the twelve preflight checks, watch the `InfraClusterVersion`, and troubleshoot `NodeJoinFailed` and `RolloutFailed`, stopping `cluster-api-provider-dcs-icv-controller` before manual changes; no rollback. Manual mode, required for control planes with fewer than 3 replicas and mixed VM templates and selected with the `upgrade.alauda.io/mode=manual` label, uses the web UI per-node-pool upgrade or the YAML procedure (new machine templates, Kubernetes and etcd values, the Kubernetes 1.35 kubelet patch, the `capi.cpaas.io/kubernetes` annotation) and ends with `infra-version complete`.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-22T05:03:53Z"
+      "updated_at": "2026-10-22T05:25:23Z"
     },
     "docs/en/upgrade-cluster/index.mdx": {
       "sha256": "77f336aeeac2fc3131afdce97ff30ff57c88374ce0ec42ebf3d68963e0652421",

@@ -14,7 +14,7 @@ queries:
 
 # Upgrading Clusters on Huawei DCS
 
-On Huawei DCS, the platform upgrades Kubernetes and Alauda OS automatically. A single platform upgrade request moves the cluster through ACP Core, Kube-OVN, CoreDNS, Kubernetes, and the Alauda OS image, and the upgrade is reported complete only after every node runs the target version. Your part is to stage the VM templates before you start and to watch the progress.
+On Huawei DCS, the platform upgrades Kubernetes and Alauda OS automatically. A single platform upgrade request moves the cluster through ACP Core, CoreDNS, Kube-OVN, Kubernetes, and the Alauda OS image, and the upgrade is reported complete only after every node runs the target version. Your part is to stage the VM templates before you start and to watch the progress.
 
 Clusters that cannot be upgraded automatically, such as clusters with a single control-plane node, use [manual mode](#manual-upgrade) instead.
 
@@ -70,7 +70,7 @@ After you request the platform upgrade, the platform:
 
 1. Checks the cluster before changing anything and blocks the upgrade if a [preflight check](#preflight-checks) fails.
 2. Upgrades ACP Core and the Distribution Version.
-3. Upgrades Kube-OVN and CoreDNS.
+3. Upgrades CoreDNS and then Kube-OVN.
 4. Upgrades Kubernetes one minor version at a time through every intermediate version to the target. For each version it replaces the control-plane nodes first and then each worker node pool, from new `DCSMachineTemplate` resources that point at the matching VM template. It also sets the etcd image tag, adds the Kubernetes 1.35 kubelet setting when the version reaches 1.35, and updates the `capi.cpaas.io/kubernetes` annotation on the `Cluster`.
 
 The previous `DCSMachineTemplate` resources are kept.
@@ -87,7 +87,7 @@ Complete these steps before you request the platform upgrade:
    - `data.etcdTag` is the **etcd** value of the same row.
    - The `cpaas.io/distribution-version` label is set to the ACP release of the row.
 
-   Keep the ConfigMaps of the VM templates that the cluster runs today.
+   Keep the ConfigMaps of the VM templates that the cluster runs today. In a DR pair, apply the ConfigMaps on both `global` clusters: they are not synchronized between them, and each `global` cluster plans its upgrades from its own copy.
 4. **Keep persistent data in the IP pool.** `/var/cpaas` must be a pool-managed persistent disk in `DCSIpHostnamePool.spec.pool[].persistentDisk`, not a `DCSMachineTemplate` disk. If the cluster still uses the old layout, complete [Migrate Existing Huawei DCS Clusters to Pool-Managed Persistent Disks](../how-to/dcs_persistent_disk_upgrade.mdx) first.
 5. **Check the rollout settings.** When the cluster uses pool-managed persistent disks, set `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge` and every `MachineDeployment.spec.strategy.rollingUpdate.maxSurge` to `0`, and use VM templates `4.2.1` or later for both the current and the target versions. The platform does not change the rollout strategy for you.
 6. **Back up etcd.** Take and verify a current etcd backup by using the supported ACP backup procedure. The platform does not check for a backup.
@@ -98,7 +98,7 @@ A control-plane `MachineHealthCheck` with `nodeStartupTimeout` lets Cluster API 
 
 ### Preflight Checks \{#preflight-checks}
 
-The platform evaluates these checks for the whole upgrade path, including every intermediate version, and repeats the evaluation every 5 minutes. The result appears in the platform upgrade preflight as `InfraClusterVersionPreflight`. A check that concerns an intermediate version starts its message with that version. After you fix a problem, the check passes on the next evaluation.
+The platform evaluates these checks for the whole upgrade path, including every intermediate version, and repeats the evaluation every 5 minutes. The result appears in the platform upgrade preflight as `InfraClusterVersionPreflight`. When a problem concerns one version on the path, its message starts with `hop <version>: `, for example `hop v1.34.5-8: DCS VM template ... not found`. After you fix a problem, the check passes on the next evaluation.
 
 To read the checks of a cluster on the `global` cluster:
 
@@ -115,17 +115,17 @@ If the DCS provider that supports automatic upgrade is installed by this platfor
 | `UpgradePathResolvable` | Blocks | Every intermediate minor and the target have a VM template ConfigMap entry, and the cluster topology is supported. The message lists the planned path. | Apply the missing ConfigMaps. See [Prepare the Cluster](#automatic-prepare). |
 | `TargetImagePresent` | Blocks | Every VM template on the path exists on DCS and the DCS credentials work. | Register the missing VM template, or fix the cloud credential or DCS API access. |
 | `RolloutMaxSurgeZero` | Blocks | `maxSurge` is `0` on every `KubeadmControlPlane` and `MachineDeployment` whose IP pool declares persistent disks. An unset value counts as `1`. | Set `maxSurge: 0`. |
-| `KubeletPatchReady` | Blocks | When the path reaches Kubernetes 1.35, the `KubeadmControlPlane` and every worker `KubeadmConfigTemplate` contain a readable `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json`. Every Secret referenced by `contentFrom.secret` in those files exists. | Add the file, or restore the referenced Secret or key. |
+| `KubeletPatchReady` | Blocks | When the path reaches Kubernetes 1.35, the `KubeadmControlPlane` and every worker `KubeadmConfigTemplate` contain a readable `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json`. On every path, including one that stays below 1.35, every Secret and key referenced by `contentFrom.secret` in any file of the `KubeadmControlPlane` or a worker `KubeadmConfigTemplate` exists. | Add the file, or restore the referenced Secret or key. |
 | `ControlPlaneTopology` | Blocks | The control plane has at least 3 replicas. | Use [manual mode](#manual-upgrade). |
 | `PersistentDiskLayout` | Blocks | No `DCSMachineTemplate` declares `/var/cpaas` as a template disk. | Migrate to pool-managed persistent disks, or use manual mode. |
 | `PersistentDiskTemplateVersion` | Blocks | When the IP pool declares persistent disks, the current and every target VM template are `4.2.1` or later, according to the `cpaas.io/distribution-version` label of their ConfigMaps. | Use newer VM templates, and set the label on the ConfigMaps. |
-| `UniformVmTemplate` | Blocks | The control plane and every worker node pool use the same VM template. | Use manual mode for clusters that mix VM templates, such as clusters with an arm64 node pool. |
-| `NoHostPathWorkloads` | Blocks; can be bypassed by forcing the platform upgrade | No Pod outside the system namespaces uses a `hostPath` volume or a local `PersistentVolume`. Their data is lost when the node is replaced. | Move the data, or force the upgrade to accept the loss. |
+| `UniformVmTemplate` | Blocks | The control plane and every worker node pool use the same VM template. Different VM templates pass when each of them has a VM template ConfigMap, as during an upgrade that is already in progress. | Use manual mode for clusters that mix VM templates, such as clusters with an arm64 node pool. |
+| `NoHostPathWorkloads` | Blocks; can be bypassed with `spec.desiredUpdate.force` on the cluster's `ClusterVersionShadow` | No Pod outside the system namespaces uses a `hostPath` volume, or a `PersistentVolumeClaim` bound to a local or `hostPath` `PersistentVolume`. Their data is lost when the node is replaced. Pods owned by a DaemonSet and static (mirror) Pods are exempt. | Move the data, or set `spec.desiredUpdate.force: true` to accept the loss. |
 | `IPPoolCapacity` | Warning | Each IP pool has enough free entries for the rollout. | Add entries to the IP pool if needed. |
 | `AllNodesReady` | Warning | Every node of the cluster is `Ready`. | Repair the nodes, or confirm that the upgrade can proceed. |
 | `KubeletPatchPolicy` | Warning | When the path reaches Kubernetes 1.35, `imagePullCredentialsVerificationPolicy` in the kubelet patch file is `NeverVerify` or absent. The platform adds it when absent and never changes an existing value. | Set the value to `NeverVerify`, or confirm the existing value. |
 
-Only `NoHostPathWorkloads` can be bypassed. Forcing the upgrade does not bypass any other blocking check.
+Only `NoHostPathWorkloads` can be bypassed. `spec.desiredUpdate.force` does not bypass any other blocking check.
 
 ### Monitor the Upgrade \{#automatic-monitor}
 
@@ -182,7 +182,7 @@ An automatic upgrade only moves forward. It cannot be paused, cancelled, or roll
 
 ## Manual Upgrade \{#manual-upgrade}
 
-In manual mode, the platform upgrade still upgrades ACP Core, the Distribution Version, Kube-OVN, and CoreDNS. It then waits for you to upgrade Kubernetes and Alauda OS and to [confirm completion](#manual-confirm). Until you confirm, the cluster's platform upgrade reports `ManualUpgradeRequired` with the target Kubernetes version.
+In manual mode, the platform upgrade still upgrades ACP Core, the Distribution Version, CoreDNS, and Kube-OVN. It then waits for you to upgrade Kubernetes and Alauda OS and to [confirm completion](#manual-confirm). Until you confirm, the cluster's platform upgrade reports `ManualUpgradeRequired` with the target Kubernetes version.
 
 ### When Manual Mode Is Required \{#manual-mode-required}
 
@@ -408,6 +408,7 @@ kubectl -n cpaas-system exec deploy/cluster-version-operator -- \
 |---|---|
 | `0` | The upgrade is confirmed. The platform checks the cluster version again and completes the cluster's platform upgrade. |
 | `2` | Refused, nothing written: the cluster is not labeled `upgrade.alauda.io/mode=manual`, has nothing to confirm, or does not report the target Kubernetes version yet. Read the message. |
+| `1` | General error, for example an argument that cannot be parsed. |
 | `4` | Invalid arguments. |
 | `5` | Runtime error, for example a concurrent change. Run the command again. |
 
