@@ -51,9 +51,8 @@ Upgrade bare-metal clusters in the following order:
 1. **(Prerequisite)** Upgrade the ACP platform on the `global` cluster. This brings the bare-metal provider, `elemental-operator`, and the related CAPI components to versions that understand the new schema. Trigger workload-cluster upgrades only after the management-side controllers have rolled out and become Ready.
 2. Upgrade the Distribution Version (Aligned Extensions) on the workload cluster. See [Upgrading Distribution Version](index.mdx).
 3. Import the target Alauda OS image pair into the platform registry and add the target Kubernetes version to `elemental-image-catalog`. See [Update the Image Catalog](#update-the-image-catalog).
-4. Upgrade Kube-OVN to the chart version required by the target ACP release and wait for the `AppRelease` to reach `Success`.
-5. Upgrade the control plane Kubernetes version (replaces all control-plane nodes one at a time).
-6. Upgrade worker nodes to the target Kubernetes version (replaces all worker nodes within the `maxUnavailable` budget).
+4. Upgrade the control plane Kubernetes version (replaces all control-plane nodes one at a time).
+5. Upgrade worker nodes to the target Kubernetes version (replaces all worker nodes within the `maxUnavailable` budget).
 
 Cluster API orchestrates the rolling replacement.
 
@@ -81,10 +80,8 @@ Before you start, ensure all of the following prerequisites are met:
 - The installed Bare Metal provider is `v1.0.0` or later and its `AppRelease` reports the same requested and installed revision with `phase=Success`.
 - The control plane is reachable through the existing `<control-plane-vip>:<control-plane-port>`.
 - All current nodes are healthy and `Ready`.
-- Before changing Kube-OVN or reprovisioning any node, use <ExternalSiteLink name="acp" href="/configure/backup/etcd.html" children="ACP Cluster Enhancer" /> to create a current on-demand etcd backup. Verify that the newest `status.records` entry reports `result: Success`, record its `backupTimestamp` and `fileName`, and confirm that the corresponding backup archive exists and will remain retrievable if any control-plane node is reprovisioned or becomes unavailable.
+- Before reprovisioning any node, use <ExternalSiteLink name="acp" href="/configure/backup/etcd.html" children="ACP Cluster Enhancer" /> to create a current on-demand etcd backup. Verify that the newest `status.records` entry reports `result: Success`, record its `backupTimestamp` and `fileName`, and confirm that the corresponding backup archive exists and will remain retrievable if any control-plane node is reprovisioned or becomes unavailable.
 - The target Kubernetes version is a key in `elemental-image-catalog`. If it is not, add it before starting (see [Update the Image Catalog](#update-the-image-catalog)).
-- The target **kube-ovn (chart)** version has been read from the matching ACP row in the [OS Support Matrix](../overview/os-support-matrix.mdx).
-- `BaremetalCluster.spec.networkType` is `kube-ovn`; the provider skips Kube-OVN reconciliation for any other value.
 - The platform registry is reachable from every host in the cluster.
 - Every host the rollout may reprovision has at least 4 GiB free on its `state` partition, and carries no partial snapshot from an earlier failed upgrade (see [Check COS_STATE Free Space](#check-cos-state-free-space)).
 - Both `KubeadmControlPlane.spec.rolloutStrategy.rollingUpdate.maxSurge = 0` and `MachineDeployment.spec.strategy.rollingUpdate.maxSurge = 0` are set — bare-metal does not over-provision physical hosts.
@@ -178,24 +175,15 @@ The key must include the leading `v` (for example `v1.34.5`). If the key is miss
 
 The bare-metal provider uses `base-image` for reprovisioning and does not rebuild SeedImages automatically. Before future host onboarding, refresh `MachineRegistration` / `SeedImage` with the `base-image-iso` imported from the same archive. Do not pair images from different archives or substitute an independently built image.
 
-## Upgrade Kube-OVN Before the Control Plane \{#upgrade-kube-ovn-before-the-control-plane}
-
-Follow the Bare Metal `v1.0.0+` flow in [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane). Bare Metal has no earlier supported provider flow in this documentation.
-
-The shared procedure verifies `BaremetalCluster.spec.networkType`, updates the CAPI `Cluster` annotation, lets the provider reconcile the complete chart source and specification, and checks the chart name, requested revision, installed revision, phase, and conditions. Do not patch the `AppRelease` source manually.
-
 ## Upgrade the Control Plane \{#upgrade-control-plane}
 
-Before continuing, complete the shared [Upgrade Kube-OVN Before the Control Plane](./index.mdx#upgrade-kube-ovn-before-the-control-plane) procedure and verify that `cni-kube-ovn` is at the target installed revision with `phase=Success`.
-
-Patch `KubeadmControlPlane.spec.version` to the new Kubernetes version. Where component image tags are pinned (DNS, etcd), update them in the same edit:
+Patch `KubeadmControlPlane.spec.version` to the new Kubernetes version and update the etcd image tag in the same edit. Leave `clusterConfiguration.dns` unchanged: the platform manages CoreDNS and Kube-OVN.
 
 ```bash
 kubectl -n cpaas-system edit kubeadmcontrolplane <cluster-name>-control-plane
 ```
 
 - `spec.version` ← target Kubernetes version (must match an `elemental-image-catalog` key).
-- `spec.kubeadmConfigSpec.clusterConfiguration.dns.imageTag` ← matching CoreDNS image tag for the new release.
 - `spec.kubeadmConfigSpec.clusterConfiguration.etcd.local.imageTag` ← matching etcd image tag for the new release.
 - When the target is Kubernetes 1.35 or later, update `/etc/kubernetes/patches/kubeletconfiguration0+strategic.json` in `spec.kubeadmConfigSpec.files` in this same edit, as described in [Required kubelet patch for Kubernetes 1.35](./index.mdx#kubernetes-1-35-kubelet-patch).
 
@@ -242,7 +230,7 @@ kubectl -n cpaas-system get baremetalmachines.infrastructure.cluster.x-k8s.io
 kubectl get nodes -o wide
 ```
 
-Worker upgrades carry fewer knobs than the control plane: there is no `clusterConfiguration` block on `MachineDeployment`, so no DNS / etcd tags to update. Kubernetes component versions on worker nodes follow the new base image.
+Worker upgrades carry fewer knobs than the control plane: there is no `clusterConfiguration` block on `MachineDeployment`, so no etcd tag to update. Kubernetes component versions on worker nodes follow the new base image.
 
 For earlier versions, a bootstrap-template change is needed only when the release changes settings such as cloud-init or `kubeletExtraArgs`.
 
@@ -253,9 +241,8 @@ Kubernetes control planes must move through supported minor-version hops. Use [P
 For each intermediate row, and finally for the target row:
 
 1. Import that row's OS image pair and add its Kubernetes version to `elemental-image-catalog`, as described in [Update the Image Catalog](#update-the-image-catalog).
-2. Upgrade Kube-OVN to that row's **kube-ovn (chart)** version and wait for `phase=Success`.
-3. Upgrade the control plane to that row's Kubernetes version and wait for every control-plane node to become `Ready`.
-4. Upgrade every worker `MachineDeployment` to the same Kubernetes version and wait for the rollout to complete before starting the next hop.
+2. Upgrade the control plane to that row's Kubernetes version and wait for every control-plane node to become `Ready`.
+3. Upgrade every worker `MachineDeployment` to the same Kubernetes version and wait for the rollout to complete before starting the next hop.
 
 The version values always come from the OS Support Matrix; they are not fixed examples in this guide. The bare-metal rollout strategy already serializes node replacement, so cross-version upgrades do not require additional pool capacity beyond what is needed for a same-minor upgrade.
 
@@ -263,8 +250,8 @@ The version values always come from the OS Support Matrix; they are not fixed ex
 
 Do not treat a Kubernetes minor downgrade as an ordinary rollback:
 
-1. If no target-version control-plane `Machine` has been created, restore Kube-OVN by using [Restore Kube-OVN During Stage-1 Recovery](./index.mdx#restore-kube-ovn-during-stage-1-recovery), then restore the previous `KubeadmControlPlane` and `MachineDeployment` manifest values.
-2. If a target-minor control-plane machine has joined, stop further rollout and repair forward on the target minor. If forward repair cannot restore cluster health, restore the cluster from the verified pre-upgrade backup by following the <ExternalSiteLink name="acp" href="/configure/backup/etcd.html#etcd-restore" children="ACP etcd restore procedure" />. Do not patch Kubernetes, CoreDNS, or etcd back to the previous minor.
+1. If no target-version control-plane `Machine` has been created, restore the previous `KubeadmControlPlane` and `MachineDeployment` manifest values.
+2. If a target-minor control-plane machine has joined, stop further rollout and repair forward on the target minor. If forward repair cannot restore cluster health, restore the cluster from the verified pre-upgrade backup by following the <ExternalSiteLink name="acp" href="/configure/backup/etcd.html#etcd-restore" children="ACP etcd restore procedure" />. Do not patch Kubernetes or etcd back to the previous minor.
 
 Restoring etcd is a disaster-recovery action, not a pre-upgrade validation step. Do not run the restore procedure on a healthy cluster merely to verify the backup.
 
@@ -280,11 +267,10 @@ kubectl -n cpaas-system get baremetalmachines.infrastructure.cluster.x-k8s.io \
   -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,INVENTORY:.status.machineInventoryRef.name,PLAN_SECRET:.status.planSecretRef.name'
 kubectl -n cpaas-system get machines.cluster.x-k8s.io \
   -l cluster.x-k8s.io/cluster-name=<cluster-name>
-kubectl -n cpaas-system get apprelease cni-kube-ovn
 kubectl get nodes -o wide
 ```
 
-The `cni-kube-ovn` `AppRelease` should report the target installed revision with `phase=Success`. For the target cluster, every current `BaremetalMachine` should be `Running`, every CAPI `Machine` should report the new `spec.version`, and every workload `Node` should be `Ready` with the new `kubelet` version.
+For the target cluster, every current `BaremetalMachine` should be `Running`, every CAPI `Machine` should report the new `spec.version`, and every workload `Node` should be `Ready` with the new `kubelet` version.
 
 For each current `BaremetalMachine`, use the `INVENTORY` and `PLAN_SECRET` columns to verify the inventory and plan that back the running node:
 
@@ -305,7 +291,6 @@ For an inventory with managed volumes, also verify `status.storage.phase=Active`
 
 | Issue | What to check |
 |---|---|
-| The Kube-OVN annotation changed but the chart name, target revision, or installed revision did not converge | Confirm that the installed Bare Metal provider is `v1.0.0` or later, then inspect the `AppRelease` conditions and provider logs. Follow the shared [Kube-OVN verification](./index.mdx#verify-the-kube-ovn-apprelease); do not patch the source manually. |
 | Rollout stuck on the first new node | `BaremetalMachine.status.conditions[ImageResolved]` — confirm the new key is in `elemental-image-catalog` and that the `Cluster` carries `cpaas.io/registry-address`. |
 | Inventory does not become allocatable after clean | Check `MachineInventory.status.storage` and `status.observedStorage`. Managed volumes must be confirmed inactive and Prepared from a fresh host observation before the inventory can return to the allocation set. |
 | Replacement Machine waits on `StorageReady` | Verify that the selected inventory is the intended one, required device IDs and filesystem UUIDs still match, required mount units are active, and the host produced a fresh post-reboot observation. |
