@@ -897,16 +897,16 @@ Existing machines continue using the old bootstrap configuration. Only newly cre
 
 ### Upgrading Kubernetes Version
 
-For Kubernetes and Alauda OS upgrades on Huawei DCS, see [Upgrading Kubernetes on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx). That guide covers the required order and the YAML workflow for control plane and worker replacement.
+Kubernetes and Alauda OS on Huawei DCS are upgraded automatically as part of the platform upgrade. See [Upgrading Clusters on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx), which also covers the manual mode and its YAML workflow for control plane and worker replacement.
 
 ---
 
 ## Managing Node Pools Using the Web UI
 
 :::info
-**Fleet Essentials upgrade boundary**
+**Kubernetes upgrades**
 
-Fleet Essentials 1.0.4 and later can request the ACP 4.3-and-later Distribution Version upgrade through CVO. It does not perform the DCS Kubernetes and Alauda OS replacement. Use [Upgrading Kubernetes on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx) for that Phase 2 YAML procedure. Adding, deleting, and viewing node pools through Fleet Essentials are unaffected by this boundary.
+A platform upgrade requested through Fleet Essentials 1.0.4 or later also upgrades Kubernetes and Alauda OS on DCS clusters automatically. Upgrade a node pool's Kubernetes version by hand only for a cluster in manual mode. See [Upgrading Clusters on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx).
 :::
 
 Node pools provide a declarative way to manage groups of nodes with identical configurations. You can view, add, and delete worker node pools through the web UI.

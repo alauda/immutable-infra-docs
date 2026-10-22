@@ -366,7 +366,7 @@ To roll out a bootstrap change:
 
 ### Upgrading Kubernetes Version
 
-For Kubernetes upgrades on bare-metal, see [Upgrading Clusters on Bare Metal](../upgrade-cluster/bare-metal.mdx). The upgrade path always replaces nodes — there is no in-place `kubeadm upgrade` step.
+Kubernetes on bare metal is upgraded automatically as part of the platform upgrade, after you stage the OS images in the image catalog. See [Upgrading Clusters on Bare Metal](../upgrade-cluster/bare-metal.mdx), which also covers the manual mode. The upgrade path always replaces nodes — there is no in-place `kubeadm upgrade` step.
 
 ---
 
