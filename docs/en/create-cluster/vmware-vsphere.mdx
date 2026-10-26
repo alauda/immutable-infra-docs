@@ -253,7 +253,7 @@ The `/v2/` segment is part of the Registry HTTP API URL only. In the workload `C
 Confirm the following results:
 
 - The `global` cluster is reachable.
-- Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider are running.
+- **Alauda Container Platform Cluster Bootstrap Provider** (previously **Alauda Container Platform Kubeadm Provider**) and **Alauda Container Platform Infrastructure Provider for Virtualization Platform** (previously **Alauda Container Platform VMware vSphere Infrastructure Provider**) are running.
 - The controller arguments include `ClusterResourceSet=true`.
 - The `public-registry-credential` Secret exists; its contents are not printed by this procedure.
 - The `global` cluster is not a disaster-recovery standby. The `kube-public/etcd-sync` ConfigMap must not exist. See [Standby Management Clusters](../install/vmware-vsphere.mdx#standby-management-cluster).
