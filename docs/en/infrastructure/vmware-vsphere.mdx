@@ -533,7 +533,7 @@ Do not manually delete a VMDK while its slot is `Released`, or while its `persis
 Before you start the deployment, confirm all of the following items:
 
 1. The `global` cluster is reachable.
-2. The two cluster plugins are installed: Alauda Container Platform Kubeadm Provider and Alauda Container Platform VMware vSphere Infrastructure Provider.
+2. The two cluster plugins are installed: **Alauda Container Platform Cluster Bootstrap Provider** (previously **Alauda Container Platform Kubeadm Provider**) and **Alauda Container Platform Infrastructure Provider for Virtualization Platform** (previously **Alauda Container Platform VSphere Infrastructure Provider**).
 3. `ClusterResourceSet=true` is enabled.
 4. The vCenter server, username, password, and thumbprint are collected.
 5. The external LoadBalancer satisfies the Layer 4 listener, backend, health-check, ownership, and reachability contract. If the cluster uses the Self-built VIP instead, the [Self-built VIP prerequisites](../create-cluster/vmware-vsphere.mdx#self-built-vip-prerequisites) are met and `<vrid>` and `<vip_interface>` are decided.
