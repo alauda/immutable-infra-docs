@@ -20,6 +20,15 @@ This document explains how to install the VMware vSphere Infrastructure Provider
 `v1.0.17` is the provider packaging version. It bundles the CAPV controller, the vSphere CPI image, the provider chart, and the admission webhooks that enforce the fixed-IP rollout rules. For those rules, see [Provider Requirements](../create-cluster/vmware-vsphere.mdx#provider-requirements). For the change history, see [Release Notes](../release-notes/vmware_vsphere.mdx).
 :::
 
+:::info
+Starting in ACP 4.5, the cluster plugins for VMware vSphere have new names:
+
+- **Alauda Container Platform Cluster Bootstrap Provider** (previously **Alauda Container Platform Kubeadm Provider**)
+- **Alauda Container Platform Infrastructure Provider for Virtualization Platform** (previously **Alauda Container Platform VSphere Infrastructure Provider**)
+
+Search for the new names when you download the plugins from the Customer Portal. A plugin package published before the rename still shows the former name in the platform after you upload it.
+:::
+
 ## Prerequisites \{#prerequisites}
 
 Before installing the provider, ensure the following conditions are met:
@@ -37,8 +46,8 @@ Before installing the provider, ensure the following conditions are met:
 
 To use VMware vSphere with Immutable Infrastructure, download the following cluster plugins from Customer Portal:
 
-1. **Alauda Container Platform Kubeadm Provider**
-2. **Alauda Container Platform VMware vSphere Infrastructure Provider**
+1. **Alauda Container Platform Cluster Bootstrap Provider** (previously **Alauda Container Platform Kubeadm Provider**)
+2. **Alauda Container Platform Infrastructure Provider for Virtualization Platform** (previously **Alauda Container Platform VSphere Infrastructure Provider**)
 
 ### Upload the packages
 

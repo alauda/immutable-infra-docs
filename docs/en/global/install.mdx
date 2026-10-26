@@ -35,7 +35,7 @@ The following prerequisites apply to every provider:
 
 - A bootstrap node that meets the [Bootstrap Node Requirements](#bootstrap-host-requirements). A disaster recovery deployment needs two, one for the primary and one for the standby `global` cluster; see [Install Primary and Standby Clusters](#install-primary-and-standby-clusters).
 - The Core Package from the Customer Portal.
-- The Alauda Container Platform Kubeadm Provider package.
+- The **Alauda Container Platform Cluster Bootstrap Provider** (previously **Alauda Container Platform Kubeadm Provider**) package.
 - The infrastructure provider package for your target platform.
 - Network reachability between the bootstrap node and the target IaaS platform API endpoint. See [Network](#bootstrap-host-network).
 - IP and hostname planning for the `global` control plane and worker nodes. See [Infrastructure Resources](../infrastructure/index.mdx) for the resource model used by each provider.
@@ -2787,6 +2787,10 @@ Install the v4.4.0-or-later plugin on the current standby Global only. Do not in
 Before installing, switch the platform domain back to the primary control-plane VIP — it was pointed at the standby for the standby installation. The primary is the active source of the first synchronization, and on startup the plugin resolves the platform domain and refuses to start when the cluster the domain points to runs `etcd-sync` itself; with the domain still on the standby, the installation you are about to perform would trip that check.
 
 The plugin package is published as `etcd-sync`, not `global-etcd-sync`: download `packages/etcd-sync/<minor>/etcd-sync.amd64.<version>.tgz` from the package server. It is not part of the installer bundle and is not present in the bootstrap Registry, so upload it to the target cluster like any other plugin package.
+
+:::info
+Starting in ACP 4.5, **<Term name="product" /> etcd Synchronizer** is named **<Term name="product" /> Global Cluster Disaster Recovery**. A plugin package published before the rename still shows **<Term name="product" /> etcd Synchronizer** in the platform after you upload it.
+:::
 
 Configure it with:
 
