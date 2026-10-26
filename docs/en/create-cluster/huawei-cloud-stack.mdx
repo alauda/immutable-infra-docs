@@ -13,7 +13,7 @@ queries:
 
 # Creating Clusters on Huawei Cloud Stack
 
-This document provides instructions for creating Kubernetes clusters on the Huawei Cloud Stack platform. YAML-based cluster creation is available through Cluster API manifests on any supported provider version. If Fleet Essentials `1.0.2` or later is installed and the Alauda Container Platform HCS Infrastructure Provider is `v1.0.3` or later, you can also create clusters through a guided web UI.
+This document provides instructions for creating Kubernetes clusters on the Huawei Cloud Stack platform. YAML-based cluster creation is available through Cluster API manifests on any supported provider version. If Fleet Essentials `1.0.2` or later is installed and the **Alauda Container Platform Infrastructure Provider for Huawei Cloud Stack** (previously **Alauda Container Platform HCS Infrastructure Provider**) is `v1.0.3` or later, you can also create clusters through a guided web UI.
 
 :::info
 The web UI provides a guided workflow with built-in validation, while YAML offers more automation flexibility.
@@ -127,7 +127,7 @@ To give the nodes of a pool their own labels, annotations, or taints — for exa
 
 ## Using the Web UI \{#using-the-web-ui}
 
-**Version requirement**: This workflow requires Fleet Essentials `1.0.2` or later and the Alauda Container Platform HCS Infrastructure Provider `v1.0.3` or later. If the provider version is earlier than `v1.0.3`, create clusters with the YAML manifests described in [Using YAML](#using-yaml).
+**Version requirement**: This workflow requires Fleet Essentials `1.0.2` or later and the **Alauda Container Platform Infrastructure Provider for Huawei Cloud Stack** (previously **Alauda Container Platform HCS Infrastructure Provider**) `v1.0.3` or later. If the provider version is earlier than `v1.0.3`, create clusters with the YAML manifests described in [Using YAML](#using-yaml).
 
 The web UI loads VPCs, subnets, security groups, flavors, and assignable IP addresses from the HCS platform using the Infrastructure Credential you select. Make sure the prerequisites above are met before you start, and that an HCS credential Secret exists in the `cpaas-system` namespace.
 

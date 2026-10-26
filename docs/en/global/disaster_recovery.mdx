@@ -68,7 +68,7 @@ For the synchronized and excluded scope, see <ExternalSiteLink name="acp" href="
 
 After the primary and standby clusters are installed, operate DR as a separate lifecycle process. Keep the installation manifests aligned with the installation guide, then use an approved operations runbook for the following tasks:
 
-- Verify the health and replication lag of **<Term name="product" /> etcd Synchronizer**.
+- Verify the health and replication lag of **<Term name="product" /> Global Cluster Disaster Recovery** (previously **<Term name="product" /> etcd Synchronizer**).
 - Verify that the standby cluster can decrypt Kubernetes Secrets created on the primary cluster.
 - Validate the primary and standby control plane VIPs and the platform access path before a planned failover.
 - Before a planned failover or failback, verify that the required ports are allowed in both directions between the two cluster networks. After the switch, the former standby becomes the new primary and the former primary becomes the new standby, so the direction of service traffic is reversed.
@@ -76,7 +76,7 @@ After the primary and standby clusters are installed, operate DR as a separate l
 - Reconcile provider-specific resources after a failover.
 
 <Directive type="warning" title="Verify consistency before uninstalling Alauda Container Platform etcd Synchronizer">
-A disaster recovery switchover and a DR-aware `global` cluster upgrade both uninstall **<Term name="product" /> etcd Synchronizer**. Before that uninstall, confirm that the standby `global` cluster data is consistent with the primary. On Immutable Infrastructure, workload-cluster nodes are backed by Cluster API `Machine` objects, so an incorrect owner-reference resolution after an inconsistent sync can delete those `Machine` objects and destroy the backing virtual machines. If the consistency check reports missing or surplus keys, do not uninstall the plugin; resolve the inconsistency or contact technical support first. For the detailed switchover and upgrade procedures, see <ExternalSiteLink name="acp" href="/install/global_dr.html" children="Global Cluster Disaster Recovery" /> and <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />.
+A disaster recovery switchover and a DR-aware `global` cluster upgrade both uninstall **<Term name="product" /> Global Cluster Disaster Recovery** (previously **<Term name="product" /> etcd Synchronizer**). Before that uninstall, confirm that the standby `global` cluster data is consistent with the primary. On Immutable Infrastructure, workload-cluster nodes are backed by Cluster API `Machine` objects, so an incorrect owner-reference resolution after an inconsistent sync can delete those `Machine` objects and destroy the backing virtual machines. If the consistency check reports missing or surplus keys, do not uninstall the plugin; resolve the inconsistency or contact technical support first. For the detailed switchover and upgrade procedures, see <ExternalSiteLink name="acp" href="/install/global_dr.html" children="Global Cluster Disaster Recovery" /> and <ExternalSiteLink name="acp" href="/upgrade/upgrade_global_cluster.html" children="Upgrade the global cluster" />.
 </Directive>
 
 ## Failover \{#failover-procedure}
