@@ -13,7 +13,7 @@ queries:
 
 # Creating Clusters on Huawei DCS
 
-This document provides instructions for creating Kubernetes clusters on the Huawei DCS platform. YAML-based cluster creation is available through manifests. If Fleet Essentials is installed and Alauda Container Platform DCS Infrastructure Provider is `1.0.13` or later, you can also create clusters through the web UI. If the workflow relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the `persistentDisk` declaration on `DCSIpHostnamePool` is available through YAML only and is not exposed in the web UI. DCS Provider `v1.0.22` or later paired with ACP `v4.4` or later also supports `Self-built VIP` through the YAML workflow.
+This document provides instructions for creating Kubernetes clusters on the Huawei DCS platform. YAML-based cluster creation is available through manifests. If Fleet Essentials is installed and **Alauda Container Platform Infrastructure Provider for Huawei DCS** (previously **Alauda Container Platform DCS Infrastructure Provider**) is `1.0.13` or later, you can also create clusters through the web UI. If the workflow relies on pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, the `persistentDisk` declaration on `DCSIpHostnamePool` is available through YAML only and is not exposed in the web UI. DCS Provider `v1.0.22` or later paired with ACP `v4.4` or later also supports `Self-built VIP` through the YAML workflow.
 
 Before choosing a VM template and provider package, review [Alauda OS and Provider Compatibility](../overview/providers/huawei-dcs.mdx#alauda-os-and-provider-compatibility).
 
@@ -112,7 +112,7 @@ To give the nodes of a pool their own labels, annotations, or taints — for exa
 Fleet Essentials 1.0.4 and later can request the ACP 4.3-and-later Distribution Version upgrade through CVO. It does not perform the DCS Kubernetes and Alauda OS replacement. Use [Upgrading Kubernetes on Huawei DCS](../upgrade-cluster/huawei-dcs.mdx) for that Phase 2 YAML procedure. Cluster creation through Fleet Essentials is unaffected by this boundary.
 :::
 
-**Version requirement**: This workflow requires Fleet Essentials and Alauda Container Platform DCS Infrastructure Provider `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests. If you use pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, configure `DCSIpHostnamePool.spec.pool[].persistentDisk` through YAML because the web UI does not expose that field.
+**Version requirement**: This workflow requires Fleet Essentials and **Alauda Container Platform Infrastructure Provider for Huawei DCS** (previously **Alauda Container Platform DCS Infrastructure Provider**) `1.0.13` or later. If the provider version is earlier than `1.0.13`, use YAML manifests. If you use pool-managed persistent disks, use DCS provider `v1.0.16` or later. In `v1.0.16`, configure `DCSIpHostnamePool.spec.pool[].persistentDisk` through YAML because the web UI does not expose that field.
 
 If the new cluster will rely on pool-managed persistent disks, create or update the backing `DCSIpHostnamePool` with YAML and then use the web UI for the rest of the cluster workflow.
 
@@ -941,7 +941,7 @@ spec:
 :::tip
 **Alternative: reference a centrally managed Secret instead of inline content**
 
-The Alauda Container Platform DCS Infrastructure Provider plugin ships a Secret named `dcs-kubernetes-<kubernetes-major-minor>-files` in the `cpaas-system` namespace (for example, `dcs-kubernetes-1.33-files` for Kubernetes 1.33). It contains the canonical content of `psa-config.yaml`, `control-plane-kubelet-patch.json`, and `audit-policy.yaml`, and is updated together with each release.
+The **Alauda Container Platform Infrastructure Provider for Huawei DCS** (previously **Alauda Container Platform DCS Infrastructure Provider**) plugin ships a Secret named `dcs-kubernetes-<kubernetes-major-minor>-files` in the `cpaas-system` namespace (for example, `dcs-kubernetes-1.33-files` for Kubernetes 1.33). It contains the canonical content of `psa-config.yaml`, `control-plane-kubelet-patch.json`, and `audit-policy.yaml`, and is updated together with each release.
 
 When that Secret is present, you can replace the three inline `files` entries with `contentFrom.secret` references. Inline and Secret-referenced forms are functionally equivalent; using the Secret keeps file content aligned with the installed plugin version and avoids manual updates on cluster upgrades.
 
