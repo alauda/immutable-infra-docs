@@ -147,7 +147,7 @@ The bare-metal provider plugin does not carry any Kubernetes version or OS image
 
 First import the target release's `baremetal-base-image` and `baremetal-base-image-iso` from the Bare Metal OS archive into the platform registry, as described in [OS Images Imported and Image Catalog Populated](../create-cluster/bare-metal.mdx#os-images-and-image-catalog). Then add the version with either option below.
 
-**Option A — Add a chart override.** Append the new version under `provider.imageCatalog.images` (uses `global.registry.address` as the registry) in `spec.valuesOverride` of the provider's `ModuleInfo` on the `global` cluster, next to the values already set there. To find and edit that `ModuleInfo`, see [Install the Cluster API providers on the global cluster](../global/install.mdx#install-providers-on-global):
+**Option A — Add a chart override.** Append the new version under `provider.imageCatalog.images` (uses `global.registry.address` as the registry) in `spec.valuesOverride` of the provider's `ModuleInfo` on the `global` cluster, next to the values already set there. Do not replace the whole `valuesOverride`: that drops `caCertSecretKey`, and `elemental-operator` cannot start. To find and edit that `ModuleInfo`, see [Install the Cluster API providers on the global cluster](../global/install.mdx#install-providers-on-global):
 
 ```yaml
 spec:
