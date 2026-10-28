@@ -587,8 +587,8 @@
       "updated_at": "2026-10-26T07:33:39Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
-      "sha256": "0db6e2919d177f40bca9f76a3c19dedb23509efc397069301e3be53244876dec",
-      "size": 24765,
+      "sha256": "099a871be56ae4dba00b5133f30c565fa1fd6835650ec76b63e838d48c06429d",
+      "size": 25539,
       "description": "Disaster recovery for a `global` cluster on Immutable Infrastructure. Deploy-time configuration lives in the installation guide: two bootstrap nodes (one per side), shared encryption provider, etcd `serverCertSANs`, the `dcs-import-extra-resources` ConfigMap, the encryption provider Secret imported into each final `global`, and the etcd Synchronizer on the standby. Specifies the Platform Access Address and bidirectional ports `443`, `80`, `6443`, `11443`, `2379`; observability placement (each `global` observes only itself); the operational scope, warning to verify consistency before the synchronizer is uninstalled; and the provider-neutral failover sequence: fence the primary, confirm zero differences, uninstall the synchronizer from the old standby, switch the platform domain, reinstall with reversed values. Details the Bare Metal DR model (split system-agent identity, read-only shared auth on the standby, shared ServiceAccount signing key, synchronization rules, acceptance, troubleshooting). Provider notes cover DCS failover checks: workload `Cluster`/`Machine`/`DCSMachine` intact, the `global-` prefix as DR ownership marker, both Secrets on the active side.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-10-28T07:13:11Z"
@@ -991,8 +991,8 @@
       "updated_at": "2026-09-15T10:59:36Z"
     },
     "docs/en/upgrade-cluster/bare-metal.mdx": {
-      "sha256": "716a70980b028a72849d94151e694522c98cf0ac95ea3062592b06b41bcfd038",
-      "size": 28585,
+      "sha256": "47c86c074fd9f0cb757e3aacc812fe35f3e6dd642613138d8cec21eea632825b",
+      "size": 28697,
       "description": "Phase 2 Kubernetes upgrade for bare-metal clusters, which replaces every node instead of running `kubeadm upgrade`: CAPI deletes a `Machine`, the provider writes a `clean` plan, reallocates an `Available` inventory from the same pool, and writes a `reprovision` plan that runs `elemental upgrade --system <new-image>`, with initramfs clearing `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes` while declared managed volumes are only deactivated. Covers the management-cluster-first sequence, importing the target OS images and adding the version to `elemental-image-catalog`, which never gains versions on its own, the shared Kube-OVN step, patching `KubeadmControlPlane.spec.version` with matching `dns` and `etcd.local` image tags (no new `BaremetalMachineTemplate` for a version-only hop), worker `MachineDeployment` rollouts at `maxSurge: 0`, storage compatibility limits on pre-storage hosts, cross-version hops, staged recovery, plan/inventory verification, and the `no space left on device` failure caused by an 8 GiB `COS_STATE`, including partial-snapshot cleanup and the reinstall needed on hosts installed before COS_STATE sizing was applied.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-10-28T07:13:11Z"
