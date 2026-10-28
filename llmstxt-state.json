@@ -587,11 +587,11 @@
       "updated_at": "2026-10-26T07:33:39Z"
     },
     "docs/en/global/disaster_recovery.mdx": {
-      "sha256": "cb90a2f7401e90d74e52994f305eec223fae4a1c3fd0cf72abd1bff828d51075",
-      "size": 24171,
+      "sha256": "0db6e2919d177f40bca9f76a3c19dedb23509efc397069301e3be53244876dec",
+      "size": 24765,
       "description": "Disaster recovery for a `global` cluster on Immutable Infrastructure. Deploy-time configuration lives in the installation guide: two bootstrap nodes (one per side), shared encryption provider, etcd `serverCertSANs`, the `dcs-import-extra-resources` ConfigMap, the encryption provider Secret imported into each final `global`, and the etcd Synchronizer on the standby. Specifies the Platform Access Address and bidirectional ports `443`, `80`, `6443`, `11443`, `2379`; observability placement (each `global` observes only itself); the operational scope, warning to verify consistency before the synchronizer is uninstalled; and the provider-neutral failover sequence: fence the primary, confirm zero differences, uninstall the synchronizer from the old standby, switch the platform domain, reinstall with reversed values. Details the Bare Metal DR model (split system-agent identity, read-only shared auth on the standby, shared ServiceAccount signing key, synchronization rules, acceptance, troubleshooting). Provider notes cover DCS failover checks: workload `Cluster`/`Machine`/`DCSMachine` intact, the `global-` prefix as DR ownership marker, both Secrets on the active side.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-26T07:33:39Z"
+      "updated_at": "2026-10-28T07:13:11Z"
     },
     "docs/en/global/index.mdx": {
       "sha256": "24838351357292e96480d02f4e62ce8b82d5d978a17bfd66604ebd3c390e7f4b",
@@ -601,11 +601,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/global/install.mdx": {
-      "sha256": "ba259575c320106d0fda8913273cc6f09065a7dc59d446fbf67f46793e2b80f0",
-      "size": 176580,
+      "sha256": "1c5170fdd7198d06a121c159df98f5aeb1a7c94c312c60e174ed309cf7c23339",
+      "size": 179198,
       "description": "End-to-end procedure for installing the `global` cluster through the temporary `minialauda` bootstrap environment on Huawei DCS, VMware vSphere, Huawei Cloud Stack, or Bare Metal. Covers when to use this path, the required `global` / `global-` naming convention, bootstrap node hardware, operating system and network requirements, compatibility and version inputs, provider-package delivery, Bare Metal OS image import and image catalog preparation, registry formats and optional authentication, DCS external versus `v1.0.22+` Self-built VIP endpoint selection, provider-specific Cluster API manifests, installer requests, verification and provider-resource handoff, optional disaster recovery deployment (shared encryption configuration and etcd SANs, two separate bootstrap nodes on every provider, the platform-domain sequence including switching back to the primary before installing etcd-sync), preparing a Bare Metal `global` as a management cluster, decommissioning gates, and a worked DCS `global` manifest.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-26T07:33:39Z"
+      "updated_at": "2026-10-28T07:13:11Z"
     },
     "docs/en/global/upgrade.mdx": {
       "sha256": "31f29703232fb8de969d32a9f2519efde28e3c181867990ab1e76485cf2a2337",
@@ -748,11 +748,11 @@
       "updated_at": "2026-10-26T07:33:39Z"
     },
     "docs/en/install/bare-metal.mdx": {
-      "sha256": "e0a1e56d5849b21a8257ee417ac0a60dbf5d7f731d98de55663a84c351dc81e2",
-      "size": 3964,
+      "sha256": "9606bd111d566b0949c00810dd0524f7f4deb297719f001baccd14817f905794",
+      "size": 4217,
       "description": "Installing the Bare Metal Infrastructure Provider as a cluster plugin on the `global` cluster: download the **Alauda Container Platform Cluster Bootstrap Provider** (previously **Alauda Container Platform Kubeadm Provider**) and the **Alauda Container Platform Infrastructure Provider for Bare Metal** (previously **Alauda Container Platform Bare Metal Infrastructure Provider**) umbrella chart (which ships the `cluster-api-provider-baremetal-manager` and `elemental-operator` subcharts plus an empty `elemental-image-catalog` ConfigMap), run the shared ACP `upload_package` and `cluster_plugin` flows, then verify both controllers are Running, that the `baremetalclusters`/`baremetalmachines`/`baremetalmachinetemplates`/`machineinventorypools.infrastructure.cluster.x-k8s.io` and `machineinventories`/`machineregistrations`/`seedimages.elemental.cattle.io` CRDs are registered, then import the OS images and add every `Machine.spec.version` you intend to deploy to the image catalog.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-26T07:33:39Z"
+      "updated_at": "2026-10-28T07:13:11Z"
     },
     "docs/en/install/huawei-cloud-stack.mdx": {
       "sha256": "c8ded486dbaef3f16935d440f9b18d9b03e553a739c6a0a1f54197a6b00223ca",
@@ -991,11 +991,11 @@
       "updated_at": "2026-09-15T10:59:36Z"
     },
     "docs/en/upgrade-cluster/bare-metal.mdx": {
-      "sha256": "b9256d4d116e83e0b9a5348354085cf76123a1d40af470db7263848c8345f9fe",
-      "size": 28177,
+      "sha256": "716a70980b028a72849d94151e694522c98cf0ac95ea3062592b06b41bcfd038",
+      "size": 28585,
       "description": "Phase 2 Kubernetes upgrade for bare-metal clusters, which replaces every node instead of running `kubeadm upgrade`: CAPI deletes a `Machine`, the provider writes a `clean` plan, reallocates an `Available` inventory from the same pool, and writes a `reprovision` plan that runs `elemental upgrade --system <new-image>`, with initramfs clearing `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes` while declared managed volumes are only deactivated. Covers the management-cluster-first sequence, importing the target OS images and adding the version to `elemental-image-catalog`, which never gains versions on its own, the shared Kube-OVN step, patching `KubeadmControlPlane.spec.version` with matching `dns` and `etcd.local` image tags (no new `BaremetalMachineTemplate` for a version-only hop), worker `MachineDeployment` rollouts at `maxSurge: 0`, storage compatibility limits on pre-storage hosts, cross-version hops, staged recovery, plan/inventory verification, and the `no space left on device` failure caused by an 8 GiB `COS_STATE`, including partial-snapshot cleanup and the reinstall needed on hosts installed before COS_STATE sizing was applied.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-26T09:18:20Z"
+      "updated_at": "2026-10-28T07:13:11Z"
     },
     "docs/en/upgrade-cluster/huawei-cloud-stack.mdx": {
       "sha256": "eea56f6a8e4d261dbea552c915b81ac15dfd8685235b7ee24145660a79ef873c",

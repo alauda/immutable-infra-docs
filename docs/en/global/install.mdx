@@ -2379,13 +2379,11 @@ elemental:
     caCertSecretKey: ca.crt
 ```
 
-Keep the bootstrap and final certificate inputs separate. The bootstrap `dex.tls` created in Step 3 has a dedicated `ca.crt` key and is used only for `https://<bootstrap-host-ip>:12443`. Do not import it into the final cluster. On each final Global cluster, the installer-managed `dex.tls` contains the platform full certificate chain in `tls.crt`; the final Bare Metal provider AppRelease must therefore use `elemental.tls.caCertSecretKey: tls.crt`:
+Keep the bootstrap and final certificate inputs separate. The bootstrap `dex.tls` created in Step 3 has a dedicated `ca.crt` key and is used only for `https://<bootstrap-host-ip>:12443`. Do not import it into the final cluster. On each final Global cluster, the installer-managed `dex.tls` contains the platform full certificate chain in `tls.crt`; the Bare Metal provider on the final cluster must therefore use `elemental.tls.caCertSecretKey: tls.crt`. Set it in `spec.valuesOverride` of the provider's `ModuleInfo` when you install the provider on each final `global` cluster, as described in [Install the Cluster API providers on the global cluster](#install-providers-on-global). `agentTLSMode` and `caCertSecretName` need no override there: their defaults, `strict` and `dex.tls`, match the bootstrap values above.
 
-```yaml title="Final Global AppRelease"
+```yaml title="Final Global provider values"
 elemental:
   tls:
-    agentTLSMode: strict
-    caCertSecretName: dex.tls
     caCertSecretKey: tls.crt
 ```
 
@@ -2393,7 +2391,7 @@ The final operator uses this chain for its registration endpoint. Direct-API han
 
 `elemental.systemAgent.splitAuthEnabled` is the single switch for both `elemental-operator` and the handoff job. Do not configure a separate handoff auth-enable switch. Keeping one source of truth prevents a Global host from retaining a shared token after the operator has already narrowed the shared Role to workload plans.
 
-Set the shared bundle ownership separately on the two AppRelease objects. The active primary reconciles workload permissions, while the inactive standby leaves the synchronized shared bundle read-only:
+Set the shared bundle ownership separately on each side: on the bootstrap release with the patch above, and on each final `global` cluster in the provider's `ModuleInfo`, as described in [Install the Cluster API providers on the global cluster](#install-providers-on-global). The active primary reconciles workload permissions, while the inactive standby leaves the synchronized shared bundle read-only:
 
 ```yaml title="Primary active Global"
 elemental:
@@ -2903,12 +2901,57 @@ GLOBAL_REGISTRY_PASSWORD="$(kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas
   get secret registry-admin -o jsonpath='{.data.password}' | base64 -d)"
 ```
 
-### Install the Cluster API providers on the global cluster
+### Install the Cluster API providers on the global cluster \{#install-providers-on-global}
 
 Upload the same Bare Metal and Kubeadm provider packages you used for the bootstrap cluster to the
-`global` cluster, then install both plugins. Set the DR fields on the Bare Metal provider exactly as
-you did on the bootstrap release: `elemental.systemAgent.splitAuthEnabled: true` on both sides,
-`sharedAuthReadOnly: false` on the active cluster and `true` on the standby.
+`global` cluster, then install both plugins. The `global` cluster does not inherit the values of the
+bootstrap release. Set the following values on the Bare Metal provider:
+
+- `elemental.tls.caCertSecretKey`: the key that `dex.tls` actually contains, normally `tls.crt`.
+  Find it before you install, as described in
+  [Point the provider at the platform certificate that actually exists](#platform-certificate-key).
+- In a DR pair, set the DR fields exactly as you did on the bootstrap release:
+  `elemental.systemAgent.splitAuthEnabled: true` on both sides, `sharedAuthReadOnly: false` on the
+  active cluster and `true` on the standby. Each side keeps its own value; DR synchronization does
+  not copy the provider's `ModuleInfo`.
+
+Install the Bare Metal provider with YAML, as described in <ExternalSiteLink name="acp" href="/extend/cluster_plugin.html#installing-via-yaml" children="Installing via YAML" />,
+and put these values in `spec.valuesOverride` of its `ModuleInfo`. The install form in the Web
+Console has no fields for them. Create the `ModuleInfo` on this `global` cluster, with `version` set
+to the provider version you uploaded:
+
+```yaml
+apiVersion: cluster.alauda.io/v1alpha1
+kind: ModuleInfo
+metadata:
+  labels:
+    cpaas.io/cluster-name: global
+    cpaas.io/module-name: cluster-api-provider-baremetal
+    cpaas.io/module-type: plugin
+  name: global-temporary-name
+spec:
+  config: {}
+  version: <provider-plugin-version>
+  valuesOverride:
+    ait/chart-cluster-api-provider-baremetal:
+      elemental:
+        tls:
+          caCertSecretKey: <key-found-in-dex.tls>
+        systemAgent:                  # DR pair only
+          splitAuthEnabled: true
+          sharedAuthReadOnly: false   # true on the standby
+```
+
+If the plugin is already installed, add the same `valuesOverride` to its existing `ModuleInfo`:
+
+```shell
+kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" get moduleinfo \
+  -l cpaas.io/cluster-name=global,cpaas.io/module-name=cluster-api-provider-baremetal
+kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" edit moduleinfo <name>
+```
+
+Do not edit the provider's `AppRelease`: the platform regenerates it from the `ModuleInfo`, so the
+change is lost.
 
 Verify that the manager and `elemental-operator` are running before continuing:
 
@@ -2917,7 +2960,7 @@ kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system get deploy \
   cluster-api-provider-baremetal-manager elemental-operator
 ```
 
-### Point the provider at the platform certificate that actually exists
+### Point the provider at the platform certificate that actually exists \{#platform-certificate-key}
 
 The Bare Metal provider mounts a CA bundle for `platformUrl` from
 `elemental.tls.caCertSecretName` / `caCertSecretKey`, which default to `dex.tls` and `ca.crt`.
@@ -2930,8 +2973,9 @@ MountVolume.SetUp failed for volume "elemental-ca-cert":
   references non-existent secret key: ca.crt
 ```
 
-Check which keys the Secret actually has and set `caCertSecretKey` accordingly. For a self-signed
-platform certificate the certificate is its own CA, so `tls.crt` is the correct key:
+Check which keys the Secret actually has and set `caCertSecretKey` accordingly in the provider's
+`ModuleInfo`, as shown in [Install the Cluster API providers on the global cluster](#install-providers-on-global).
+For a self-signed platform certificate the certificate is its own CA, so `tls.crt` is the correct key:
 
 ```shell
 kubectl --kubeconfig "${GLOBAL_KUBECONFIG}" -n cpaas-system \
