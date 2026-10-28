@@ -41,6 +41,8 @@ For detailed instructions on uploading packages, refer to <ExternalSiteLink name
 
 For detailed instructions on installing cluster plugins, refer to <ExternalSiteLink name="acp" href="/extend/cluster_plugin.html#cluster-plugin" children="Cluster Plugin" />.
 
+If the `global` cluster was installed on Bare Metal, install the Infrastructure Provider for Bare Metal with YAML and the values described in [Install the Cluster API providers on the global cluster](../global/install.mdx#install-providers-on-global).
+
 The umbrella chart installs both the bare-metal provider manager and `elemental-operator` in one step. It also creates the `elemental-image-catalog` ConfigMap, but with no entries, and the package contains no Alauda OS image. Before you create a cluster, import the Bare Metal OS images into the platform registry and add every Kubernetes version you deploy to the catalog; see [OS Images Imported and Image Catalog Populated](../create-cluster/bare-metal.mdx#os-images-and-image-catalog).
 
 ## Verifying Installation
