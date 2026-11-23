@@ -713,11 +713,11 @@
       "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/index.mdx": {
-      "sha256": "a4607f1e3059639318e865aa2651fa48f67bbd60b10bd7cad69fb4fcc6a0ba9e",
-      "size": 749,
+      "sha256": "cf4f0ee7385a50c074032097ea30749cd0bf7e3a40c289cb9634bed70a3ab16e",
+      "size": 820,
       "description": "Top-level English documentation landing page for the Immutable Infrastructure platform, rendering a navigation overview component that links to the major sections (overview, install, create-cluster, manage-nodes, upgrade-cluster, machine-configuration, infrastructure, how-to, global, and the Cluster API reference). Opens with a notice that, starting in ACP 4.5, this content moved into the ACP documentation, with links to the ACP 4.5 install, workload-cluster, node, and upgrade pages.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-11-23T16:59:34Z"
+      "updated_at": "2026-11-23T17:08:42Z"
     },
     "docs/en/infrastructure/huawei-cloud-stack.mdx": {
       "sha256": "d9c7ff23da0497e25047d7785de224513dd4fa496edd25e7109159465b4ceb45",
@@ -895,11 +895,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/overview/intro.mdx": {
-      "sha256": "bdf061287942ce99dd6e92aabba37b46f6033b5401dc4d389c0da133fce74cf7",
-      "size": 1245,
+      "sha256": "31dc1c9669a7ba7257de32f765b93c3a8ec39b126cbb5c04406ce8d472fbf6cd",
+      "size": 1316,
       "description": "Brief introduction to Immutable Infrastructure on the Alauda Container Platform, naming Cluster API as the underlying mechanism and listing the three guiding principles: declarative configuration, version control, and reproducible deployments. Opens with a notice that, starting in ACP 4.5, this content moved into the ACP documentation, with links to the ACP 4.5 pages.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-11-23T16:59:34Z"
+      "updated_at": "2026-11-23T17:08:42Z"
     },
     "docs/en/overview/os-support-matrix.mdx": {
       "sha256": "b111ece72b5ff9484102415c935a108ab3b5bb2c092954214adfbdd5ea4ba7bc",
