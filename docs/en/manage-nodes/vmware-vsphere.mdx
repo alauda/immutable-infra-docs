@@ -173,7 +173,7 @@ Persistent disks are owned by `VSphereMachineConfigPool` slots rather than `VSph
 :::tip
 **Rolling back a failed update**
 
-If the rolling update fails (for example, new VMs fail to boot), revert the `MachineDeployment` reference back to the previous template name. The old template still exists and Cluster API will roll back to it.
+If the rolling update fails (for example, new VMs fail to boot), revert the `MachineDeployment` reference back to the previous template name. This works only while the Kubernetes minor version is unchanged. The old template still exists and Cluster API will roll back to it.
 :::
 
 ### Verify worker node status
