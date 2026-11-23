@@ -105,7 +105,7 @@ Do not treat node-local data on HCS `dataVolumes[]` as preserved state. Move `/v
 
 `HCSMachineTemplate` is a Cluster API infrastructure template. Cluster API only triggers rolling replacement when `KubeadmControlPlane.spec.machineTemplate.infrastructureRef.name` or `MachineDeployment.spec.template.spec.infrastructureRef.name` points at a **different** template name. Editing the existing template in place changes the manifest but does not produce a new rollout — the running VMs continue to use the in-memory snapshot of the previous template.
 
-Every upgrade step on this page therefore creates a new `HCSMachineTemplate` with a new `metadata.name`, applies it, and then patches the controlling resource's `infrastructureRef.name` to the new template. Keep the previous template until the new rollout is healthy in case rollback is required.
+Every upgrade step on this page therefore creates a new `HCSMachineTemplate` with a new `metadata.name`, applies it, and then patches the controlling resource's `infrastructureRef.name` to the new template.
 :::
 
 :::info
@@ -262,23 +262,9 @@ Worker node upgrades are managed via `MachineDeployment` resources.
 For detailed worker node procedures, see the [Managing Nodes](../manage-nodes/huawei-cloud-stack.mdx#upgrading-kubernetes-version) section.
 :::
 
-## Recovering From a Failed Phase 2 Upgrade
+## Failed Upgrades \{#failed-upgrades}
 
-Do not treat a Kubernetes minor downgrade as an ordinary rollback. Choose the recovery path from the rollout stage:
-
-1. **No target-version control-plane `Machine` has been created**: restore the previous Kube-OVN state and the previous `KubeadmControlPlane` and `MachineDeployment` manifest values. This cancels the target rollout before a new control-plane data format is introduced.
-2. **Only the machine template or OS image changed, and the Kubernetes minor did not change**: point the controlling resource back to the previous template. Cluster API performs another replacement rollout. Keep the Kubernetes minor unchanged.
-3. **A control-plane `Machine` on the target Kubernetes minor has joined the cluster**: do not patch Kubernetes, CoreDNS, or etcd back to the previous minor. Stop further rollout, repair forward on the target minor, or restore the cluster from the verified pre-upgrade backup by using the supported ACP recovery procedure.
-
-If a target-minor control-plane `Machine` was created but never joined, first restore healthy etcd quorum and determine whether the failed replacement can be removed safely. Do not assume that changing the version fields alone is sufficient.
-
-Keep these infrastructure facts in mind during any recovery:
-
-- **The old VMs are gone.** They were destroyed during the upgrade. Template recovery builds a fresh set of replacement machines; it does not restore the original VMs.
-- **The old `HCSMachineTemplate` resource must still exist.** Do not delete the previous template until the new rollout is healthy. If you already deleted it, recreate it from version control or backup before attempting same-minor template recovery.
-- **Only pool-managed persistent disks preserve node-local state.** Data written to `HCSMachineTemplate.spec.template.spec.dataVolumes[]` during the upgrade window is lost when that VM is replaced. Data written to disks declared in `HCSMachineConfigPool.spec.configs[].persistentDisks[]` is retained and reattached to the replacement VM. Application data should still use external persistent storage such as HCS EVS CSI unless your operational design explicitly depends on node-local state.
-
-For stage 1, use the HCS rule in [Restore Kube-OVN During Stage-1 Recovery](./index.mdx#restore-kube-ovn-during-stage-1-recovery). The recovery action depends on the installed provider version: current providers restore the complete source from the annotation, while legacy providers require the earlier-chart revision patch. Wait until the restored `AppRelease` passes the shared verification before changing control-plane manifests.
+An upgrade cannot be rolled back: do not set the versions or the templates back to their previous values. Restoring an etcd backup does not return a cluster to an earlier version either. Fix the reported cause and the rollout continues; if the cause cannot be fixed, contact technical support.
 
 The `KubeadmControlPlane` controller can block replacement while etcd is unhealthy. Recover quorum before retrying any safe replacement action.
 

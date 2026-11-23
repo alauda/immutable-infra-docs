@@ -34,7 +34,7 @@ This documentation is validated against VMware vSphere Provider `v1.0.17`. The p
 - **Multi-NIC Support**: Primary and additional NICs per node, where the primary NIC drives the kubelet `node-ip` and additional NICs are attached in declared order for management, storage, or service networks
 - **Multiple Datacenters and Failure Domains**: Distribute control plane and worker nodes across multiple vCenter datacenters or compute clusters through `VSphereFailureDomain` and `VSphereDeploymentZone` for high availability
 - **Flexible Data Disks**: Declarative per-slot persistent and ephemeral data disks with optional format/mount, `wipeFilesystem` control on persistent disks, raw-device mode exposed at `/dev/disk/by-capv/<name>`, and delayed release so replacement Machines can reuse the slot and VMDKs before provider-managed reclaim
-- **Immutable-Template Rolling Updates**: Control plane and worker updates use new `VSphereMachineTemplate` and `KubeadmConfigTemplate` resources, enabling reproducible replacement and same-minor template recovery
+- **Immutable-Template Rolling Updates**: Control plane and worker updates use new `VSphereMachineTemplate` and `KubeadmConfigTemplate` resources, enabling reproducible replacement
 
 ## Supported Resources
 
