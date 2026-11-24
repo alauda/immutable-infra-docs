@@ -608,11 +608,11 @@
       "updated_at": "2026-10-28T07:13:11Z"
     },
     "docs/en/global/upgrade.mdx": {
-      "sha256": "31f29703232fb8de969d32a9f2519efde28e3c181867990ab1e76485cf2a2337",
-      "size": 21813,
-      "description": "Phase 2 (Kubernetes and Alauda OS image) of the two-phase `global` cluster upgrade on Immutable Infrastructure, for Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal: upgrade Kube-OVN first, then create new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources for the target image (Bare Metal resolves it from `Machine.spec.version` through `elemental-image-catalog`), retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment`, set CoreDNS and etcd tags from the OS Support Matrix row, add the `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch when targeting Kubernetes 1.35, and keep `rollingUpdate.maxSurge: 0` so pool-declared persistent disks and fixed identities are reused. Includes stage-based recovery rules and the single-control-plane HCS exclusion.",
+      "sha256": "cd88f59709322d78ebc43d0ce941a46675c50d092a28b73a5147fa3b41ff3c6b",
+      "size": 18503,
+      "description": "Phase 2 (Kubernetes and Alauda OS image) of the two-phase `global` cluster upgrade on Immutable Infrastructure, for Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal: upgrade Kube-OVN first, then create new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources for the target image (Bare Metal resolves it from `Machine.spec.version` through `elemental-image-catalog`), retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment`, set CoreDNS and etcd tags from the OS Support Matrix row, add the `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch when targeting Kubernetes 1.35, and keep `rollingUpdate.maxSurge: 0` so pool-declared persistent disks and fixed identities are reused. States that a failed upgrade cannot be rolled back and includes the single-control-plane HCS exclusion.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-11-23T16:59:34Z"
     },
     "docs/en/how-to/configure-fixed-install-disk-bare-metal.mdx": {
       "sha256": "6a9493a1e0fad0ffd82cfced1a6604eba80331ef87728ca6a052e64f7b62b7b0",
@@ -713,11 +713,11 @@
       "updated_at": "2026-09-02T11:04:57Z"
     },
     "docs/en/index.mdx": {
-      "sha256": "ea8d719fb06b69c8f8fa90c79d3ec2a67457c854f2c664fb78f523febe3f6960",
-      "size": 48,
-      "description": "Top-level English documentation landing page for the Immutable Infrastructure platform, rendering a navigation overview component that links to the major sections (overview, install, create-cluster, manage-nodes, upgrade-cluster, machine-configuration, infrastructure, how-to, global, and the Cluster API reference).",
+      "sha256": "cf4f0ee7385a50c074032097ea30749cd0bf7e3a40c289cb9634bed70a3ab16e",
+      "size": 820,
+      "description": "Top-level English documentation landing page for the Immutable Infrastructure platform, rendering a navigation overview component that links to the major sections (overview, install, create-cluster, manage-nodes, upgrade-cluster, machine-configuration, infrastructure, how-to, global, and the Cluster API reference). Opens with a notice that, starting in ACP 4.5, this content moved into the ACP documentation, with links to the ACP 4.5 install, workload-cluster, node, and upgrade pages.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T06:24:44Z"
+      "updated_at": "2026-11-23T17:08:42Z"
     },
     "docs/en/infrastructure/huawei-cloud-stack.mdx": {
       "sha256": "d9c7ff23da0497e25047d7785de224513dd4fa496edd25e7109159465b4ceb45",
@@ -874,11 +874,11 @@
       "updated_at": "2026-08-19T06:55:36Z"
     },
     "docs/en/manage-nodes/vmware-vsphere.mdx": {
-      "sha256": "ead2a58864556a95cb8c37560d26e8c7a1b24137f998b6905b53d49825841c53",
-      "size": 14886,
+      "sha256": "8899e03a0526db1b39bb6ae3975aacc6a865cd6430af217cb9447c48b3e392e8",
+      "size": 14951,
       "description": "Day-2 guide for VMware vSphere worker nodes managed through `VSphereMachineConfigPool`, `VSphereMachineTemplate`, `KubeadmConfigTemplate`, and `MachineDeployment`. Covers scale-out by adding slots before replicas, immutable infrastructure-template and bootstrap-template replacement, rollout monitoring and rollback, and runtime topology changes for NICs, failure domains, and persistent disks. Preserves the existing pool identity when slots or VMDKs must be reused, explains that differently named pools do not share disks and that `releaseDelayHours` is an unused-slot reclaim grace period rather than a replacement wait, and provides checks for pool readiness, Machines, `VSphereMachine`, `VSphereVM`, and Nodes. Flags the provider `v1.0.17` admission rules that can reject a Day-2 apply: an archived `MachineDeployment` manifest that omits `maxSurge: 0` or a `maxUnavailable` of `1` or more, and any edit that removes or reshapes a persistent disk on an `InUse` or `Released` slot, which accepts additions to either disk list and nothing else.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-15T11:01:46Z"
+      "updated_at": "2026-11-23T16:59:34Z"
     },
     "docs/en/overview/architecture.mdx": {
       "sha256": "be3dace31f1830bb79de4afd63206f29d3edd82d560e8b47e6596454bd0e3c28",
@@ -895,11 +895,11 @@
       "updated_at": "2026-05-16T06:24:44Z"
     },
     "docs/en/overview/intro.mdx": {
-      "sha256": "2102fbab30102e663511d2f83e120d76af91387ba063352c116572d21beda919",
-      "size": 724,
-      "description": "Brief introduction to Immutable Infrastructure on the Alauda Container Platform, naming Cluster API as the underlying mechanism and listing the four guiding principles: declarative configuration, version control, reproducible deployments, and stage-aware recovery - reproducible machine replacement for safe template recovery, falling back to backup-based recovery once a Kubernetes minor upgrade has changed control-plane state.",
+      "sha256": "31dc1c9669a7ba7257de32f765b93c3a8ec39b126cbb5c04406ce8d472fbf6cd",
+      "size": 1316,
+      "description": "Brief introduction to Immutable Infrastructure on the Alauda Container Platform, naming Cluster API as the underlying mechanism and listing the three guiding principles: declarative configuration, version control, and reproducible deployments. Opens with a notice that, starting in ACP 4.5, this content moved into the ACP documentation, with links to the ACP 4.5 pages.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-08-19T06:55:36Z"
+      "updated_at": "2026-11-23T17:08:42Z"
     },
     "docs/en/overview/os-support-matrix.mdx": {
       "sha256": "b111ece72b5ff9484102415c935a108ab3b5bb2c092954214adfbdd5ea4ba7bc",
@@ -937,11 +937,11 @@
       "updated_at": "2026-10-26T07:33:39Z"
     },
     "docs/en/overview/providers/vmware-vsphere.mdx": {
-      "sha256": "20b20f5075f60223dfda1c5d3012e82e59d762401a8906f4988dbd659e1205f5",
-      "size": 5329,
+      "sha256": "ec6599fdc1869ea2f2da251752c1e72e90a404143db7de491f57535a5ed68174",
+      "size": 5296,
       "description": "Overview of the VMware vSphere Infrastructure Provider built on Cluster API Provider vSphere (CAPV), validated against provider `v1.0.17`: vCenter template cloning and placement, two control plane endpoint modes (an external LoadBalancer, or a provider-managed Self-built VIP using Alive with keepalived and IPVS, available only to clusters created on `v1.0.17` with ACP `v4.4+`), `VSphereMachineConfigPool` node slots with fixed hostnames, static IPs and per-slot persistent and ephemeral data-disk layouts, multi-NIC support where the primary NIC drives the kubelet `node-ip`, multi-datacenter failure domains via `VSphereFailureDomain`/`VSphereDeploymentZone`, raw-device disks exposed at `/dev/disk/by-capv/<name>`, and the provider-managed `InUse` to `Released` to reuse-or-reclaim disk lifecycle. Lists the primary user-facing CRDs exercised by the documented workflows.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-15T09:57:16Z"
+      "updated_at": "2026-11-23T16:59:34Z"
     },
     "docs/en/overview/release_notes.mdx": {
       "sha256": "a5286469e9dba38abbfa45d89835923b1d3523bd1d0b551c662dd7080946a853",
@@ -991,39 +991,39 @@
       "updated_at": "2026-09-15T10:59:36Z"
     },
     "docs/en/upgrade-cluster/bare-metal.mdx": {
-      "sha256": "47c86c074fd9f0cb757e3aacc812fe35f3e6dd642613138d8cec21eea632825b",
-      "size": 28697,
-      "description": "Phase 2 Kubernetes upgrade for bare-metal clusters, which replaces every node instead of running `kubeadm upgrade`: CAPI deletes a `Machine`, the provider writes a `clean` plan, reallocates an `Available` inventory from the same pool, and writes a `reprovision` plan that runs `elemental upgrade --system <new-image>`, with initramfs clearing `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes` while declared managed volumes are only deactivated. Covers the management-cluster-first sequence, importing the target OS images and adding the version to `elemental-image-catalog`, which never gains versions on its own, the shared Kube-OVN step, patching `KubeadmControlPlane.spec.version` with matching `dns` and `etcd.local` image tags (no new `BaremetalMachineTemplate` for a version-only hop), worker `MachineDeployment` rollouts at `maxSurge: 0`, storage compatibility limits on pre-storage hosts, cross-version hops, staged recovery, plan/inventory verification, and the `no space left on device` failure caused by an 8 GiB `COS_STATE`, including partial-snapshot cleanup and the reinstall needed on hosts installed before COS_STATE sizing was applied.",
+      "sha256": "5c4deef516df5962b754ed49fac8bceaae5255324ccef1f801b8401d80524c4f",
+      "size": 27976,
+      "description": "Phase 2 Kubernetes upgrade for bare-metal clusters, which replaces every node instead of running `kubeadm upgrade`: CAPI deletes a `Machine`, the provider writes a `clean` plan, reallocates an `Available` inventory from the same pool, and writes a `reprovision` plan that runs `elemental upgrade --system <new-image>`, with initramfs clearing `/var/lib/kubelet`, `/var/lib/containerd`, `/var/lib/etcd`, and `/etc/kubernetes` while declared managed volumes are only deactivated. Covers the management-cluster-first sequence, importing the target OS images and adding the version to `elemental-image-catalog`, which never gains versions on its own, the shared Kube-OVN step, patching `KubeadmControlPlane.spec.version` with matching `dns` and `etcd.local` image tags (no new `BaremetalMachineTemplate` for a version-only hop), worker `MachineDeployment` rollouts at `maxSurge: 0`, storage compatibility limits on pre-storage hosts, cross-version hops, the rule that a failed upgrade cannot be rolled back, plan/inventory verification, and the `no space left on device` failure caused by an 8 GiB `COS_STATE`, including partial-snapshot cleanup and the reinstall needed on hosts installed before COS_STATE sizing was applied.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-28T07:13:11Z"
+      "updated_at": "2026-11-23T16:59:34Z"
     },
     "docs/en/upgrade-cluster/huawei-cloud-stack.mdx": {
-      "sha256": "eea56f6a8e4d261dbea552c915b81ac15dfd8685235b7ee24145660a79ef873c",
-      "size": 19526,
-      "description": "Phase 2 Kubernetes and Alauda OS upgrade for HCS clusters: upgrade the management cluster and Distribution Version first, run the shared Kube-OVN step (HCS provider `v1.0.4`+ is required for chart `v4.4`+), then create a new `HCSMachineTemplate` with the target `imageName` and patch `KubeadmControlPlane.spec.version` together with the `dns.imageTag` and `etcd.local.imageTag` values from the same OS Support Matrix row. Documents the four disk classes - only `HCSMachineConfigPool.spec.configs[].persistentDisks[]` survives replacement, `dataVolumes[]` do not - requires `rollingUpdate.maxSurge: 0` for pool-managed disks, leaves `providerID` and `serverId` unset in new templates, excludes single-control-plane clusters, delegates workers to the manage-nodes guide, and gives stage-based recovery rules.",
+      "sha256": "7d111cb6abbe17a40e2625e7fe846cddabbff987fe696924ecf5a98702e930e6",
+      "size": 17121,
+      "description": "Phase 2 Kubernetes and Alauda OS upgrade for HCS clusters: upgrade the management cluster and Distribution Version first, run the shared Kube-OVN step (HCS provider `v1.0.4`+ is required for chart `v4.4`+), then create a new `HCSMachineTemplate` with the target `imageName` and patch `KubeadmControlPlane.spec.version` together with the `dns.imageTag` and `etcd.local.imageTag` values from the same OS Support Matrix row. Documents the four disk classes - only `HCSMachineConfigPool.spec.configs[].persistentDisks[]` survives replacement, `dataVolumes[]` do not - requires `rollingUpdate.maxSurge: 0` for pool-managed disks, leaves `providerID` and `serverId` unset in new templates, excludes single-control-plane clusters, delegates workers to the manage-nodes guide, and states that a failed upgrade cannot be rolled back.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-12T06:10:11Z"
+      "updated_at": "2026-11-23T16:59:34Z"
     },
     "docs/en/upgrade-cluster/huawei-dcs.mdx": {
-      "sha256": "846c7992be6857fcac09211de0611920648987c4ae689830dc93c5e5b060ad13",
-      "size": 22187,
+      "sha256": "f130bcfd305a965c6c5fd04c955831f9e584b06165ec042fe389f66de73d2dd8",
+      "size": 19976,
       "description": "Phase 2 Kubernetes and Alauda OS upgrade for Huawei DCS clusters. Requires DCS Provider `v1.0.22+` before Kube-OVN chart `v4.4+`, uses provider-managed repository reconciliation instead of manual AppRelease source edits, creates new machine templates for target images, updates Kubernetes/CoreDNS/etcd values from the same OS Support Matrix row, preserves pool-managed disks with `maxSurge = 0`, and explicitly keeps endpoint mode unchanged during routine upgrades.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-12T06:10:11Z"
+      "updated_at": "2026-11-23T16:59:34Z"
     },
     "docs/en/upgrade-cluster/index.mdx": {
-      "sha256": "221934d7607be194ff4214e520fdabe08035624578acdba157d215b9bb45a8d6",
-      "size": 22370,
-      "description": "Owner page for the two-phase cluster upgrade model: Phase 1 moves ACP Core and the Distribution Version through CVO (procedure owned by the ACP product documentation; Fleet Essentials `1.0.4`+ can request it), and Phase 2 replaces nodes with the Alauda OS image carrying the target Kubernetes version. Holds the shared Kube-OVN-first procedure - set `cpaas.io/kube-ovn-version` on the CAPI `Cluster`, respect the provider boundaries (DCS `v1.0.22`+, HCS `v1.0.4`+, vSphere `v1.0.16`+, Bare Metal `v1.0.0`+) and the chart-name change from `acp/chart-cpaas-kube-ovn` to `acp/chart-kube-ovn` at chart `v4.4`, then verify the `cni-kube-ovn` `AppRelease` - plus stage-1 Kube-OVN restore, the Kubernetes 1.35 `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch, and cross-version preparation with `upgrade.sh --only-sync-image` and staged intermediate OS images.",
+      "sha256": "21470f2a6a91cd728e2ed2598f253678f4f744dff5640128cf7bd0fbf6df0172",
+      "size": 20754,
+      "description": "Owner page for the two-phase cluster upgrade model: Phase 1 moves ACP Core and the Distribution Version through CVO (procedure owned by the ACP product documentation; Fleet Essentials `1.0.4`+ can request it), and Phase 2 replaces nodes with the Alauda OS image carrying the target Kubernetes version. Holds the shared Kube-OVN-first procedure - set `cpaas.io/kube-ovn-version` on the CAPI `Cluster`, respect the provider boundaries (DCS `v1.0.22`+, HCS `v1.0.4`+, vSphere `v1.0.16`+, Bare Metal `v1.0.0`+) and the chart-name change from `acp/chart-cpaas-kube-ovn` to `acp/chart-kube-ovn` at chart `v4.4`, then verify the `cni-kube-ovn` `AppRelease` - plus the Kubernetes 1.35 `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch, and cross-version preparation with `upgrade.sh --only-sync-image` and staged intermediate OS images.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-09-15T09:57:16Z"
+      "updated_at": "2026-11-23T16:59:34Z"
     },
     "docs/en/upgrade-cluster/vmware-vsphere.mdx": {
-      "sha256": "2bad96daf30d14a1540312c0d839e044fc092e1566d90d146bb10ca0dde6afda",
-      "size": 33898,
-      "description": "Phase 2 Kubernetes upgrade procedure for VMware vSphere clusters, validated against provider `v1.0.17`. Starts with a pre-flight check of the `KubeadmControlPlane` and `MachineDeployment` rollout values (`maxSurge: 0`, `replicas` 3+, `maxUnavailable` 1+), which can reject the first edit of an existing cluster. Covers the five-class disk preservation model including pool-managed ephemeral disks, a creation-time layout upgrades never introduce, immutable machine templates, the Kube-OVN-first ordering, the control-plane and worker rollouts with values read from the OS Support Matrix, an OS-image-only rollout that changes no Kubernetes version, rollout holds that are not failures (persistent-disk attachment safety, `Reclaimed` tombstones, `SlotAvailable=False`, the `InitialPowerOnCompleted` power-on latch), staged recovery from a failed upgrade, verification, and a troubleshooting table. States that the provider migrates its own resources on upgrade with no manual YAML change, and that the control plane endpoint is a deploy-time choice, so an upgraded cluster keeps its external LoadBalancer and cannot adopt the Self-built VIP.",
+      "sha256": "cca7dd93b55e85947ec93d845c5193f75c2f030e963f2152dde643e34fce04ea",
+      "size": 31175,
+      "description": "Phase 2 Kubernetes upgrade procedure for VMware vSphere clusters, validated against provider `v1.0.17`. Starts with a pre-flight check of the `KubeadmControlPlane` and `MachineDeployment` rollout values (`maxSurge: 0`, `replicas` 3+, `maxUnavailable` 1+), which can reject the first edit of an existing cluster. Covers the five-class disk preservation model including pool-managed ephemeral disks, a creation-time layout upgrades never introduce, immutable machine templates, the Kube-OVN-first ordering, the control-plane and worker rollouts with values read from the OS Support Matrix, an OS-image-only rollout that changes no Kubernetes version, rollout holds that are not failures (persistent-disk attachment safety, `Reclaimed` tombstones, `SlotAvailable=False`, the `InitialPowerOnCompleted` power-on latch), the rule that a failed upgrade cannot be rolled back, verification, and a troubleshooting table. States that the provider migrates its own resources on upgrade with no manual YAML change, and that the control plane endpoint is a deploy-time choice, so an upgraded cluster keeps its external LoadBalancer and cannot adopt the Self-built VIP.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-10-12T06:10:11Z"
+      "updated_at": "2026-11-23T16:59:34Z"
     }
   }
 }
