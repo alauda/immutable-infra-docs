@@ -262,16 +262,11 @@ For each intermediate row, and finally for the target row:
 
 The version values always come from the OS Support Matrix; they are not fixed examples in this guide. The bare-metal rollout strategy already serializes node replacement, so cross-version upgrades do not require additional pool capacity beyond what is needed for a same-minor upgrade.
 
-## Recovering From a Failed Phase 2 Upgrade
+## Failed Upgrades \{#failed-upgrades}
 
-Do not treat a Kubernetes minor downgrade as an ordinary rollback:
+An upgrade cannot be rolled back: do not set the versions or the templates back to their previous values. Restoring an etcd backup does not return a cluster to an earlier version either. Fix the reported cause and the rollout continues; if the cause cannot be fixed, contact technical support.
 
-1. If no target-version control-plane `Machine` has been created, restore Kube-OVN by using [Restore Kube-OVN During Stage-1 Recovery](./index.mdx#restore-kube-ovn-during-stage-1-recovery), then restore the previous `KubeadmControlPlane` and `MachineDeployment` manifest values.
-2. If a target-minor control-plane machine has joined, stop further rollout and repair forward on the target minor. If forward repair cannot restore cluster health, restore the cluster from the verified pre-upgrade backup by following the <ExternalSiteLink name="acp" href="/configure/backup/etcd.html#etcd-restore" children="ACP etcd restore procedure" />. Do not patch Kubernetes, CoreDNS, or etcd back to the previous minor.
-
-Restoring etcd is a disaster-recovery action, not a pre-upgrade validation step. Do not run the restore procedure on a healthy cluster merely to verify the backup.
-
-Every host that completed a `reprovision` plan has already replaced its OS image and cleared Kubernetes-managed state. Changing version fields does not reconstruct that earlier node state.
+Every host that completed a `reprovision` plan has already replaced its OS image and cleared Kubernetes-managed state.
 
 ## Verification
 
