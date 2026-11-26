@@ -608,11 +608,11 @@
       "updated_at": "2026-10-28T07:13:11Z"
     },
     "docs/en/global/upgrade.mdx": {
-      "sha256": "cd88f59709322d78ebc43d0ce941a46675c50d092a28b73a5147fa3b41ff3c6b",
-      "size": 18503,
-      "description": "Phase 2 (Kubernetes and Alauda OS image) of the two-phase `global` cluster upgrade on Immutable Infrastructure, for Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal: upgrade Kube-OVN first, then create new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources for the target image (Bare Metal resolves it from `Machine.spec.version` through `elemental-image-catalog`), retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment`, set CoreDNS and etcd tags from the OS Support Matrix row, add the `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch when targeting Kubernetes 1.35, and keep `rollingUpdate.maxSurge: 0` so pool-declared persistent disks and fixed identities are reused. States that a failed upgrade cannot be rolled back and includes the single-control-plane HCS exclusion.",
+      "sha256": "fb06333a100b24366e7efaec7ad8dfae0c20e5452606a9ec79e4267173d79914",
+      "size": 36030,
+      "description": "Phase 2 (Kubernetes and Alauda OS image) of the two-phase `global` cluster upgrade on Immutable Infrastructure, for Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal: on DCS, vSphere, and HCS, first compare the `global-sa` and `global-proxy` Secrets with the ServiceAccount key and front-proxy CA on every control plane node and repair them after an ACP v4.3.0 installation; upgrade Kube-OVN; create new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources for the target image (Bare Metal resolves it from `Machine.spec.version` through `elemental-image-catalog`); retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment`; set CoreDNS and etcd tags from the OS Support Matrix row; add the `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch for Kubernetes 1.35; keep `rollingUpdate.maxSurge: 0`. States that a failed upgrade cannot be rolled back, recovers a rollout stopped by mismatched keys, and includes the single-control-plane HCS exclusion.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-11-23T17:01:52Z"
+      "updated_at": "2026-11-26T07:10:27Z"
     },
     "docs/en/how-to/configure-fixed-install-disk-bare-metal.mdx": {
       "sha256": "6a9493a1e0fad0ffd82cfced1a6604eba80331ef87728ca6a052e64f7b62b7b0",
