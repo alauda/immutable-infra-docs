@@ -608,11 +608,18 @@
       "updated_at": "2026-10-28T07:13:11Z"
     },
     "docs/en/global/upgrade.mdx": {
-      "sha256": "cd88f59709322d78ebc43d0ce941a46675c50d092a28b73a5147fa3b41ff3c6b",
-      "size": 18503,
-      "description": "Phase 2 (Kubernetes and Alauda OS image) of the two-phase `global` cluster upgrade on Immutable Infrastructure, for Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal: upgrade Kube-OVN first, then create new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources for the target image (Bare Metal resolves it from `Machine.spec.version` through `elemental-image-catalog`), retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment`, set CoreDNS and etcd tags from the OS Support Matrix row, add the `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch when targeting Kubernetes 1.35, and keep `rollingUpdate.maxSurge: 0` so pool-declared persistent disks and fixed identities are reused. States that a failed upgrade cannot be rolled back and includes the single-control-plane HCS exclusion.",
+      "sha256": "8f422fb32b7dbd16a853e65c8af418345293f1f1032fcaf943117d68a634a382",
+      "size": 19637,
+      "description": "Phase 2 (Kubernetes and Alauda OS image) of the two-phase `global` cluster upgrade on Immutable Infrastructure, for Huawei DCS, VMware vSphere, Huawei Cloud Stack, and Bare Metal: on DCS, vSphere, and HCS first check the `global-sa` and `global-proxy` Secrets against the control plane nodes, then upgrade Kube-OVN, create new `DCSMachineTemplate`, `VSphereMachineTemplate`, or `HCSMachineTemplate` resources for the target image (Bare Metal resolves it from `Machine.spec.version` through `elemental-image-catalog`), retarget `KubeadmControlPlane.spec.machineTemplate.infrastructureRef` and each `MachineDeployment`, set CoreDNS and etcd tags from the OS Support Matrix row, add the `imagePullCredentialsVerificationPolicy: NeverVerify` kubelet patch when targeting Kubernetes 1.35, and keep `rollingUpdate.maxSurge: 0` so pool-declared persistent disks and fixed identities are reused. States that a failed upgrade cannot be rolled back and includes the single-control-plane HCS exclusion.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-11-23T17:01:52Z"
+      "updated_at": "2026-11-26T07:20:48Z"
+    },
+    "docs/en/how-to/check-global-sa-proxy-secrets.mdx": {
+      "sha256": "3b37ce8dc73a65c1d8248610699f882f62fdc0fbe09d6d8a5f0e4882c52a1449",
+      "size": 17502,
+      "description": "Pre-rollout check for Huawei DCS, VMware vSphere, and Huawei Cloud Stack `global` clusters: replacement control plane nodes take the ServiceAccount signing key and front-proxy CA from the `global-sa` and `global-proxy` Secrets (`tls.crt`/`tls.key`), which the ACP v4.3.0 installer did not import, so a cluster installed with v4.3.0 splits its keys on the first replacement and the platform-registry rollout gate stops the rollout with `401 Unauthorized`. Gives a script that compares SHA-256 digests of the Secrets with `/etc/kubernetes/pki` on every node, a backed-up data-only merge patch that repairs the Secrets from the nodes and how to undo it, the DR order relative to the etcd synchronization plugin, and recovery for a rollout already stopped: restore the files on replacement nodes, renew `front-proxy-client`, restart the API server and controller manager, cross-check tokens, and re-create `extension-apiserver-authentication`.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-11-26T07:20:48Z"
     },
     "docs/en/how-to/configure-fixed-install-disk-bare-metal.mdx": {
       "sha256": "6a9493a1e0fad0ffd82cfced1a6604eba80331ef87728ca6a052e64f7b62b7b0",

@@ -38,6 +38,7 @@ Like workload clusters, the `global` cluster on Immutable Infrastructure follows
 
 - The `global` cluster has completed Phase 1 (Distribution Version upgrade).
 - An etcd backup of the `global` cluster has been taken and verified.
+- On Huawei DCS, VMware vSphere, and Huawei Cloud Stack, the `global-sa` and `global-proxy` Secrets match the control plane nodes. See [Step 1](#check-sa-and-front-proxy-secrets).
 - The target row in [OS Support Matrix](../overview/os-support-matrix.mdx) is available, and its Kubernetes version, CoreDNS tag, etcd tag, and Kube-OVN chart are staged, together with the Alauda OS image published for that release.
 - The previous machine templates and bootstrap templates are retained until Phase 2 is verified.
 - A maintenance window plan that accounts for rolling control plane replacement.
@@ -51,13 +52,17 @@ After installation, the Cluster API controllers that manage the `global` cluster
   In Kubernetes 1.35, kubelet credential verification can apply to images that are already present on a node. On the hop to Kubernetes 1.35 or later, add `imagePullCredentialsVerificationPolicy: NeverVerify` to the kubelet patch used by every replacement node. Update the control-plane file in the same `KubeadmControlPlane` edit as `spec.version`. For workers, create a new `KubeadmConfigTemplate` with the updated patch and switch `MachineDeployment.spec.template.spec.bootstrap.configRef.name` in the same edit as the version. Do not add this parameter for Kubernetes 1.34 or earlier. See [Required kubelet patch for Kubernetes 1.35](../upgrade-cluster/index.mdx#kubernetes-1-35-kubelet-patch).
 </Directive>
 
-### Step 1 — Upgrade Kube-OVN
+### Step 1 — Check the ServiceAccount and Front Proxy Secrets \{#check-sa-and-front-proxy-secrets}
+
+On Huawei DCS, VMware vSphere, and Huawei Cloud Stack, a replacement control plane node takes its ServiceAccount signing key and front-proxy CA from the `global-sa` and `global-proxy` Secrets, not from the node it replaces. A `global` cluster installed with ACP v4.3.0 has Secrets that do not match its nodes, and its rollout stops after the first control plane node is replaced. Before Step 4, follow [Checking the global ServiceAccount and Front Proxy Secrets](../how-to/check-global-sa-proxy-secrets.mdx) on the `global` cluster, and in a DR pair on each `global` cluster. Bare Metal skips this step.
+
+### Step 2 — Upgrade Kube-OVN
 
 Read the **kube-ovn (chart)** value from the target OS Support Matrix row, then follow the shared [provider-version-specific Kube-OVN procedure](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane) with `<cluster-name>` set to `global`.
 
 That procedure first checks the installed provider revision, then selects the supported new or legacy flow, handles the Kube-OVN chart-name boundary at `v4.4`, and verifies the chart name, target revision, installed revision, phase, and conditions. Use the `global` kubeconfig for both the provider and `cni-kube-ovn` `AppRelease` checks. Do not begin control-plane replacement until all shared verification criteria pass.
 
-### Step 2 — Update the global Cluster Manifest
+### Step 3 — Update the global Cluster Manifest
 
 Update the Cluster API manifests of the `global` cluster to reference the new Alauda OS image and Kubernetes version. The manifest fields to update are provider-specific.
 
@@ -236,12 +241,12 @@ spec:
           name: <target-kubeadm-config-template>
 ```
 
-Omit the `bootstrap.configRef` change for an earlier target when no bootstrap setting changes. Apply the complete retained manifests in Step 3. The provider deletes each old machine, cleans its inventory, allocates an available inventory from the same pool, and writes a `reprovision` plan for the target image.
+Omit the `bootstrap.configRef` change for an earlier target when no bootstrap setting changes. Apply the complete retained manifests in Step 4. The provider deletes each old machine, cleans its inventory, allocates an available inventory from the same pool, and writes a `reprovision` plan for the target image.
 
   </Tab>
 </Tabs>
 
-### Step 3 — Apply the Updated Manifest
+### Step 4 — Apply the Updated Manifest
 
 Apply the updated manifest against the `global` cluster.
 
@@ -251,7 +256,7 @@ kubectl --kubeconfig <global-kubeconfig> apply -f <updated-manifest>
 
 The Cluster API provider begins replacing control plane and worker nodes by using the new image. When `maxSurge: 0` is set, each old node is drained and deleted before its replacement can reuse the same fixed identity, IP address, or preserved disk.
 
-### Step 4 — Monitor the Rolling Replacement
+### Step 5 — Monitor the Rolling Replacement
 
 Watch the rolling replacement until all control plane and worker nodes have been replaced.
 
@@ -279,6 +284,8 @@ All nodes must report the new Kubernetes version, the `ClusterVersionShadow` mus
 An upgrade cannot be rolled back: do not set the versions or the templates back to their previous values. Restoring an etcd backup does not return a cluster to an earlier version either. Fix the reported cause and the rollout continues; if the cause cannot be fixed, contact technical support.
 
 On Huawei DCS clusters that use pool-managed persistent disks, check `DCSIpHostnamePool.status.persistentDiskStatus` before you delete or recreate machines, and do not delete retained DCS volumes that are listed in `DCSIpHostnamePool.spec.pool[].persistentDisk`.
+
+If the rollout stops after the first control plane node has been replaced and platform components report `401 Unauthorized`, see [Recover a Rollout Stopped by Mismatched Keys](../how-to/check-global-sa-proxy-secrets.mdx#recover-mismatched-keys).
 
 ## Next Steps
 
