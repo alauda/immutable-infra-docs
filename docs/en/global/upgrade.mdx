@@ -6,6 +6,8 @@ queries:
   - alauda os global cluster upgrade
   - upgrade platform on huawei dcs huawei cloud stack
   - immutable os global upgrade
+  - check global-sa and global-proxy secrets before replacing control plane nodes
+  - global control plane rollout stuck with 401 unauthorized after the first node is replaced
 ---
 
 # Upgrading the global Cluster
@@ -38,6 +40,7 @@ Like workload clusters, the `global` cluster on Immutable Infrastructure follows
 
 - The `global` cluster has completed Phase 1 (Distribution Version upgrade).
 - An etcd backup of the `global` cluster has been taken and verified.
+- On Huawei DCS, VMware vSphere, and Huawei Cloud Stack, the `global-sa` and `global-proxy` Secrets hold the same ServiceAccount signing key and front-proxy CA as the control plane nodes. [Step 1](#check-sa-and-front-proxy-secrets) checks this and repairs a `global` cluster that was installed with ACP v4.3.0.
 - The target row in [OS Support Matrix](../overview/os-support-matrix.mdx) is available, and its Kubernetes version, CoreDNS tag, etcd tag, and Kube-OVN chart are staged, together with the Alauda OS image published for that release.
 - The previous machine templates and bootstrap templates are retained until Phase 2 is verified.
 - A maintenance window plan that accounts for rolling control plane replacement.
@@ -51,13 +54,171 @@ After installation, the Cluster API controllers that manage the `global` cluster
   In Kubernetes 1.35, kubelet credential verification can apply to images that are already present on a node. On the hop to Kubernetes 1.35 or later, add `imagePullCredentialsVerificationPolicy: NeverVerify` to the kubelet patch used by every replacement node. Update the control-plane file in the same `KubeadmControlPlane` edit as `spec.version`. For workers, create a new `KubeadmConfigTemplate` with the updated patch and switch `MachineDeployment.spec.template.spec.bootstrap.configRef.name` in the same edit as the version. Do not add this parameter for Kubernetes 1.34 or earlier. See [Required kubelet patch for Kubernetes 1.35](../upgrade-cluster/index.mdx#kubernetes-1-35-kubelet-patch).
 </Directive>
 
-### Step 1 — Upgrade Kube-OVN
+### Step 1 — Check the ServiceAccount and Front Proxy Secrets \{#check-sa-and-front-proxy-secrets}
+
+Run this step on Huawei DCS, VMware vSphere, and Huawei Cloud Stack before any control plane node is replaced. Bare Metal skips it.
+
+A replacement control plane node does not copy the Kubernetes ServiceAccount signing key or the front-proxy CA from the node it replaces. It receives them from two Cluster API Secrets in the `cpaas-system` namespace:
+
+| Secret | Data key | File on every control plane node |
+| :--- | :--- | :--- |
+| `global-sa` | `tls.crt` | `/etc/kubernetes/pki/sa.pub` |
+| `global-sa` | `tls.key` | `/etc/kubernetes/pki/sa.key` |
+| `global-proxy` | `tls.crt` | `/etc/kubernetes/pki/front-proxy-ca.crt` |
+| `global-proxy` | `tls.key` | `/etc/kubernetes/pki/front-proxy-ca.key` |
+
+The ACP v4.3.0 installer did not import these two Secrets into the `global` cluster, so `KubeadmControlPlane` generated new ones that the running control plane nodes do not use. Installers from ACP v4.3.1 onward import them. On a `global` cluster installed with ACP v4.3.0 whose control plane has not been replaced since, the first replacement node signs and verifies ServiceAccount tokens with a different key from the other nodes. A request then fails with `401 Unauthorized` whenever its token reaches an API server that uses the other key. Kubeadm Provider v1.0.9 and later hold the next control plane replacement until platform-registry has been reinstalled for the new set of nodes. The platform-registry installation Job on the replacement node is rejected in the same way, so the next control plane `Machine` stays in `Deleting` and the rollout stops.
+
+The check is read-only. Run it on every Huawei DCS, VMware vSphere, and Huawei Cloud Stack `global` cluster, whichever release installed it, and repair the Secrets before Step 4 applies the updated manifest.
+
+<Directive type="info" title="Disaster recovery pairs">
+  Run this step on each `global` cluster against that cluster's own API server, after the etcd synchronization plugin has been uninstalled as the DR upgrade procedure requires, and before the control plane of that cluster is replaced. The primary and standby clusters have different keys. Never copy files or Secrets from one cluster to the other.
+</Directive>
+
+Run the commands from a secured host that has `kubectl`, `base64`, `sha256sum`, and an administrator kubeconfig for the `global` cluster. Keep shell tracing disabled. The commands read the node files through `kubectl exec` into the `kube-apiserver` static Pod, which mounts `/etc/kubernetes/pki` from the node, and print only the first 16 characters of SHA-256 digests. They never print key material.
+
+#### List the Control Plane Machines
+
+```shell
+export KUBECONFIG="<path-to-global-kubeconfig>"
+
+kubectl -n cpaas-system get machines \
+  -l cluster.x-k8s.io/cluster-name=global,cluster.x-k8s.io/control-plane \
+  -o custom-columns='MACHINE:.metadata.name,NODE:.status.nodeRef.name,VERSION:.spec.version,PHASE:.status.phase'
+kubectl -n cpaas-system get secret global-sa global-proxy --show-managed-fields \
+  -o jsonpath='{range .items[*]}{.metadata.name}:{range .metadata.managedFields[*]} {.manager}{end}{"\n"}{end}'
+```
+
+Before Step 4, every control plane `Machine` shows the current Kubernetes version. In the second output, a Secret whose only field manager is `manager` was generated by `KubeadmControlPlane`, and a Secret that the installer imported also lists `kubectl-client-side-apply`. This is only a hint; the comparison below decides.
+
+#### Compare the Secrets With the Control Plane Nodes
+
+```shell
+set -euo pipefail
+set +x
+export KUBECONFIG="<path-to-global-kubeconfig>"
+
+# Secret, data key, and the node file that must hold the same bytes.
+PKI_ITEMS="global-sa:tls.crt:sa.pub global-sa:tls.key:sa.key global-proxy:tls.crt:front-proxy-ca.crt global-proxy:tls.key:front-proxy-ca.key"
+
+secret_sha() {
+  kubectl -n cpaas-system get secret "$1" -o "jsonpath={.data.${2//./\\.}}" |
+    base64 -d | sha256sum | cut -c1-16
+}
+
+node_sha() {
+  kubectl -n kube-system exec "kube-apiserver-$1" -- \
+    cat "/etc/kubernetes/pki/$2" | sha256sum | cut -c1-16
+}
+
+CONTROL_PLANE_NODES="$(kubectl -n cpaas-system get machines \
+  -l cluster.x-k8s.io/cluster-name=global,cluster.x-k8s.io/control-plane \
+  -o jsonpath='{range .items[*]}{.status.nodeRef.name}{"\n"}{end}')"
+
+secrets_differ=false
+nodes_differ=false
+for item in ${PKI_ITEMS}; do
+  IFS=: read -r secret key file <<< "${item}"
+  expected="$(secret_sha "${secret}" "${key}")"
+  reference=""
+  for node in ${CONTROL_PLANE_NODES}; do
+    actual="$(node_sha "${node}" "${file}")"
+    printf '%-19s secret=%s node=%s %s\n' "${file}" "${expected}" "${actual}" "${node}"
+    reference="${reference:-${actual}}"
+    [ "${actual}" = "${reference}" ] || nodes_differ=true
+    [ "${actual}" = "${expected}" ] || secrets_differ=true
+  done
+done
+
+if [ "${nodes_differ}" = true ]; then
+  echo "RESULT: the control plane nodes do not hold the same files"
+elif [ "${secrets_differ}" = true ]; then
+  echo "RESULT: global-sa or global-proxy differs from the control plane nodes"
+else
+  echo "RESULT: consistent"
+fi
+```
+
+If `kubectl exec` reports that `cat` is not found, read the same files on each node with `sudo cat` over SSH instead.
+
+Act on the last line of the output:
+
+| Result | Meaning | Action |
+| :--- | :--- | :--- |
+| `RESULT: consistent` | Every control plane node holds the files stored in the Secrets. | Continue with Step 2. |
+| `RESULT: global-sa or global-proxy differs from the control plane nodes` | The control plane nodes agree with each other, but the Secrets hold other keys. The ACP v4.3.0 installer leaves a `global` cluster in this state. | [Repair the Secrets](#repair-sa-and-front-proxy-secrets), then run the comparison again. |
+| `RESULT: the control plane nodes do not hold the same files` | The control plane is already split. | Do not choose a node as the source. If a control plane rollout is in progress, follow [Recover a Rollout Stopped by Mismatched Keys](#recover-mismatched-keys). Otherwise, contact technical support. |
+
+#### Repair the Secrets \{#repair-sa-and-front-proxy-secrets}
+
+Repair the Secrets only after the comparison reported `RESULT: global-sa or global-proxy differs from the control plane nodes`. Set `SOURCE_NODE` to any node name from the comparison output, because all of them hold the same files. Set `BACKUP_DIR` to a directory on the secured host that does not exist yet.
+
+```shell
+set -euo pipefail
+set +x
+umask 077
+export KUBECONFIG="<path-to-global-kubeconfig>"
+export SOURCE_NODE="<control-plane-node-name>"
+export BACKUP_DIR="<new-backup-directory>"
+
+mkdir "${BACKUP_DIR}"
+for secret in global-sa global-proxy; do
+  printf '{"data":%s}\n' \
+    "$(kubectl -n cpaas-system get secret "${secret}" -o jsonpath='{.data}')" \
+    > "${BACKUP_DIR}/${secret}.json"
+done
+
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "${WORK_DIR}"' EXIT
+for file in sa.pub sa.key front-proxy-ca.crt front-proxy-ca.key; do
+  kubectl -n kube-system exec "kube-apiserver-${SOURCE_NODE}" -- \
+    cat "/etc/kubernetes/pki/${file}" > "${WORK_DIR}/${file}"
+done
+
+data_patch() {
+  printf '{"data":%s}\n' "$(kubectl create secret generic data-patch \
+    --from-file=tls.crt="$1" --from-file=tls.key="$2" \
+    --dry-run=client -o jsonpath='{.data}')"
+}
+data_patch "${WORK_DIR}/sa.pub" "${WORK_DIR}/sa.key" > "${WORK_DIR}/global-sa.json"
+data_patch "${WORK_DIR}/front-proxy-ca.crt" "${WORK_DIR}/front-proxy-ca.key" \
+  > "${WORK_DIR}/global-proxy.json"
+
+kubectl -n cpaas-system patch secret global-sa \
+  --type merge --patch-file "${WORK_DIR}/global-sa.json"
+kubectl -n cpaas-system patch secret global-proxy \
+  --type merge --patch-file "${WORK_DIR}/global-proxy.json"
+```
+
+The commands save the current `data` of both Secrets in `BACKUP_DIR`, read the four files from `SOURCE_NODE` into a temporary directory that is removed on exit, and replace only `data.tls.crt` and `data.tls.key` of each Secret. The Secret type, labels, and owner reference stay as they are. Run the comparison again; it must report `RESULT: consistent`.
+
+The files in `BACKUP_DIR` contain the private keys that `KubeadmControlPlane` generated. Keep them only on the secured host, and delete them after the upgrade is verified.
+
+To undo the repair before Step 4 starts the rollout, restore the saved data:
+
+```shell
+export KUBECONFIG="<path-to-global-kubeconfig>"
+export BACKUP_DIR="<backup-directory-of-the-repair>"
+
+kubectl -n cpaas-system patch secret global-sa \
+  --type merge --patch-file "${BACKUP_DIR}/global-sa.json"
+kubectl -n cpaas-system patch secret global-proxy \
+  --type merge --patch-file "${BACKUP_DIR}/global-proxy.json"
+```
+
+Do not restore the saved data after a replacement control plane node has joined. That node uses the repaired keys, and restoring the saved data would split the control plane again.
+
+#### After the Rollout
+
+When Step 5 completes, run the comparison again. It must report `RESULT: consistent` for every replacement node. In a DR pair, also run it on the standby `global` cluster after the etcd synchronization plugin has been reinstalled. If it reports a difference there, the plugin is overwriting the standby Secrets with those of the primary. Contact technical support before you replace any control plane node of that cluster.
+
+### Step 2 — Upgrade Kube-OVN
 
 Read the **kube-ovn (chart)** value from the target OS Support Matrix row, then follow the shared [provider-version-specific Kube-OVN procedure](../upgrade-cluster/index.mdx#upgrade-kube-ovn-before-the-control-plane) with `<cluster-name>` set to `global`.
 
 That procedure first checks the installed provider revision, then selects the supported new or legacy flow, handles the Kube-OVN chart-name boundary at `v4.4`, and verifies the chart name, target revision, installed revision, phase, and conditions. Use the `global` kubeconfig for both the provider and `cni-kube-ovn` `AppRelease` checks. Do not begin control-plane replacement until all shared verification criteria pass.
 
-### Step 2 — Update the global Cluster Manifest
+### Step 3 — Update the global Cluster Manifest
 
 Update the Cluster API manifests of the `global` cluster to reference the new Alauda OS image and Kubernetes version. The manifest fields to update are provider-specific.
 
@@ -236,12 +397,12 @@ spec:
           name: <target-kubeadm-config-template>
 ```
 
-Omit the `bootstrap.configRef` change for an earlier target when no bootstrap setting changes. Apply the complete retained manifests in Step 3. The provider deletes each old machine, cleans its inventory, allocates an available inventory from the same pool, and writes a `reprovision` plan for the target image.
+Omit the `bootstrap.configRef` change for an earlier target when no bootstrap setting changes. Apply the complete retained manifests in Step 4. The provider deletes each old machine, cleans its inventory, allocates an available inventory from the same pool, and writes a `reprovision` plan for the target image.
 
   </Tab>
 </Tabs>
 
-### Step 3 — Apply the Updated Manifest
+### Step 4 — Apply the Updated Manifest
 
 Apply the updated manifest against the `global` cluster.
 
@@ -251,7 +412,7 @@ kubectl --kubeconfig <global-kubeconfig> apply -f <updated-manifest>
 
 The Cluster API provider begins replacing control plane and worker nodes by using the new image. When `maxSurge: 0` is set, each old node is drained and deleted before its replacement can reuse the same fixed identity, IP address, or preserved disk.
 
-### Step 4 — Monitor the Rolling Replacement
+### Step 5 — Monitor the Rolling Replacement
 
 Watch the rolling replacement until all control plane and worker nodes have been replaced.
 
@@ -279,6 +440,120 @@ All nodes must report the new Kubernetes version, the `ClusterVersionShadow` mus
 An upgrade cannot be rolled back: do not set the versions or the templates back to their previous values. Restoring an etcd backup does not return a cluster to an earlier version either. Fix the reported cause and the rollout continues; if the cause cannot be fixed, contact technical support.
 
 On Huawei DCS clusters that use pool-managed persistent disks, check `DCSIpHostnamePool.status.persistentDiskStatus` before you delete or recreate machines, and do not delete retained DCS volumes that are listed in `DCSIpHostnamePool.spec.pool[].persistentDisk`.
+
+If the rollout stops after the first control plane node has been replaced and platform components report `401 Unauthorized`, see [Recover a Rollout Stopped by Mismatched Keys](#recover-mismatched-keys).
+
+### Recover a Rollout Stopped by Mismatched Keys \{#recover-mismatched-keys}
+
+This applies to Huawei DCS, VMware vSphere, and Huawei Cloud Stack when the Secrets in [Step 1](#check-sa-and-front-proxy-secrets) were not repaired before the rollout of a `global` cluster installed with ACP v4.3.0.
+
+Symptoms:
+
+- The first replacement control plane node joins, but the next control plane `Machine` stays in `Deleting`. Its `PreDrainDeleteHookSucceeded` condition is `False` with reason `WaitingExternalHook`, and it still carries the `pre-drain.delete.hook.machine.cluster.x-k8s.io/platform-registry-rollout-gate` annotation.
+- Platform components intermittently log `401 Unauthorized` or `the server has asked for the client to provide credentials`, and the `platform-registry` installation Job fails.
+- The comparison in Step 1 reports `RESULT: the control plane nodes do not hold the same files`. The replacement nodes, whose `Machine` shows the target version, share one set of digests that equals the Secrets. The nodes that have not been replaced share another set.
+
+Do not delete `Machine` objects, remove the hook annotation, or skip the rollout gate with `cpaas.io/skip-platform-registry-rollout-gate`, even when a `RolloutGateFailed` event suggests it. A rollout that finishes on the generated keys invalidates every token signed with the original key, including long-lived ServiceAccount token Secrets. Instead, put the original keys back on the replacement nodes. Run this recovery together with technical support.
+
+1. Confirm that at least one node that has not been replaced is `Ready`, and that all nodes that have not been replaced show the same digests in the comparison. A node whose `Machine` is `Deleting` but has not been drained yet counts as not replaced. If these nodes differ from each other, stop and contact technical support.
+
+2. [Repair the Secrets](#repair-sa-and-front-proxy-secrets) with `SOURCE_NODE` set to a node that has not been replaced, so that the remaining replacement nodes receive the original keys.
+
+3. On each replacement node, restore the four files from `SOURCE_NODE`, renew the front-proxy client certificate that the generated CA signed, and restart `kube-apiserver` and `kube-controller-manager`. The commands connect as the `boot` user, which has passwordless `sudo` on the node.
+
+   ```shell
+   set -euo pipefail
+   set +x
+   umask 077
+   export KUBECONFIG="<path-to-global-kubeconfig>"
+   export SOURCE_NODE="<control-plane-node-name-not-replaced>"
+   export TARGET_NODE="<replacement-control-plane-node-name>"
+   export TARGET_HOST="<replacement-control-plane-node-address>"
+   PKI_FILES="sa.pub sa.key front-proxy-ca.crt front-proxy-ca.key"
+   CRICTL="sudo crictl --runtime-endpoint unix:///run/containerd/containerd.sock"
+
+   WORK_DIR="$(mktemp -d)"
+   trap 'rm -rf "${WORK_DIR}"' EXIT
+   for file in ${PKI_FILES}; do
+     kubectl -n kube-system exec "kube-apiserver-${SOURCE_NODE}" -- \
+       cat "/etc/kubernetes/pki/${file}" > "${WORK_DIR}/${file}"
+   done
+
+   ssh "boot@${TARGET_HOST}" \
+     'sudo cp -a /etc/kubernetes/pki "/etc/kubernetes/pki-backup-$(date +%Y%m%d%H%M%S)"'
+   for file in ${PKI_FILES}; do
+     ssh "boot@${TARGET_HOST}" "sudo tee /etc/kubernetes/pki/${file} > /dev/null" \
+       < "${WORK_DIR}/${file}"
+   done
+   ssh "boot@${TARGET_HOST}" 'sudo kubeadm certs renew front-proxy-client'
+
+   for name in kube-apiserver kube-controller-manager; do
+     id="$(ssh "boot@${TARGET_HOST}" "${CRICTL} ps -q --name '^${name}\$'")"
+     ssh "boot@${TARGET_HOST}" "${CRICTL} stop ${id}"
+   done
+
+   until kubectl --server "https://${TARGET_HOST}:6443" get --raw /readyz > /dev/null 2>&1; do
+     sleep 5
+   done
+   kubectl -n kube-system exec "kube-apiserver-${TARGET_NODE}" -- \
+     cat /etc/kubernetes/pki/front-proxy-client.crt > "${WORK_DIR}/front-proxy-client.crt"
+   openssl verify -CAfile "${WORK_DIR}/front-proxy-ca.crt" "${WORK_DIR}/front-proxy-client.crt"
+   ```
+
+   The commands keep the previous `/etc/kubernetes/pki` of the node in `/etc/kubernetes/pki-backup-<timestamp>` on that node, wait until its API server is ready again, and end with `openssl verify` printing `OK` for the renewed front-proxy client certificate. The kubelet restarts the stopped containers with the restored files.
+
+4. Check that every API server accepts the tokens that every other API server issues. Set `CONTROL_PLANE_ADDRESSES` to the addresses of all control plane nodes.
+
+   ```shell
+   set -euo pipefail
+   set +x
+   umask 077
+   export KUBECONFIG="<path-to-global-kubeconfig>"
+   export CONTROL_PLANE_ADDRESSES="<control-plane-address-1> <control-plane-address-2> <control-plane-address-3>"
+
+   WORK_DIR="$(mktemp -d)"
+   trap 'rm -rf "${WORK_DIR}"' EXIT
+   kubectl -n kube-system get configmap kube-root-ca.crt \
+     -o jsonpath='{.data.ca\.crt}' > "${WORK_DIR}/ca.crt"
+   for issuer in ${CONTROL_PLANE_ADDRESSES}; do
+     printf 'Authorization: Bearer %s\n' "$(kubectl --server "https://${issuer}:6443" \
+       -n default create token default --duration=10m)" > "${WORK_DIR}/header"
+     for verifier in ${CONTROL_PLANE_ADDRESSES}; do
+       printf 'token issued by %s, sent to %s: ' "${issuer}" "${verifier}"
+       curl -sS -o /dev/null -w '%{http_code}\n' --cacert "${WORK_DIR}/ca.crt" \
+         -H @"${WORK_DIR}/header" "https://${verifier}:6443/version"
+     done
+   done
+   ```
+
+   Every line must end with `200`. A `401` means that the issuing and the receiving API server still use different keys.
+
+5. Remove the generated front-proxy CA from the trust bundle that aggregated API servers read. While a replacement node ran with that CA, the API servers added it to the `kube-system/extension-apiserver-authentication` ConfigMap, and they keep merged entries until the certificates expire. Delete the ConfigMap; each API server re-creates it from its own files within seconds.
+
+   ```shell
+   kubectl -n kube-system delete configmap extension-apiserver-authentication
+   kubectl -n kube-system get configmap extension-apiserver-authentication
+   ```
+
+   Repeat the second command until it returns the ConfigMap.
+
+6. Run the comparison in Step 1 again. It must report `RESULT: consistent`.
+
+7. Watch the rollout continue. The rollout gate removes its hook after the platform-registry `AppRelease` is ready for the current control plane nodes.
+
+   ```shell
+   kubectl -n cpaas-system get events --field-selector involvedObject.kind=Machine | grep PlatformRegistry
+   kubectl -n cpaas-system get machines \
+     -l cluster.x-k8s.io/cluster-name=global,cluster.x-k8s.io/control-plane -w
+   ```
+
+   If the platform-registry `AppRelease` is still not ready 30 minutes after the comparison reports `RESULT: consistent`, contact technical support.
+
+8. After the rollout completes, clean up:
+
+   - Pods that received their ServiceAccount token from a replacement API server before step 3 keep failing with `401` until the kubelet refreshes the token, which happens within about an hour. Delete such Pods to recover sooner.
+   - A long-lived ServiceAccount token Secret of type `kubernetes.io/service-account-token` that was created while the controller manager of a replacement node held the leader lease is signed with the generated key. If a component that uses such a Secret still fails with `401`, remove the `token` key from the Secret, and the token controller signs a new token.
+   - Delete the `/etc/kubernetes/pki-backup-<timestamp>` directories on the replacement nodes and the `BACKUP_DIR` of the Secret repair. Both contain generated private keys.
 
 ## Next Steps
 
